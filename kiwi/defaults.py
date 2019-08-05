@@ -482,7 +482,7 @@ class Defaults(object):
 
         :rtype: str
         """
-        return 'KIWI - http://suse.github.com/kiwi'
+        return 'KIWI - https://github.com/OSInside/kiwi'
 
     @classmethod
     def get_publisher(cls):
