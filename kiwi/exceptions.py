@@ -113,13 +113,6 @@ class KiwiBootLoaderInstallSetupError(KiwiError):
     """
 
 
-class KiwiBootLoaderIsoLinuxPlatformError(KiwiError):
-    """
-    Exception raised if an attempt was made to use isolinux on
-    an unsupported platform.
-    """
-
-
 class KiwiBootLoaderTargetError(KiwiError):
     """
     Exception raised if the target to read the bootloader path
@@ -522,13 +515,6 @@ class KiwiRepositorySetupError(KiwiError):
     """
 
 
-class KiwiRepoTypeUnknown(KiwiError):
-    """
-    Exception raised if an unsupported repository type is specified
-    for the corresponding package manager.
-    """
-
-
 class KiwiRequestedTypeError(KiwiError):
     """
     Exception raised if an attempt was made to build an image for
@@ -576,12 +562,6 @@ class KiwiRootInitCreationError(KiwiError):
     """
     Exception raised if the initialization of a new image root
     directory has failed.
-    """
-
-
-class KiwiRpmDatabaseReloadError(KiwiError):
-    """
-    Exception raised on error of an rpm DB dump -> reload process.
     """
 
 
@@ -790,4 +770,16 @@ class KiwiCommandCapabilitiesError(KiwiError):
 class KiwiDecodingError(KiwiError):
     """
     Exception is raised on decoding literals failure
+    """
+
+
+class KiwiBuildahError(KiwiError):
+    """
+    Exception raised on inconsistent buildah class calls
+    """
+
+
+class KiwiFileAccessError(KiwiError):
+    """
+    Exception raised if accessing a file or its metadata failed
     """

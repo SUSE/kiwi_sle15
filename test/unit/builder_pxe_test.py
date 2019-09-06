@@ -12,7 +12,7 @@ from kiwi.exceptions import KiwiPxeBootImageError
 from kiwi.builder.pxe import PxeBuilder
 
 
-class TestPxeBuilder(object):
+class TestPxeBuilder:
     @patch('kiwi.builder.pxe.FileSystemBuilder')
     @patch('kiwi.builder.pxe.BootImage')
     def setup(self, mock_boot, mock_filesystem):
@@ -55,16 +55,19 @@ class TestPxeBuilder(object):
             custom_args={'signing_keys': ['key_file_a', 'key_file_b']}
         )
         self.pxe.image_name = 'myimage'
+        self.pxe.compressed = True
 
     @patch('kiwi.builder.pxe.Checksum')
     @patch('kiwi.builder.pxe.Compress')
     @patch('kiwi.logger.log.warning')
-    @patch('kiwi.builder.pxe.Command.run')
+    @patch('kiwi.builder.pxe.ArchiveTar')
     @patch('os.rename')
     def test_create(
-        self, mock_rename, mock_command, mock_log_warn,
+        self, mock_rename, mock_tar, mock_log_warn,
         mock_compress, mock_checksum
     ):
+        tar = mock.Mock()
+        mock_tar.return_value = tar
         compress = mock.Mock()
         mock_compress.return_value = compress
         compress.compressed_filename = 'compressed-file-name'
@@ -93,20 +96,15 @@ class TestPxeBuilder(object):
         self.setup.export_package_verification.assert_called_once_with(
             'target_dir'
         )
-        mock_command.assert_called_once_with(
-            [
-                'bash', '-c',
-                'tar -C target_dir -c --to-stdout '
-                'myimage-42.kernel '
-                'initrd_file_name '
-                'compressed-file-name '
-                'some-image.x86_64-1.2.3.md5 '
-                '| xz -f --threads=0 > '
-                'target_dir/some-image.x86_64-1.2.3.tar.xz'
-            ]
+
+        tar.create.assert_called_once_with('target_dir')
+
+        self.pxe.compressed = False
+        self.pxe.create()
+
+        tar.create_xz_compressed.assert_called_once_with(
+            'target_dir', xz_options=['--threads=0']
         )
-        # warning for not implemented pxedeploy handling
-        assert mock_log_warn.called
 
     @patch('kiwi.builder.pxe.Checksum')
     @patch('kiwi.builder.pxe.Compress')

@@ -10,8 +10,10 @@ from kiwi.exceptions import KiwiBootLoaderTargetError
 from kiwi.bootloader.config.base import BootLoaderConfigBase
 
 
-class TestBootLoaderConfigBase(object):
-    def setup(self):
+class TestBootLoaderConfigBase:
+    @patch('platform.machine')
+    def setup(self, mock_machine):
+        mock_machine.return_value = 'x86_64'
         description = XMLDescription(
             '../data/example_config.xml'
         )
@@ -69,7 +71,7 @@ class TestBootLoaderConfigBase(object):
     @patch('kiwi.path.Path.create')
     def test_create_efi_path_with_prefix(self, mock_path):
         self.bootloader.create_efi_path('')
-        mock_path.assert_called_once_with('root_dir//EFI/BOOT')
+        mock_path.assert_called_once_with('root_dir/EFI/BOOT')
 
     def test_get_boot_theme(self):
         assert self.bootloader.get_boot_theme() == 'openSUSE'
@@ -223,6 +225,10 @@ class TestBootLoaderConfigBase(object):
         mock_disk_setup.return_value = disk_setup
         assert self.bootloader.get_boot_path() == \
             '/boot'
+
+    def test_get_boot_path_iso(self):
+        assert self.bootloader.get_boot_path(target='iso') == \
+            '/boot/x86_64/loader'
 
     def test_quote_title(self):
         assert self.bootloader.quote_title('aaa bbb [foo]') == 'aaa_bbb_(foo)'

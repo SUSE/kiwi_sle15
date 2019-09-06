@@ -20,7 +20,6 @@ import platform
 
 # project
 from kiwi.defaults import Defaults
-from kiwi.command import Command
 from kiwi.boot.image import BootImage
 from kiwi.builder.filesystem import FileSystemBuilder
 from kiwi.utils.compress import Compress
@@ -30,13 +29,14 @@ from kiwi.system.kernel import Kernel
 from kiwi.logger import log
 from kiwi.system.result import Result
 from kiwi.runtime_config import RuntimeConfig
+from kiwi.archive.tar import ArchiveTar
 
 from kiwi.exceptions import (
     KiwiPxeBootImageError
 )
 
 
-class PxeBuilder(object):
+class PxeBuilder:
     """
     **Filesystem based PXE image builder.**
 
@@ -51,7 +51,6 @@ class PxeBuilder(object):
         self.target_dir = target_dir
         self.compressed = xml_state.build_type.get_compressed()
         self.xen_server = xml_state.is_xen_server()
-        self.pxedeploy = xml_state.get_build_type_pxedeploy_section()
         self.filesystem = FileSystemBuilder(
             xml_state, target_dir, root_dir + '/'
         )
@@ -66,7 +65,8 @@ class PxeBuilder(object):
             and 'xz_options' in custom_args else None
 
         self.boot_image_task = BootImage(
-            xml_state, target_dir, signing_keys=self.boot_signing_keys
+            xml_state, target_dir, root_dir,
+            signing_keys=self.boot_signing_keys
         )
         self.image_name = ''.join(
             [
@@ -76,7 +76,7 @@ class PxeBuilder(object):
                 '-' + xml_state.get_image_version()
             ]
         )
-        self.archive_name = ''.join([self.image_name, '.tar.xz'])
+        self.archive_name = ''.join([self.image_name, '.tar'])
         self.checksum_name = ''.join([self.image_name, '.md5'])
         self.kernel_filename = None
         self.hypervisor_filename = None
@@ -173,19 +173,25 @@ class PxeBuilder(object):
         # put results into a tarball
         if not self.xz_options:
             self.xz_options = Defaults.get_xz_compression_options()
-        bash_command = [
-            'tar', '-C', self.target_dir, '-c', '--to-stdout'
-        ] + [
+
+        pxe_tarball_files = [
             self.kernel_filename,
             os.path.basename(self.boot_image_task.initrd_filename),
             os.path.basename(self.image),
             os.path.basename(self.checksum_name)
-        ] + [
-            '|', 'xz', '-f'
-        ] + self.xz_options + [
-            '>', self.archive_name
         ]
-        Command.run(['bash', '-c', ' '.join(bash_command)])
+        pxe_tarball = ArchiveTar(
+            self.archive_name,
+            create_from_file_list=True,
+            file_list=pxe_tarball_files
+        )
+
+        if self.compressed:
+            self.archive_name = pxe_tarball.create(self.target_dir)
+        else:
+            self.archive_name = pxe_tarball.create_xz_compressed(
+                self.target_dir, xz_options=self.xz_options
+            )
 
         self.result.verify_image_size(
             self.runtime_config.get_max_size_constraint(),
@@ -221,10 +227,4 @@ class PxeBuilder(object):
             compress=False,
             shasum=False
         )
-
-        if self.pxedeploy:
-            log.warning(
-                'Creation of client config file from pxedeploy not implemented'
-            )
-
         return self.result

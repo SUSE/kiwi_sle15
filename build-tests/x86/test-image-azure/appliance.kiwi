@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="6.9" name="Azure-openSUSE-Tumbleweed">
+<image schemaversion="7.1" name="Azure-openSUSE-Tumbleweed">
     <description type="system">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.de</contact>
@@ -22,12 +22,6 @@
     </users>
     <repository type="rpm-md" alias="kiwi-next-generation" priority="1">
         <source path="obs://Virtualization:Appliances:Staging/openSUSE_Tumbleweed"/>
-    </repository>
-    <repository type="rpm-md" alias="cloud-tools" priority="2">
-        <source path="obs://Cloud:Tools/openSUSE_Tumbleweed"/>
-    </repository>
-    <repository type="rpm-md" alias="python-modules" priority="2">
-        <source path="obs://devel:languages:python/openSUSE_Tumbleweed"/>
     </repository>
     <repository type="rpm-md" alias="Tumbleweed" priority="2">
         <source path="obs://openSUSE:Factory/snapshot"/>
@@ -87,7 +81,6 @@
         <package name="man-pages"/>
         <package name="mozilla-nss-certs"/>
         <package name="netcat-openbsd"/>
-        <package name="nfsidmap"/>
         <package name="nfs-client"/>
         <package name="nfs-kernel-server"/>
         <package name="nscd"/>
@@ -103,7 +96,6 @@
         <package name="screen"/>
         <package name="strace"/>
         <package name="SUSEConnect"/>
-        <package name="SuSEfirewall2"/>
         <package name="tcpd"/>
         <package name="tcpdump"/>
         <package name="tcsh"/>
@@ -120,10 +112,8 @@
         <package name="fipscheck"/>
         <package name="ncurses-utils"/>
         <package name="sg3_utils"/>
-        <package name="pkg-config"/>
         <package name="elfutils"/>
         <package name="udev"/>
-        <package name="azuremetadata"/>
         <package name="hyper-v"/>
         <package name="python-azure-agent"/>
         <package name="timezone"/>

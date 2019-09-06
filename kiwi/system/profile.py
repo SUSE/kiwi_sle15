@@ -23,7 +23,7 @@ from kiwi.system.shell import Shell
 from kiwi.defaults import Defaults
 
 
-class Profile(object):
+class Profile:
     """
     **Create bash readable .profile environment from the XML
     description**
@@ -69,8 +69,6 @@ class Profile(object):
 
         :rtype: str
         """
-        Defaults.set_python_default_encoding_to_utf8()
-
         sorted_profile = collections.OrderedDict(
             sorted(self.dot_profile.items())
         )

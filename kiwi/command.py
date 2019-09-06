@@ -20,11 +20,6 @@ import os
 import subprocess
 from collections import namedtuple
 
-# In python2 bytes is string which is different from
-# the bytes type in python3. The bytes type from the
-# builtins generalizes this type to be bytes always
-from builtins import bytes
-
 # project
 from .utils.codec import Codec
 
@@ -33,8 +28,12 @@ from .exceptions import (
     KiwiCommandNotFound
 )
 
+command_type = namedtuple(
+    'command', ['output', 'error', 'returncode']
+)
 
-class Command(object):
+
+class Command:
     """
     **Implements command invocation**
 
@@ -42,8 +41,10 @@ class Command(object):
     commands in blocking and non blocking mode. Control of
     stdout and stderr is given to the caller
     """
-    @classmethod
-    def run(cls, command, custom_env=None, raise_on_error=True):
+    @staticmethod
+    def run(
+        command, custom_env=None, raise_on_error=True, stderr_to_stdout=False
+    ):
         """
         Execute a program and block the caller. The return value
         is a hash containing the stdout, stderr and return code
@@ -60,6 +61,7 @@ class Command(object):
         :param list command: command and arguments
         :param list custom_env: custom os.environ
         :param bool raise_on_error: control error behaviour
+        :param bool stderr_to_stdout: redirects stderr to stdout
 
         :return:
             Contains call results in command type
@@ -72,9 +74,6 @@ class Command(object):
         """
         from .logger import log
         from .path import Path
-        command_type = namedtuple(
-            'command', ['output', 'error', 'returncode']
-        )
         log.debug('EXEC: [%s]', ' '.join(command))
         environment = os.environ
         if custom_env:
@@ -92,11 +91,12 @@ class Command(object):
                 )
             else:
                 raise KiwiCommandNotFound(message)
+        stderr = subprocess.STDOUT if stderr_to_stdout else subprocess.PIPE
         try:
             process = subprocess.Popen(
                 command,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
+                stderr=stderr,
                 env=environment
             )
         except Exception as e:
@@ -125,8 +125,8 @@ class Command(object):
             returncode=process.returncode
         )
 
-    @classmethod
-    def call(cls, command, custom_env=None):
+    @staticmethod
+    def call(command, custom_env=None):
         """
         Execute a program and return an io file handle pair back.
         stdout and stderr are both on different channels. The caller

@@ -5,7 +5,7 @@ from .test_helper import raises
 from kiwi.repository.base import RepositoryBase
 
 
-class TestRepositoryBase(object):
+class TestRepositoryBase:
     def setup(self):
         root_bind = mock.Mock()
         self.repo = RepositoryBase(root_bind)
@@ -26,6 +26,10 @@ class TestRepositoryBase(object):
             'name', 'uri', 'type', 'prio', 'dist', ['components'],
             'user', 'secret', 'credentials-file', False, False
         )
+
+    @raises(NotImplementedError)
+    def test_setup_package_database_configuration(self):
+        self.repo.setup_package_database_configuration()
 
     @raises(NotImplementedError)
     def test_import_trusted_keys(self):

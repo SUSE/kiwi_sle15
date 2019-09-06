@@ -15,12 +15,6 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
-import six
-
-# In python2 bytes is string which is different from
-# the bytes type in python3. The bytes type from the
-# builtins generalizes this type to be bytes always
-from builtins import bytes
 from collections import namedtuple
 
 # project
@@ -32,7 +26,7 @@ from .exceptions import (
 )
 
 
-class CommandProcess(object):
+class CommandProcess:
     """
     **Implements processing of non blocking Command calls**
 
@@ -119,6 +113,9 @@ class CommandProcess(object):
             return method(item_to_match, data)
         return create_method
 
+    def returncode(self):
+        return self.command.get_error_code()
+
     def _init_progress(self):
         log.progress(
             0, 100, '[ INFO    ]: Processing'
@@ -150,7 +147,7 @@ class CommandProcess(object):
             self.command.kill()
 
 
-class CommandIterator(six.Iterator):
+class CommandIterator:
     """
     **Implements an Iterator for Instances of Command**
 

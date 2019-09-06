@@ -5,7 +5,7 @@ import mock
 from kiwi.filesystem.squashfs import FileSystemSquashFs
 
 
-class TestFileSystemSquashfs(object):
+class TestFileSystemSquashfs:
     @patch('os.path.exists')
     def setup(self, mock_exists):
         mock_exists.return_value = True
@@ -30,8 +30,8 @@ class TestFileSystemSquashfs(object):
         self.squashfs.create_on_file('myimage', 'label', ['foo'])
         mock_command.assert_called_once_with(
             [
-                'mksquashfs', 'root_dir', 'myimage', '-noappend',
-                '-b', '1M', '-comp', 'xz', '-Xbcj', 'powerpc', '-e', 'foo'
+                'mksquashfs', 'root_dir', 'myimage', '-noappend', '-b', '1M',
+                '-comp', 'xz', '-Xbcj', 'powerpc', '-wildcards', '-e', 'foo'
             ]
         )
 

@@ -14,7 +14,7 @@ from kiwi.exceptions import (
 )
 
 
-class TestCli(object):
+class TestCli:
     def setup(self):
         self.help_global_args = {
             'help': False,
@@ -45,6 +45,7 @@ class TestCli(object):
             '--root': 'directory',
             '--set-repo': None,
             '--add-package': [],
+            '--add-bootstrap-package': [],
             '--delete-package': [],
             '--set-container-derived-from': None,
             '--set-container-tag': None,

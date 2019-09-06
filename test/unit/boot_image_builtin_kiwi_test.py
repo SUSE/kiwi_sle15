@@ -14,7 +14,7 @@ from kiwi.xml_state import XMLState
 from kiwi.exceptions import KiwiConfigFileNotFound
 
 
-class TestBootImageKiwi(object):
+class TestBootImageKiwi:
     @patch('kiwi.boot.image.builtin_kiwi.mkdtemp')
     @patch('kiwi.boot.image.builtin_kiwi.os.path.exists')
     @patch('platform.machine')
@@ -112,7 +112,7 @@ class TestBootImageKiwi(object):
         mock_sync.assert_called_once_with(
             'boot-root-directory/', 'temp-boot-directory'
         )
-        data.sync_data.assert_called_once_with(options=['-z', '-a'])
+        data.sync_data.assert_called_once_with(options=['-a'])
         mock_cpio.assert_called_once_with(
             ''.join(
                 [

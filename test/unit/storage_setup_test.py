@@ -10,7 +10,7 @@ from kiwi.xml_description import XMLDescription
 from kiwi.defaults import Defaults
 
 
-class TestDiskSetup(object):
+class TestDiskSetup:
     @patch('platform.machine')
     def setup(self, mock_machine):
         mock_machine.return_value = 'x86_64'
@@ -86,11 +86,6 @@ class TestDiskSetup(object):
     def test_need_boot_partition_mdraid(self):
         self._init_bootpart_check()
         self.setup.mdraid = True
-        assert self.setup.need_boot_partition() is True
-
-    def test_need_boot_partition_luks(self):
-        self._init_bootpart_check()
-        self.setup.luks = True
         assert self.setup.need_boot_partition() is True
 
     def test_need_boot_partition_lvm(self):

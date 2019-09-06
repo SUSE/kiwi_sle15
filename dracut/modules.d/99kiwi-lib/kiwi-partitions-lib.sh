@@ -194,7 +194,7 @@ function get_partition_node_name {
     local part
     udev_pending
     for partnode in $(
-        lsblk -p -r -o NAME,TYPE "${disk}" | grep part | cut -f1 -d ' '
+        lsblk -p -r -o NAME,TYPE "${disk}" | grep -E "part|md$" | cut -f1 -d ' '
     );do
         if [ "${index}" = "${partid}" ];then
             echo "${partnode}"
@@ -271,7 +271,7 @@ function get_free_disk_bytes {
     local part_uuids
     udev_pending
     for part in $(
-        lsblk -p -r -o NAME,TYPE "${disk}" | grep part | cut -f1 -d ' '
+        lsblk -p -r -o NAME,TYPE "${disk}" | grep -E "part|md$" | cut -f1 -d ' '
     );do
         current_part_uuid=$(get_partition_uuid "${part}")
         for part_uuid in ${part_uuids[*]};do
@@ -302,12 +302,7 @@ function get_partition_uuid {
 }
 
 function relocate_gpt_at_end_of_disk {
-    local cmd
-    local cmd_file=/part.input
-    rm -f ${cmd_file} && for cmd in x e w y; do
-        echo $cmd >> ${cmd_file}
-    done
-    if ! gdisk "$1" < ${cmd_file} &>/dev/null; then
+    if ! sgdisk -e "$1";then
         die "Failed to write backup GPT at end of disk"
     fi
 }
@@ -332,7 +327,7 @@ function create_hybrid_gpt {
         # see man sgdisk for details
         partition_count=3
     fi
-    if ! sgdisk -h $(seq -s : 1 "${partition_count}") "${disk_device}";then
+    if ! sgdisk -h "$(seq -s : 1 "${partition_count}")" "${disk_device}";then
         die "Failed to create hybrid GPT/MBR !"
     fi
 }

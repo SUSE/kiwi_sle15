@@ -17,7 +17,7 @@
 #
 import os
 from tempfile import NamedTemporaryFile
-from six.moves.urllib.parse import urlparse
+from urllib.parse import urlparse
 
 # project
 from kiwi.repository.template.apt import PackageManagerTemplateAptGet
@@ -29,7 +29,8 @@ class RepositoryApt(RepositoryBase):
     """
     **Implements repository handling for apt-get package manager**
 
-    :param str shared_apt_get_dir: shared directory between image root and build system root
+    :param str shared_apt_get_dir:
+        shared directory between image root and build system root
     :param str runtime_apt_get_config_file: apt-get runtime config file name
     :param list apt_get_args: apt-get caller arguments
     :param dict command_env: customized os.environ for apt-get
@@ -65,6 +66,7 @@ class RepositoryApt(RepositoryBase):
         self.distribution = None
         self.distribution_path = None
         self.repo_names = []
+        self.components = []
 
         # apt-get support is based on creating a sources file which
         # contains path names to the repo and its cache. In order to
@@ -91,6 +93,14 @@ class RepositoryApt(RepositoryBase):
         # config file for apt-get tool
         self.apt_conf = PackageManagerTemplateAptGet()
         self._write_runtime_config()
+
+    def setup_package_database_configuration(self):
+        """
+        Setup package database configuration
+
+        No special database configuration required for apt
+        """
+        pass
 
     def use_default_location(self):
         """
@@ -149,13 +159,12 @@ class RepositoryApt(RepositoryBase):
             uri = uri.replace('file://', 'file:/')
         if not components:
             components = 'main'
+        self._add_components(components)
         with open(list_file, 'w') as repo:
-            if repo_gpgcheck is None:
-                repo_line = 'deb {0}'.format(uri)
+            if repo_gpgcheck is False:
+                repo_line = 'deb [trusted=yes check-valid-until=no] {0}'.format(uri)
             else:
-                repo_line = 'deb [trusted={0}] {1}'.format(
-                    'no' if repo_gpgcheck else 'yes', uri
-                )
+                repo_line = 'deb {0}'.format(uri)
             if not dist:
                 # create a debian flat repository setup. We consider the
                 # repository metadata to exist on the toplevel of the
@@ -244,6 +253,11 @@ class RepositoryApt(RepositoryBase):
         for repo_file in repo_files:
             if repo_file not in self.repo_names:
                 Path.wipe(repos_dir + '/' + repo_file)
+
+    def _add_components(self, components):
+        for component in components.split():
+            if component not in self.components:
+                self.components.append(component)
 
     def _create_apt_get_runtime_environment(self):
         for apt_get_dir in list(self.shared_apt_get_dir.values()):

@@ -35,13 +35,14 @@ from kiwi.system.kernel import Kernel
 from kiwi.utils.compress import Compress
 from kiwi.archive.tar import ArchiveTar
 from kiwi.system.setup import SystemSetup
+from kiwi.iso_tools.base import IsoToolsBase
 
 from kiwi.exceptions import (
     KiwiInstallBootImageError
 )
 
 
-class InstallImageBuilder(object):
+class InstallImageBuilder:
     """
     **Installation image builder**
 
@@ -96,7 +97,7 @@ class InstallImageBuilder(object):
                 xml_state.xml_data.get_name(),
                 '.' + self.arch,
                 '-' + xml_state.get_image_version(),
-                '.install.tar.xz'
+                '.install.tar'
             ]
         )
         self.dracut_config_file = ''.join(
@@ -171,41 +172,51 @@ class InstallImageBuilder(object):
             ]
         )
         squashed_image = FileSystemSquashFs(
-            device_provider=None, root_dir=self.squashed_contents
+            device_provider=None,
+            root_dir=self.squashed_contents,
+            custom_args={
+                'create_options': self.xml_state.get_fs_create_option_list()
+            }
         )
         squashed_image.create_on_file(squashed_image_file)
         Command.run(
             ['mv', squashed_image_file, self.media_dir]
         )
 
-        # setup bootloader config to boot the ISO via isolinux
-        log.info('Setting up install image bootloader configuration')
-        bootloader_config_isolinux = BootLoaderConfig(
-            'isolinux', self.xml_state, self.media_dir
+        log.info(
+            'Setting up install image bootloader configuration'
         )
-        bootloader_config_isolinux.setup_install_boot_images(
-            mbrid=None,
-            lookup_path=self.boot_image_task.boot_root_directory
+        if self.firmware.efi_mode():
+            # setup bootloader config to boot the ISO via EFI
+            # This also embedds an MBR and the respective BIOS modules
+            # for compat boot. The complete bootloader setup will be
+            # based on grub
+            bootloader_config = BootLoaderConfig(
+                'grub2', self.xml_state, root_dir=self.root_dir,
+                boot_dir=self.media_dir, custom_args={
+                    'grub_directory_name':
+                        Defaults.get_grub_boot_directory_name(self.root_dir)
+                }
+            )
+            bootloader_config.setup_install_boot_images(
+                mbrid=self.mbrid, lookup_path=self.root_dir
+            )
+        else:
+            # setup bootloader config to boot the ISO via isolinux.
+            # This allows for booting on x86 platforms in BIOS mode
+            # only.
+            bootloader_config = BootLoaderConfig(
+                'isolinux', self.xml_state, root_dir=self.root_dir,
+                boot_dir=self.media_dir
+            )
+        IsoToolsBase.setup_media_loader_directory(
+            self.boot_image_task.boot_root_directory, self.media_dir,
+            bootloader_config.get_boot_theme()
         )
-        bootloader_config_isolinux.setup_install_image_config(
-            mbrid=None
-        )
-        bootloader_config_isolinux.write()
-
-        # setup bootloader config to boot the ISO via EFI
-        bootloader_config_grub = BootLoaderConfig(
-            'grub2', self.xml_state, self.media_dir, {
-                'grub_directory_name':
-                    Defaults.get_grub_boot_directory_name(self.root_dir)
-            }
-        )
-        bootloader_config_grub.setup_install_boot_images(
-            mbrid=self.mbrid, lookup_path=self.root_dir
-        )
-        bootloader_config_grub.setup_install_image_config(
+        bootloader_config.setup_install_image_config(
             mbrid=self.mbrid
         )
-        bootloader_config_grub.write()
+        bootloader_config.write()
 
         # create initrd for install image
         log.info('Creating install image boot image')
@@ -317,12 +328,9 @@ class InstallImageBuilder(object):
 
         # create pxe install tarball
         log.info('Creating pxe install archive')
-        archive = ArchiveTar(
-            self.pxename.replace('.xz', '')
-        )
-        archive.create_xz_compressed(
-            self.pxe_dir, xz_options=self.xz_options
-        )
+        archive = ArchiveTar(self.pxename)
+
+        archive.create(self.pxe_dir)
 
     def _create_pxe_install_kernel_and_initrd(self):
         kernel = Kernel(self.boot_image_task.boot_root_directory)
@@ -350,7 +358,13 @@ class InstallImageBuilder(object):
                     self.boot_image_task.boot_root_directory
                 )
         if self.initrd_system == 'dracut':
-            self._create_dracut_install_config()
+            self.boot_image_task.include_module(
+                'kiwi-dump', install_media=True
+            )
+            if self.root_filesystem_is_multipath is False:
+                self.boot_image_task.omit_module(
+                    'multipath', install_media=True
+                )
             self._add_system_image_boot_options_to_boot_image()
         self.boot_image_task.create_initrd(
             self.mbrid, 'initrd_kiwi_install',
@@ -384,7 +398,13 @@ class InstallImageBuilder(object):
                     self.boot_image_task.boot_root_directory
                 )
         if self.initrd_system == 'dracut':
-            self._create_dracut_install_config()
+            self.boot_image_task.include_module(
+                'kiwi-dump', install_media=True
+            )
+            if self.root_filesystem_is_multipath is False:
+                self.boot_image_task.omit_module(
+                    'multipath', install_media=True
+                )
             self._add_system_image_boot_options_to_boot_image()
         self.boot_image_task.create_initrd(
             self.mbrid, 'initrd_kiwi_install',
@@ -425,33 +445,8 @@ class InstallImageBuilder(object):
         with open(initrd_trigger, 'w') as vmx_system:
             vmx_system.write('IMAGE="%s"\n' % self.squashed_diskname)
 
-    def _create_dracut_install_config(self):
-        dracut_config = [
-            'hostonly="no"',
-            'dracut_rescue_image="no"'
-        ]
-        dracut_modules = ['kiwi-lib', 'kiwi-dump']
-        dracut_modules_omit = ['kiwi-overlay', 'kiwi-live', 'kiwi-repart']
-        if self.root_filesystem_is_multipath is False:
-            dracut_modules_omit.append('multipath')
-        dracut_config.append(
-            'add_dracutmodules+=" {0} "'.format(' '.join(dracut_modules))
-        )
-        dracut_config.append(
-            'omit_dracutmodules+=" {0} "'.format(' '.join(dracut_modules_omit))
-        )
-        with open(self.dracut_config_file, 'w') as config:
-            for entry in dracut_config:
-                config.write(entry + os.linesep)
-
-    def _delete_dracut_install_config(self):
-        if os.path.exists(self.dracut_config_file):
-            os.remove(self.dracut_config_file)
-
     def __del__(self):
         log.info('Cleaning up %s instance', type(self).__name__)
-        if self.initrd_system == 'dracut':
-            self._delete_dracut_install_config()
         if self.media_dir:
             Path.wipe(self.media_dir)
         if self.pxe_dir:

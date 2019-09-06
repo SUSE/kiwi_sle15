@@ -9,7 +9,7 @@ from .test_helper import argv_kiwi_tests
 from kiwi.tasks.system_create import SystemCreateTask
 
 
-class TestSystemCreateTask(object):
+class TestSystemCreateTask:
     def setup(self):
         sys.argv = [
             sys.argv[0], '--profile', 'vmxFlavour', 'system', 'create',
@@ -33,6 +33,7 @@ class TestSystemCreateTask(object):
         )
 
         self.runtime_config = mock.Mock()
+        self.runtime_config.get_disabled_runtime_checks.return_value = []
         kiwi.tasks.base.RuntimeConfig = mock.Mock(
             return_value=self.runtime_config
         )

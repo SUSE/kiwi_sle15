@@ -11,6 +11,7 @@ from distutils.command import clean as distutils_clean
 import distutils
 import subprocess
 import os
+import sys
 
 import platform
 
@@ -18,6 +19,11 @@ from kiwi.version import __version__
 
 
 python_version = platform.python_version().split('.')[0]
+
+# sys.base_prefix points to the installation prefix set during python
+# compilation and sys.prefix points to the same path unless we are inside
+# a venv, in which case points to the $VIRTUAL_ENV value.
+is_venv = sys.base_prefix != sys.prefix if sys.version_info >= (3, 3) else False
 
 
 class sdist(setuptools_sdist.sdist):
@@ -151,6 +157,8 @@ class install(distutils_install.install):
         command = ['make']
         if self.root:
             command.append('buildroot={0}/'.format(self.root))
+        elif is_venv:
+            command.append('buildroot={0}/'.format(sys.prefix))
         command.append('python_version={0}'.format(python_version))
         command.append('tools')
         command.append('install')
@@ -175,12 +183,11 @@ config = {
     'download_url': 'https://download.opensuse.org/repositories/Virtualization:/Appliances:/Builder',
     'author_email': 'ms@suse.com',
     'version': __version__,
+    'license' : 'GPLv3+',
     'install_requires': [
         'docopt>=0.6.2',
         'lxml',
-        'xattr',
-        'future',
-        'six',
+        'pyxattr',
         'requests',
         'PyYAML'
     ],
@@ -203,11 +210,10 @@ config = {
        # classifier: http://pypi.python.org/pypi?%3Aaction=list_classifiers
        'Development Status :: 5 - Production/Stable',
        'Intended Audience :: Developers',
-       'License :: OSI Approved :: GNU General Public License v2 (GPLv2)',
+       'License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)',
        'Operating System :: POSIX :: Linux',
-       'Programming Language :: Python :: 2.7',
-       'Programming Language :: Python :: 3.4',
-       'Programming Language :: Python :: 3.5',
+       'Programming Language :: Python :: 3.6',
+       'Programming Language :: Python :: 3.7',
        'Topic :: System :: Operating System',
     ]
 }
