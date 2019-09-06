@@ -1,8 +1,8 @@
-from mock import patch
-from mock import call
+from pytest import raises
+from mock import (
+    patch, call
+)
 import mock
-
-from .test_helper import raises
 
 from kiwi.exceptions import (
     KiwiBootStrapPhaseFailed,
@@ -18,10 +18,12 @@ from kiwi.xml_description import XMLDescription
 from kiwi.xml_state import XMLState
 
 
-class TestSystemPrepare(object):
+class TestSystemPrepare:
     @patch('kiwi.system.prepare.RootInit')
     @patch('kiwi.system.prepare.RootBind')
-    def setup(self, mock_root_bind, mock_root_init):
+    @patch('kiwi.logger.log.get_logfile')
+    def setup(self, mock_get_logfile, mock_root_bind, mock_root_init):
+        mock_get_logfile.return_value = None
         description = XMLDescription(
             description='../data/example_config.xml',
             derived_from='derived/description'
@@ -60,9 +62,11 @@ class TestSystemPrepare(object):
     @patch('kiwi.system.prepare.RootImport')
     @patch('kiwi.system.prepare.RootInit')
     @patch('kiwi.system.prepare.RootBind')
+    @patch('kiwi.logger.log.get_logfile')
     def test_init_with_derived_from_image(
-        self, mock_root_bind, mock_root_init, mock_root_import
+        self, mock_get_logfile, mock_root_bind, mock_root_init, mock_root_import
     ):
+        mock_get_logfile.return_value = 'logfile'
         description = XMLDescription(
             description='../data/example_config.xml',
             derived_from='derived/description'
@@ -85,7 +89,7 @@ class TestSystemPrepare(object):
             return_value=uri
         )
         state.get_derived_from_image_uri = get_derived_from_image_uri
-        SystemPrepare(
+        system = SystemPrepare(
             xml_state=state, root_dir='root_dir',
         )
         mock_root_init.assert_called_once_with(
@@ -102,50 +106,55 @@ class TestSystemPrepare(object):
         )
         root_bind.setup_intermediate_config.assert_called_once_with()
         root_bind.mount_kernel_file_systems.assert_called_once_with()
+        assert system.issue_message == '{headline}: {reason}'
 
-    @raises(KiwiBootStrapPhaseFailed)
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     def test_install_bootstrap_packages_raises(self, mock_poll):
-        mock_poll.side_effect = Exception
-        self.system.install_bootstrap(self.manager)
+        mock_poll.side_effect = Exception('some_error')
+        with raises(KiwiBootStrapPhaseFailed) as issue:
+            self.system.install_bootstrap(self.manager)
+        assert issue.value.message == self.system.issue_message.format(
+            headline='Bootstrap package installation failed',
+            reason='some_error'
+        )
 
-    @raises(KiwiBootStrapPhaseFailed)
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     @patch('kiwi.system.prepare.ArchiveTar')
     def test_install_bootstrap_archives_raises(self, mock_tar, mock_poll):
         mock_tar.side_effect = Exception
-        self.system.install_bootstrap(self.manager)
+        with raises(KiwiBootStrapPhaseFailed):
+            self.system.install_bootstrap(self.manager)
 
-    @raises(KiwiSystemUpdateFailed)
     @patch('kiwi.system.prepare.CommandProcess.poll')
     def test_update_system_raises(self, mock_poll):
         mock_poll.side_effect = Exception
-        self.system.update_system(self.manager)
+        with raises(KiwiSystemUpdateFailed):
+            self.system.update_system(self.manager)
 
-    @raises(KiwiSystemInstallPackagesFailed)
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     def test_install_packages_raises(self, mock_poll):
         mock_poll.side_effect = Exception
-        self.system.install_packages(self.manager, ['package'])
+        with raises(KiwiSystemInstallPackagesFailed):
+            self.system.install_packages(self.manager, ['package'])
 
-    @raises(KiwiInstallPhaseFailed)
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     def test_install_system_packages_raises(self, mock_poll):
         mock_poll.side_effect = Exception
-        self.system.install_system(self.manager)
+        with raises(KiwiInstallPhaseFailed):
+            self.system.install_system(self.manager)
 
-    @raises(KiwiInstallPhaseFailed)
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     @patch('kiwi.system.prepare.ArchiveTar')
     def test_install_system_archives_raises(self, mock_tar, mock_poll):
         mock_tar.side_effect = KiwiInstallPhaseFailed
-        self.system.install_system(self.manager)
+        with raises(KiwiInstallPhaseFailed):
+            self.system.install_system(self.manager)
 
-    @raises(KiwiSystemDeletePackagesFailed)
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     def test_delete_packages_raises(self, mock_poll):
         mock_poll.side_effect = Exception
-        self.system.delete_packages(self.manager, ['package'])
+        with raises(KiwiSystemDeletePackagesFailed):
+            self.system.delete_packages(self.manager, ['package'])
 
     @patch('kiwi.system.prepare.Repository')
     @patch('kiwi.system.prepare.Uri')
@@ -182,8 +191,10 @@ class TestSystemPrepare(object):
         )
 
         mock_repo.assert_called_once_with(
-            self.system.root_bind, 'package-manager-name',
-            ['check_signatures', 'exclude_docs']
+            self.system.root_bind, 'package-manager-name', [
+                'check_signatures', 'exclude_docs',
+                '_install_langs%POSIX:C:C.UTF-8:en_US:de_DE'
+            ]
         )
         # mock local repos will be translated and bind mounted
         assert uri.translate.call_args_list == [
@@ -197,7 +208,7 @@ class TestSystemPrepare(object):
         ]
         assert repo.add_repo.call_args_list == [
             call(
-                'uri-alias', 'uri', 'yast2', 42,
+                'uri-alias', 'uri', None, 42,
                 None, None, None, None, 'credentials-file', None, None
             ),
             call(
@@ -209,6 +220,7 @@ class TestSystemPrepare(object):
             call('uri-alias'),
             call('uri-alias')
         ]
+        repo.setup_package_database_configuration.assert_called_once_with()
         repo.import_trusted_keys.assert_called_once_with(
             ['key-file-a.asc', 'key-file-b.asc']
         )
@@ -272,6 +284,7 @@ class TestSystemPrepare(object):
         )
         mock_tar.assert_called_once_with('../data/bootstrap.tgz')
         tar.extract.assert_called_once_with('root_dir')
+        self.manager.post_process_install_requests_bootstrap.assert_called_once_with()
 
     @patch('kiwi.logger.log.warning')
     @patch('kiwi.xml_state.XMLState.get_bootstrap_packages_sections')
@@ -344,12 +357,12 @@ class TestSystemPrepare(object):
             [call(False), call(True)]
         )
 
-    @raises(KiwiPackagesDeletePhaseFailed)
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     def test_pinch_system_raises(self, mock_poll):
         mock_poll.side_effect = Exception
-        self.system.pinch_system(self.manager)
-        self.manager.process_delete_requests.assert_called_once_with()
+        with raises(KiwiPackagesDeletePhaseFailed):
+            self.system.pinch_system(self.manager)
+        self.manager.process_delete_requests.assert_called_once_with(False)
 
     @patch('kiwi.package_manager.PackageManagerZypper.process_delete_requests')
     @patch('kiwi.system.prepare.Repository')
@@ -370,7 +383,16 @@ class TestSystemPrepare(object):
         self.system.__del__()
         self.system.root_bind.cleanup.assert_called_once_with()
 
-    def test_destructor_raising(self):
+    @patch('kiwi.logger.log.info')
+    def test_destructor_raising(self, mock_log):
         self.system.root_bind = mock.Mock()
-        self.system.root_bind.cleanup.side_effect = Exception
+        self.system.root_bind.cleanup.side_effect = ValueError("nothing")
         del self.system
+
+        assert mock_log.call_args_list[0] == call(
+            'Cleaning up SystemPrepare instance'
+        )
+        assert mock_log.call_args_list[1] == call(
+            'Cleaning up SystemPrepare instance failed, got an exception of'
+            ' type ValueError: nothing'
+        )

@@ -15,7 +15,7 @@ from kiwi.system.uri import Uri
 import hashlib
 
 
-class TestUri(object):
+class TestUri:
     def setup(self):
         self.mock_mkdtemp = mock.Mock()
         self.mock_manager = mock.Mock()
@@ -72,6 +72,12 @@ class TestUri(object):
         assert uri.translate(False) == \
             'obs_server/openSUSE:/Leap:/42.2/standard'
         assert mock_warn.called
+
+    def test_get_fragment(self):
+        uri = Uri('file:///myimage.tar#tag')
+        assert uri.get_fragment() == 'tag'
+        uri = Uri('file:///myimage.tar')
+        assert uri.get_fragment() == ''
 
     def test_is_remote(self):
         uri = Uri('https://example.com', 'rpm-md')

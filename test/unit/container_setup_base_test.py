@@ -8,7 +8,7 @@ from kiwi.exceptions import KiwiContainerSetupError
 from kiwi.container.setup.base import ContainerSetupBase
 
 
-class TestContainerSetupBase(object):
+class TestContainerSetupBase:
     @patch('os.path.exists')
     def setup(self, mock_exists):
         mock_exists.return_value = True
@@ -121,7 +121,7 @@ class TestContainerSetupBase(object):
             '/dev/', 'root_dir/dev/'
         )
         data.sync_data.assert_called_once_with(
-            options=['-z', '-a', '-x', '--devices', '--specials']
+            options=['-a', '-x', '--devices', '--specials']
         )
 
     @patch('kiwi.container.setup.base.Command.run')

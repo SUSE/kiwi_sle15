@@ -4,7 +4,7 @@ kiwi system prepare
 SYNOPSIS
 --------
 
-.. code-block:: bash
+.. code:: bash
 
    kiwi [global options] service <command> [<args>]
 
@@ -17,6 +17,7 @@ SYNOPSIS
        [--set-repo=<source,type,alias,priority,imageinclude,package_gpgcheck>]
        [--add-repo=<source,type,alias,priority,imageinclude,package_gpgcheck>...]
        [--add-package=<name>...]
+       [--add-bootstrap-package=<name>...]
        [--delete-package=<name>...]
        [--signing-key=<key-file>...]
    kiwi system prepare help
@@ -29,12 +30,17 @@ root directory from the specified XML description. The specified
 root directory is the root directory of the new image root system.
 As the root user you can enter this system via chroot as follows:
 
-.. code-block:: bash
+.. code:: bash
 
    $ chroot <directory> bash
 
 OPTIONS
 -------
+
+--add-bootstrap-package=<name>
+
+  specify package to install as part of the early kiwi bootstrap phase.
+  The option can be specified multiple times
 
 --add-package=<name>
 

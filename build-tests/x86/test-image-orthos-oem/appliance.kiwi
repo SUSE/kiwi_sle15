@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="6.9" name="factory-kiwi">
+<image schemaversion="7.1" name="factory-kiwi">
     <description type="system">
         <author>Julian Wolf</author>
         <contact>juwolf@suse.de</contact>
@@ -59,7 +59,6 @@
         <package name="yast2-metapackage-handler"/>
         <package name="filesystem"/>
         <package name="glibc-locale"/>
-        <package name="pkg-config"/>
         <package name="acl"/>
         <package name="sg3_utils"/>
         <package name="elfutils"/>

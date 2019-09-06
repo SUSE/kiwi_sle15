@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="6.9" name="Docker-openSUSE-Tumbleweed">
+<image schemaversion="7.1" name="Docker-openSUSE-Tumbleweed">
     <description type="system">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.com</contact>
@@ -58,7 +58,6 @@
         <package name="sudo"/>
         <package name="rsync"/>
         <package name="sg3_utils"/>
-        <package name="pkg-config"/>
         <package name="btrfsprogs"/>
         <package name="squashfs"/>
         <package name="kernel-default"/>
@@ -82,7 +81,6 @@
         <package name="kmod"/>
         <package name="ncurses-utils"/>
         <package name="pinentry"/>
-        <package name="pkg-config"/>
         <package name="sg3_utils"/>
         <package name="udev"/>
     </packages>

@@ -17,7 +17,7 @@
 #
 
 
-class RepositoryBase(object):
+class RepositoryBase:
     """
     Implements base class for package manager repository handling
 
@@ -81,6 +81,14 @@ class RepositoryBase(object):
         :param credentials_file: unused
         :param repo_gpgcheck: unused
         :param pkg_gpgcheck: unused
+        """
+        raise NotImplementedError
+
+    def setup_package_database_configuration(self):
+        """
+        Setup package database configuration
+
+        Implementation in specialized repository class
         """
         raise NotImplementedError
 

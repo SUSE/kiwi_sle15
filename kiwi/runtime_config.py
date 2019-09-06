@@ -27,7 +27,7 @@ from .exceptions import (
 )
 
 
-class RuntimeConfig(object):
+class RuntimeConfig:
     """
     **Implements reading of runtime configuration file:**
 
@@ -41,15 +41,17 @@ class RuntimeConfig(object):
     def __init__(self):
         self.config_data = None
 
-        config_file = os.sep.join(
-            [self._home_path(), '.config', 'kiwi', 'config.yml']
-        )
-        if not os.path.exists(config_file):
+        config_file = None
+        if self._home_path():
+            config_file = os.sep.join(
+                [self._home_path(), '.config', 'kiwi', 'config.yml']
+            )
+        if not config_file or not os.path.exists(config_file):
             config_file = '/etc/kiwi.yml'
         if os.path.exists(config_file):
             log.info('Reading runtime config file: {0}'.format(config_file))
             with open(config_file, 'r') as config:
-                self.config_data = yaml.load(config)
+                self.config_data = yaml.safe_load(config)
 
     def get_obs_download_server_url(self):
         """
@@ -240,6 +242,21 @@ class RuntimeConfig(object):
         )
         return StringToSize.to_bytes(max_size) if max_size else None
 
+    def get_disabled_runtime_checks(self):
+        """
+        Returns disabled runtime checks. Checks can be disabled with:
+
+        runtime_checks:
+            - disable: check_container_tool_chain_installed
+
+        if the provided string does not match any RuntimeChecker method it is
+        just ignored.
+        """
+        disabled_checks = self._get_attribute(
+            element='runtime_checks', attribute='disable'
+        )
+        return disabled_checks or ''
+
     def _get_attribute(self, element, attribute):
         if self.config_data:
             try:
@@ -255,4 +272,4 @@ class RuntimeConfig(object):
                 )
 
     def _home_path(self):
-        return os.environ['HOME']
+        return os.environ.get('HOME')

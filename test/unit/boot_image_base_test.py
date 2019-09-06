@@ -13,7 +13,7 @@ from kiwi.exceptions import (
 from kiwi.boot.image.base import BootImageBase
 
 
-class TestBootImageBase(object):
+class TestBootImageBase:
     @patch('kiwi.boot.image.base.os.path.exists')
     @patch('platform.machine')
     def setup(self, mock_machine, mock_exists):
@@ -82,8 +82,10 @@ class TestBootImageBase(object):
 
     @patch('os.listdir')
     def test_is_prepared(self, mock_listdir):
-        mock_listdir.return_value = True
-        assert self.boot_image.is_prepared() == mock_listdir.return_value
+        mock_listdir.return_value = []
+        assert self.boot_image.is_prepared() is False
+        mock_listdir.return_value = ['a', 'b', 'c']
+        assert self.boot_image.is_prepared() is True
 
     @patch('kiwi.boot.image.base.XMLState.copy_strip_sections')
     def test_import_system_description_elements(self, mock_strip):
@@ -116,3 +118,8 @@ class TestBootImageBase(object):
     @raises(NotImplementedError)
     def test_get_boot_names(self):
         self.boot_image.get_boot_names()
+
+    def test_noop_methods(self):
+        self.boot_image.include_module('module')
+        self.boot_image.omit_module('module')
+        self.boot_image.write_system_config_file({'config_key': 'value'})

@@ -1,6 +1,4 @@
 from mock import patch
-import sys
-import pytest
 
 from .test_helper import raises
 
@@ -8,7 +6,7 @@ from kiwi.utils.codec import Codec
 from kiwi.exceptions import KiwiDecodingError
 
 
-class TestCodec(object):
+class TestCodec:
 
     def setup(self):
         self.literal = bytes(b'\xc3\xbc')
@@ -27,6 +25,9 @@ class TestCodec(object):
         mock_decode.side_effect = mocked_decode
         assert msg == Codec.decode(self.literal)
         assert mock_warn.called
+
+    def test_decode_None_literal(self):
+        assert '' == Codec.decode(None)
 
     @patch('kiwi.utils.codec.Codec._wrapped_decode')
     def test_decode(self, mock_decode):
@@ -49,15 +50,6 @@ class TestCodec(object):
         Codec.decode(self.literal)
         assert mock_warn.called
 
-    @pytest.mark.skipif(sys.version_info > (3, 0), reason="requires Python2")
-    @patch('kiwi.logger.log.warning')
-    def test_real_decode_non_ascii(self, mock_warn):
-        reload(sys)  # noqa:F821
-        sys.setdefaultencoding('ASCII')
-        assert unichr(252) == Codec.decode(self.literal)  # noqa:F821
-        assert mock_warn.called
-
-    @pytest.mark.skipif(sys.version_info < (3, 0), reason="requires Python3")
     def test_wrapped_decode(self):
         assert self.literal.decode() == Codec._wrapped_decode(
             self.literal, 'utf-8'

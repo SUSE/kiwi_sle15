@@ -1,12 +1,14 @@
 from kiwi.bootloader.template.zipl import BootLoaderTemplateZipl
 
 
-class TestBootLoaderTemplateZipl(object):
+class TestBootLoaderTemplateZipl:
     def setup(self):
         self.zipl = BootLoaderTemplateZipl()
 
     def test_get_template(self):
-        assert self.zipl.get_template().substitute(
+        assert self.zipl.get_template(
+            failsafe=True, targettype='CDL'
+        ).substitute(
             device='/dev/loop0',
             target_type='CDL',
             blocksize='4096',

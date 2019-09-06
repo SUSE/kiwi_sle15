@@ -32,7 +32,7 @@ result_file_type = namedtuple(
 )
 
 
-class Result(object):
+class Result:
     """
     **Collect image building results**
 
@@ -102,8 +102,8 @@ class Result(object):
                 'Failed to pickle dump results: %s' % format(e)
             )
 
-    @classmethod
-    def load(cls, filename):
+    @staticmethod
+    def load(filename):
         """
         Load pickle dumped filename into a Result instance
 

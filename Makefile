@@ -13,7 +13,6 @@ version := $(shell \
 
 .PHONY: test
 test:
-	tox -e unit_py3_4
 	tox -e unit_py3_6
 
 flake:
@@ -54,11 +53,11 @@ install:
 	done
 	# completion
 	install -d -m 755 ${buildroot}etc/bash_completion.d
-	$(python) helper/completion_generator \
+	$(python) helper/completion_generator.py \
 		> ${buildroot}etc/bash_completion.d/kiwi-ng.sh
 
 tox:
-	tox
+	tox "-n 5"
 
 kiwi/schema/kiwi.rng: kiwi/schema/kiwi.rnc
 	# whenever the schema is changed this target will convert

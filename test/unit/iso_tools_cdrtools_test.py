@@ -7,7 +7,7 @@ from kiwi.iso_tools.cdrtools import IsoToolsCdrTools
 from kiwi.exceptions import KiwiIsoToolError
 
 
-class TestIsoToolsCdrTools(object):
+class TestIsoToolsCdrTools:
     @patch('platform.machine')
     def setup(self, mock_machine):
         mock_machine.return_value = 'x86_64'
@@ -54,7 +54,7 @@ class TestIsoToolsCdrTools(object):
         )
         mock_walk_results = [
             [('source-dir', ('EFI',), ())],
-            [('source-dir', ('bar', 'baz'), ('efi', 'eggs'))]
+            [('source-dir', ('bar', 'baz'), ('eggs', 'efi'))]
         ]
 
         def side_effect(arg):
@@ -74,11 +74,11 @@ class TestIsoToolsCdrTools(object):
         assert self.file_mock.write.call_args_list == [
             call('source-dir/boot/x86_64/boot.catalog 3\n'),
             call('source-dir/boot/x86_64/loader/isolinux.bin 2\n'),
-            call('source-dir/efi 1000001\n'),
-            call('source-dir/eggs 1\n'),
+            call('source-dir/EFI 1\n'),
             call('source-dir/bar 1\n'),
             call('source-dir/baz 1\n'),
-            call('source-dir/EFI 1\n'),
+            call('source-dir/efi 1000001\n'),
+            call('source-dir/eggs 1\n'),
             call('source-dir/header_end 1000000\n')
         ]
         assert self.iso_tool.iso_parameters == [
@@ -92,6 +92,23 @@ class TestIsoToolsCdrTools(object):
         ]
         assert self.iso_tool.iso_loaders == [
             '-b', 'boot/x86_64/loader/isolinux.bin',
+            '-c', 'boot/x86_64/boot.catalog'
+        ]
+
+        self.iso_tool.iso_loaders = []
+        self.file_mock.write.reset_mock()
+        self.iso_tool.init_iso_creation_parameters(
+            {
+                'efi_mode': 'uefi',
+                'mbr_id': 'app_id',
+                'publisher': 'org',
+                'preparer': 'name',
+                'volume_id': 'vol_id',
+                'udf': True
+            }
+        )
+        assert self.iso_tool.iso_loaders == [
+            '-b', 'boot/x86_64/loader/eltorito.img',
             '-c', 'boot/x86_64/boot.catalog'
         ]
 
@@ -128,11 +145,12 @@ class TestIsoToolsCdrTools(object):
         ]
 
     @patch('kiwi.iso_tools.cdrtools.Command.run')
-    def test_create_iso(self, mock_command):
+    @patch('kiwi.iso_tools.cdrtools.Path.which')
+    def test_create_iso(self, mock_Path_which, mock_command):
         self.iso_tool.create_iso('myiso', hidden_files=['hide_me'])
         mock_command.assert_called_once_with(
             [
-                '/usr/bin/mkisofs',
+                mock_Path_which.return_value,
                 '-hide', 'hide_me', '-hide-joliet', 'hide_me',
                 '-o', 'myiso', 'source-dir'
             ]

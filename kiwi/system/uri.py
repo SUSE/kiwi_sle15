@@ -17,7 +17,7 @@
 #
 import os
 from tempfile import mkdtemp
-from six.moves.urllib.parse import urlparse
+from urllib.parse import urlparse
 import requests
 import hashlib
 
@@ -35,7 +35,7 @@ from kiwi.exceptions import (
 )
 
 
-class Uri(object):
+class Uri:
     """
     **Normalize url types available in a kiwi configuration into
     standard mime types**
@@ -219,9 +219,9 @@ class Uri(object):
         """
         Returns the fragment part of the URI.
 
-        :return: fragment part of the URI if any, None otherwise
+        :return: fragment part of the URI if any, empty string otherwise
 
-        :rtype: str, None
+        :rtype: str
         """
         uri = urlparse(self.uri)
         return uri.fragment

@@ -23,7 +23,7 @@ from kiwi.storage.mapped_device import MappedDevice
 from builtins import bytes
 
 
-class TestDiskBuilder(object):
+class TestDiskBuilder:
     @patch('os.path.exists')
     @patch('platform.machine')
     def setup(self, mock_machine, mock_exists):
@@ -53,7 +53,8 @@ class TestDiskBuilder(object):
             'readonly': MappedDevice('/dev/readonly-root-device', mock.Mock()),
             'boot': MappedDevice('/dev/boot-device', mock.Mock()),
             'prep': MappedDevice('/dev/prep-device', mock.Mock()),
-            'efi': MappedDevice('/dev/efi-device', mock.Mock())
+            'efi': MappedDevice('/dev/efi-device', mock.Mock()),
+            'spare': MappedDevice('/dev/spare-device', mock.Mock())
         }
         self.id_map = {
             'kiwi_RootPart': 1,
@@ -70,7 +71,7 @@ class TestDiskBuilder(object):
             return_value='blkid_result'
         )
         self.block_operation.get_filesystem = mock.Mock(
-            return_value='filesystem'
+            return_value='blkid_result_fs'
         )
         kiwi.builder.disk.BlockID = mock.Mock(
             return_value=self.block_operation
@@ -123,6 +124,8 @@ class TestDiskBuilder(object):
             return_value=self.disk
         )
         self.disk_setup = mock.Mock()
+        self.disk_setup.get_disksize_mbytes.return_value = 1024
+        self.disk_setup.boot_partition_size.return_value = 0
         self.disk_setup.get_efi_label = mock.Mock(
             return_value='EFI'
         )
@@ -162,6 +165,9 @@ class TestDiskBuilder(object):
             return_value=self.boot_image_task
         )
         self.firmware = mock.Mock()
+        self.firmware.get_legacy_bios_partition_size.return_value = 0
+        self.firmware.get_efi_partition_size.return_value = 0
+        self.firmware.get_prep_partition_size.return_value = 0
         self.firmware.efi_mode = mock.Mock(
             return_value='efi'
         )
@@ -456,8 +462,6 @@ class TestDiskBuilder(object):
         assert mock_open.call_args_list == [
             call('boot_dir/config.partids', 'w'),
             call('root_dir/boot/mbrid', 'w'),
-            call('root_dir/etc/dracut.conf.d/02-kiwi.conf', 'w'),
-            call('root_dir/etc/dracut.conf.d/02-kiwi.conf', 'w'),
             call('boot_dir/config.bootoptions', 'w'),
             call('/dev/some-loop', 'wb')
         ]
@@ -465,13 +469,6 @@ class TestDiskBuilder(object):
             call('kiwi_BootPart="1"\n'),
             call('kiwi_RootPart="1"\n'),
             call('0x0f0f0f0f\n'),
-            call('hostonly="no"\n'),
-            call('dracut_rescue_image="no"\n'),
-            # before dracut is called, image dracut setup
-            call('add_dracutmodules+=" kiwi-lib kiwi-repart "\n'),
-            call('omit_dracutmodules+=" kiwi-live kiwi-dump multipath kiwi-overlay "\n'),
-            # after dracut was called, system dracut setup
-            call('omit_dracutmodules+=" kiwi-live kiwi-dump kiwi-repart kiwi-overlay "\n'),
             call('boot_cmdline\n'),
             call(bytes(b'\x0f\x0f\x0f\x0f'))
         ]
@@ -489,6 +486,11 @@ class TestDiskBuilder(object):
             call('/config.partids'),
             call('/recovery.partition.size')
         ]
+        self.boot_image_task.include_module.assert_called_once_with(
+            'kiwi-repart'
+        )
+        self.boot_image_task.omit_module.assert_called_once_with('multipath')
+        assert self.boot_image_task.write_system_config_file.call_args_list == []
 
     @patch('kiwi.builder.disk.FileSystem')
     @patch('kiwi.builder.disk.FileSystemSquashFs')
@@ -529,7 +531,7 @@ class TestDiskBuilder(object):
                 'boot/*', 'boot/.*', 'boot/efi/*', 'boot/efi/.*'
             ], filename='tempname')
         ]
-        self.disk.create_root_readonly_partition.assert_called_once_with(51)
+        self.disk.create_root_readonly_partition.assert_called_once_with(11)
         assert mock_command.call_args_list[2] == call(
             ['dd', 'if=tempname', 'of=/dev/readonly-root-device']
         )
@@ -537,17 +539,16 @@ class TestDiskBuilder(object):
             call('kiwi_BootPart="1"\n'),
             call('kiwi_RootPart="1"\n'),
             call('0x0f0f0f0f\n'),
-            call('hostonly="no"\n'),
-            call('dracut_rescue_image="no"\n'),
-            # before dracut is called, image dracut setup
-            call('add_dracutmodules+=" kiwi-overlay kiwi-lib kiwi-repart "\n'),
-            call('omit_dracutmodules+=" kiwi-live kiwi-dump multipath "\n'),
-            # after dracut was called, system dracut setup
-            call('add_dracutmodules+=" kiwi-overlay "\n'),
-            call('omit_dracutmodules+=" kiwi-live kiwi-dump kiwi-repart "\n'),
             call('boot_cmdline\n'),
             call(b'\x0f\x0f\x0f\x0f')
         ]
+        assert self.boot_image_task.include_module.call_args_list == [
+            call('kiwi-overlay'), call('kiwi-repart')
+        ]
+        self.boot_image_task.omit_module.assert_called_once_with('multipath')
+        self.boot_image_task.write_system_config_file.assert_called_once_with(
+            config={'modules': ['kiwi-overlay']}
+        )
 
     @patch('kiwi.builder.disk.FileSystem')
     @patch_open
@@ -674,14 +675,17 @@ class TestDiskBuilder(object):
         mock_fs.return_value = filesystem
         self.disk_builder.volume_manager_name = None
         self.disk_builder.luks = 'passphrase'
+        self.disk_setup.need_boot_partition.return_value = False
+        self.disk_builder.boot_is_crypto = True
         self.disk_builder.create_disk()
         self.luks_root.create_crypto_luks.assert_called_once_with(
-            passphrase='passphrase', os=None
+            passphrase='passphrase', os=None, keyfile='root_dir/.root.keyfile'
         )
         self.luks_root.create_crypttab.assert_called_once_with(
             'root_dir/etc/crypttab'
         )
         assert self.boot_image_task.include_file.call_args_list == [
+            call('/.root.keyfile'),
             call('/config.partids'),
             call('/etc/crypttab')
         ]
@@ -724,17 +728,17 @@ class TestDiskBuilder(object):
         self.setup.create_fstab.assert_called_once_with(
             [
                 'fstab_volume_entries',
-                'UUID=blkid_result / filesystem ro 0 0',
-                'UUID=blkid_result /boot filesystem defaults 0 0',
-                'UUID=blkid_result /boot/efi filesystem defaults 0 0'
+                'UUID=blkid_result / blkid_result_fs ro 0 0',
+                'UUID=blkid_result /boot blkid_result_fs defaults 0 0',
+                'UUID=blkid_result /boot/efi blkid_result_fs defaults 0 0'
             ]
         )
         self.boot_image_task.setup.create_fstab.assert_called_once_with(
             [
                 'fstab_volume_entries',
-                'UUID=blkid_result / filesystem ro 0 0',
-                'UUID=blkid_result /boot filesystem defaults 0 0',
-                'UUID=blkid_result /boot/efi filesystem defaults 0 0'
+                'UUID=blkid_result / blkid_result_fs ro 0 0',
+                'UUID=blkid_result /boot blkid_result_fs defaults 0 0',
+                'UUID=blkid_result /boot/efi blkid_result_fs defaults 0 0'
             ]
         )
 
@@ -797,8 +801,33 @@ class TestDiskBuilder(object):
         self.disk_builder.volume_manager_name = None
         self.disk_builder.install_media = False
         self.disk_builder.spare_part_mbsize = 42
+        self.disk_builder.spare_part_fs = 'ext4'
+        self.disk_builder.spare_part_mountpoint = '/var'
+        self.disk_builder.spare_part_is_last = False
         self.disk_builder.create_disk()
         self.disk.create_spare_partition.assert_called_once_with(42)
+        assert mock_fs.call_args_list[0] == call(
+            self.disk_builder.spare_part_fs,
+            self.device_map['spare'],
+            'root_dir/var/'
+        )
+        assert filesystem.sync_data.call_args_list.pop() == call(
+            [
+                'image', '.profile', '.kconfig', '.buildenv',
+                'var/cache/kiwi', 'var/*', 'var/.*',
+                'boot/*', 'boot/.*', 'boot/efi/*', 'boot/efi/.*'
+            ]
+        )
+        assert 'UUID=blkid_result /var blkid_result_fs defaults 0 0' in \
+            self.disk_builder.generic_fstab_entries
+
+        self.disk.create_root_partition.reset_mock()
+        self.disk.create_spare_partition.reset_mock()
+        self.disk_builder.spare_part_is_last = True
+        self.disk_builder.create_disk()
+        self.disk.create_spare_partition.assert_called_once_with(
+            'all_free'
+        )
 
     @patch('kiwi.builder.disk.LoopDevice')
     @patch('kiwi.builder.disk.Partitioner')

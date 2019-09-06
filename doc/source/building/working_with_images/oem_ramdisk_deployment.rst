@@ -50,7 +50,7 @@ follows:
 
 .. code:: bash
 
-    $ qemu -cdrom LimeJeOS-Leap-42.3.x86_64-1.42.3.install.iso
+    $ qemu -cdrom {exc_image_base_name}.x86_64-{exc_image_version}.install.iso
 
 .. note:: Enough Main Memory
 
@@ -81,6 +81,4 @@ the machine because the system was deployed into RAM
     it would loose the ramdisk contents. Thus the dracut initrd driving
     the deployment is also the environment to boot the system.
     There are cases where this environment is not suitable to boot
-    the system. One example would be luks encrypted images which requires
-    to run unlock code inside of the initrd which is not present in the
-    initrd created for deployment.
+    the system.

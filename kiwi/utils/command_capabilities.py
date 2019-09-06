@@ -23,7 +23,7 @@ from kiwi.logger import log
 from kiwi.exceptions import KiwiCommandCapabilitiesError
 
 
-class CommandCapabilities(object):
+class CommandCapabilities:
     """
     **Validation of command version flags or version**
 
@@ -31,9 +31,9 @@ class CommandCapabilities(object):
     so it can look specific flags on help message, check
     command version, etc.
     """
-    @classmethod
+    @staticmethod
     def has_option_in_help(
-        cls, call, flag, help_flags=None,
+        call, flag, help_flags=None,
         root=None, raise_on_error=True
     ):
         """
@@ -70,9 +70,9 @@ class CommandCapabilities(object):
             log.warning(message)
         return False
 
-    @classmethod
+    @staticmethod
     def check_version(
-        cls, call, version_waterline, version_flags=None,
+        call, version_waterline, version_flags=None,
         root=None, raise_on_error=True
     ):
         """

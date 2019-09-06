@@ -9,7 +9,7 @@ from .test_helper import argv_kiwi_tests
 from kiwi.defaults import Defaults
 
 
-class TestDefaults(object):
+class TestDefaults:
     def setup(self):
         self.defaults = Defaults()
 
@@ -64,14 +64,6 @@ class TestDefaults(object):
             lookup_path='lookup_path'
         ) == 'grub'
 
-    @patch('kiwi.defaults.sys')
-    @patch('kiwi.defaults.reload_module')
-    def test_set_python_default_encoding_to_utf8(self, mock_reload, mock_sys):
-        mock_sys.version_info.major = 2
-        Defaults.set_python_default_encoding_to_utf8()
-        mock_reload.assert_called_once_with(mock_sys)
-        mock_sys.setdefaultencoding.assert_called_once_with('utf-8')
-
     def test_get_live_dracut_module_from_flag(self):
         assert Defaults.get_live_dracut_module_from_flag('foo') == \
             'kiwi-live'
@@ -93,3 +85,7 @@ class TestDefaults(object):
         assert Defaults.get_unsigned_grub_loader('root') == \
             mock_glob.return_value.pop()
         mock_glob.assert_called_once_with('root/usr/share/grub*/*-efi/grub.efi')
+
+    def test_is_x86_arch(self):
+        assert Defaults.is_x86_arch('x86_64') is True
+        assert Defaults.is_x86_arch('aarch64') is False
