@@ -69,6 +69,13 @@ class Defaults:
         return 256
 
     @staticmethod
+    def get_swapsize_mbytes():
+        """
+        Provides swapsize in MB
+        """
+        return 128
+
+    @staticmethod
     def get_xz_compression_options():
         """
         Provides compression options for the xz compressor
@@ -349,6 +356,20 @@ class Defaults:
             return 'grub'
 
     @staticmethod
+    def get_grub_config_tool():
+        """
+        Provides full qualified path name to grub mkconfig utility
+
+        :return: file path name
+
+        :rtype: str
+        """
+        for grub_mkconfig_tool in ['grub2-mkconfig', 'grub-mkconfig']:
+            grub_mkconfig_tool_file_path = Path.which(grub_mkconfig_tool)
+            if grub_mkconfig_tool_file_path:
+                return grub_mkconfig_tool_file_path
+
+    @staticmethod
     def get_grub_basic_modules(multiboot):
         """
         Provides list of basic grub modules
@@ -415,8 +436,7 @@ class Defaults:
         ]
         if host_architecture == 'x86_64':
             modules += [
-                'efi_uga',
-                'linuxefi'
+                'efi_uga'
             ]
         return modules
 
@@ -545,6 +565,24 @@ class Defaults:
                 return shim_file
 
     @staticmethod
+    def get_grub_efi_font_directory(root_path):
+        """
+        Provides distribution specific EFI font directory used with grub.
+
+        :param string root_path: image root path
+
+        :return: file path or None
+
+        :rtype: str
+        """
+        font_dir_patterns = [
+            '/boot/efi/EFI/*/fonts'
+        ]
+        for font_dir_pattern in font_dir_patterns:
+            for font_dir in glob.iglob(root_path + font_dir_pattern):
+                return font_dir
+
+    @staticmethod
     def get_unsigned_grub_loader(root_path):
         """
         Provides unsigned grub efi loader file path
@@ -560,7 +598,8 @@ class Defaults:
         """
         unsigned_grub_file_patterns = [
             '/usr/share/grub*/*-efi/grub.efi',
-            '/usr/lib/grub*/*-efi/grub.efi'
+            '/usr/lib/grub*/*-efi/grub.efi',
+            '/boot/efi/EFI/*/grubx64.efi'
         ]
         for unsigned_grub_file_pattern in unsigned_grub_file_patterns:
             for unsigned_grub_file in glob.iglob(

@@ -16,11 +16,12 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import os
+import logging
 import platform
 from collections import namedtuple
 
 # project
-from kiwi.logger import log
+from kiwi.mount_manager import MountManager
 from kiwi.storage.setup import DiskSetup
 from kiwi.path import Path
 from kiwi.defaults import Defaults
@@ -28,6 +29,8 @@ from kiwi.defaults import Defaults
 from kiwi.exceptions import (
     KiwiBootLoaderTargetError
 )
+
+log = logging.getLogger('kiwi')
 
 
 class BootLoaderConfigBase:
@@ -44,6 +47,15 @@ class BootLoaderConfigBase:
         self.xml_state = xml_state
         self.arch = platform.machine()
 
+        self.volumes_mount = []
+        self.root_mount = None
+        self.boot_mount = None
+        self.efi_mount = None
+        self.device_mount = None
+        self.proc_mount = None
+        self.tmp_mount = None
+
+        self.root_filesystem_is_overlay = xml_state.build_type.get_overlayroot()
         self.post_init(custom_args)
 
     def post_init(self, custom_args):
@@ -64,8 +76,19 @@ class BootLoaderConfigBase:
         """
         raise NotImplementedError
 
+    def write_meta_data(self, root_uuid=None, boot_options=''):
+        """
+        Write bootloader setup meta data files
+
+        :param string root_uuid: root device UUID
+        :param string boot_options: kernel options as string
+
+        Implementation in specialized bootloader class optional
+        """
+        pass
+
     def setup_disk_image_config(
-        self, boot_uuid, root_uuid, hypervisor, kernel, initrd, boot_options
+        self, boot_uuid, root_uuid, hypervisor, kernel, initrd, boot_options={}
     ):
         """
         Create boot config file to boot from disk.
@@ -75,7 +98,15 @@ class BootLoaderConfigBase:
         :param string hypervisor: hypervisor name
         :param string kernel: kernel name
         :param string initrd: initrd name
-        :param string boot_options: kernel options as string
+        :param dict boot_options:
+            custom options dictionary required to setup the bootloader.
+            The scope of the options covers all information needed
+            to setup and configure the bootloader and gets effective
+            in the individual implementation. boot_options should
+            not be mixed up with commandline options used at boot time.
+            This information is provided from the get_*_cmdline
+            methods. The contents of the dictionary can vary between
+            bootloaders or even not be needed
 
         Implementation in specialized bootloader class required
         """
@@ -450,6 +481,66 @@ class BootLoaderConfigBase:
         else:
             return gfxmode
 
+    def _mount_system(
+        self, root_device, boot_device, efi_device=None, volumes=None
+    ):
+        self.root_mount = MountManager(
+            device=root_device
+        )
+        self.boot_mount = MountManager(
+            device=boot_device,
+            mountpoint=self.root_mount.mountpoint + '/boot'
+        )
+        if efi_device:
+            self.efi_mount = MountManager(
+                device=efi_device,
+                mountpoint=self.root_mount.mountpoint + '/boot/efi'
+            )
+
+        self.root_mount.mount()
+
+        if not self.root_mount.device == self.boot_mount.device:
+            self.boot_mount.mount()
+
+        if efi_device:
+            self.efi_mount.mount()
+
+        if volumes:
+            for volume_path in Path.sort_by_hierarchy(
+                sorted(volumes.keys())
+            ):
+                volume_mount = MountManager(
+                    device=volumes[volume_path]['volume_device'],
+                    mountpoint=self.root_mount.mountpoint + '/' + volume_path
+                )
+                self.volumes_mount.append(volume_mount)
+                volume_mount.mount(
+                    options=[volumes[volume_path]['volume_options']]
+                )
+
+        if self.root_filesystem_is_overlay:
+            # In case of an overlay root system all parts of the rootfs
+            # are read-only by squashfs except for the extra boot partition.
+            # However tools like grub's mkconfig creates temporary files
+            # at call time and therefore /tmp needs to be writable during
+            # the call time of the tools
+            self.tmp_mount = MountManager(
+                device='/tmp',
+                mountpoint=self.root_mount.mountpoint + '/tmp'
+            )
+            self.tmp_mount.bind_mount()
+
+        self.device_mount = MountManager(
+            device='/dev',
+            mountpoint=self.root_mount.mountpoint + '/dev'
+        )
+        self.proc_mount = MountManager(
+            device='/proc',
+            mountpoint=self.root_mount.mountpoint + '/proc'
+        )
+        self.device_mount.bind_mount()
+        self.proc_mount.bind_mount()
+
     def _get_root_cmdline_parameter(self, uuid):
         firmware = self.xml_state.build_type.get_firmware()
         initrd_system = self.xml_state.get_initrd_system()
@@ -482,3 +573,20 @@ class BootLoaderConfigBase:
                 log.warning(
                     'root=UUID=<uuid> setup requested, but uuid is not provided'
                 )
+
+    def __del__(self):
+        log.info('Cleaning up %s instance', type(self).__name__)
+        for volume_mount in reversed(self.volumes_mount):
+            volume_mount.umount()
+        if self.device_mount:
+            self.device_mount.umount()
+        if self.proc_mount:
+            self.proc_mount.umount()
+        if self.efi_mount:
+            self.efi_mount.umount()
+        if self.tmp_mount:
+            self.tmp_mount.umount()
+        if self.boot_mount:
+            self.boot_mount.umount()
+        if self.root_mount:
+            self.root_mount.umount()

@@ -16,6 +16,7 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import os
+import logging
 from tempfile import mkdtemp
 from tempfile import NamedTemporaryFile
 import platform
@@ -37,13 +38,14 @@ from kiwi.system.result import Result
 from kiwi.iso_tools.iso import Iso
 from kiwi.system.identifier import SystemIdentifier
 from kiwi.system.kernel import Kernel
-from kiwi.logger import log
 from kiwi.runtime_config import RuntimeConfig
 from kiwi.iso_tools.base import IsoToolsBase
 
 from kiwi.exceptions import (
     KiwiLiveBootImageError
 )
+
+log = logging.getLogger('kiwi')
 
 
 class LiveImageBuilder:
@@ -166,6 +168,7 @@ class LiveImageBuilder:
             self.boot_image.boot_root_directory, self.media_dir,
             bootloader_config.get_boot_theme()
         )
+        bootloader_config.write_meta_data()
         bootloader_config.setup_live_image_config(
             mbrid=self.mbrid
         )
