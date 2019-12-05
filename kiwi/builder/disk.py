@@ -16,6 +16,7 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import os
+import logging
 import platform
 import pickle
 from tempfile import NamedTemporaryFile
@@ -35,7 +36,6 @@ from kiwi.storage.luks_device import LuksDevice
 from kiwi.filesystem import FileSystem
 from kiwi.filesystem.squashfs import FileSystemSquashFs
 from kiwi.volume_manager import VolumeManager
-from kiwi.logger import log
 from kiwi.command import Command
 from kiwi.system.setup import SystemSetup
 from kiwi.builder.install import InstallImageBuilder
@@ -52,6 +52,8 @@ from kiwi.exceptions import (
     KiwiInstallMediaError,
     KiwiVolumeManagerSetupError
 )
+
+log = logging.getLogger('kiwi')
 
 
 class DiskBuilder:
@@ -104,6 +106,7 @@ class DiskBuilder:
         self.target_removable = xml_state.build_type.get_target_removable()
         self.root_filesystem_is_multipath = \
             xml_state.get_oemconfig_oem_multipath_scan()
+        self.swap_mbytes = xml_state.get_oemconfig_swap_mbytes()
         self.disk_setup = DiskSetup(
             xml_state, root_dir
         )
@@ -272,8 +275,9 @@ class DiskBuilder:
         # create luks on current root device if requested
         if self.luks:
             self.luks_root = LuksDevice(device_map['root'])
+            self.luks_boot_keyname = '/.root.keyfile'
             self.luks_boot_keyfile = ''.join(
-                [self.root_dir, '/.root.keyfile']
+                [self.root_dir, self.luks_boot_keyname]
             )
             self.luks_root.create_crypto_luks(
                 passphrase=self.luks,
@@ -281,6 +285,13 @@ class DiskBuilder:
                 keyfile=self.luks_boot_keyfile if self.boot_is_crypto else None
             )
             if self.boot_is_crypto:
+                self.luks_boot_keyfile_setup = ''.join(
+                    [self.root_dir, '/etc/dracut.conf.d/99-luks-boot.conf']
+                )
+                self.boot_image.write_system_config_file(
+                    config={'install_items': [self.luks_boot_keyname]},
+                    config_file=self.luks_boot_keyfile_setup
+                )
                 self.boot_image.include_file(
                     os.sep + os.path.basename(self.luks_boot_keyfile)
                 )
@@ -312,7 +323,7 @@ class DiskBuilder:
                     self.xml_state.get_build_type_name()
             }
             volume_manager = VolumeManager(
-                self.volume_manager_name, device_map['root'],
+                self.volume_manager_name, device_map,
                 self.root_dir + '/',
                 self.volumes,
                 volume_manager_custom_parameters
@@ -328,7 +339,8 @@ class DiskBuilder:
                 self.persistency_type, self.requested_filesystem
             )
             self.system = volume_manager
-            device_map['root'] = volume_manager.get_device()['root']
+            device_map['root'] = volume_manager.get_device().get('root')
+            device_map['swap'] = volume_manager.get_device().get('swap')
         else:
             log.info(
                 'Creating root(%s) filesystem on %s',
@@ -347,6 +359,15 @@ class DiskBuilder:
                 label=self.disk_setup.get_root_label()
             )
             self.system = filesystem
+
+        # create swap on current root device if requested
+        if self.swap_mbytes:
+            swap = FileSystem(
+                'swap', device_map['swap']
+            )
+            swap.create_on_device(
+                label='SWAP'
+            )
 
         # create a random image identifier
         self.mbrid = SystemIdentifier()
@@ -389,7 +410,7 @@ class DiskBuilder:
         # create second stage metadata to system image
         self._copy_first_boot_files_to_system_image()
 
-        self._write_bootloader_config_to_system_image(device_map)
+        self._write_bootloader_meta_data_to_system_image(device_map)
 
         self.mbrid.write_to_disk(
             self.disk.storage_provider
@@ -705,6 +726,14 @@ class DiskBuilder:
             )
             disksize_used_mbytes += partition_mbsize
 
+        if self.swap_mbytes:
+            if not self.volume_manager_name or self.volume_manager_name != 'lvm':
+                log.info('--> creating SWAP partition')
+                self.disk.create_swap_partition(
+                    self.swap_mbytes
+                )
+                disksize_used_mbytes += self.swap_mbytes
+
         if self.spare_part_mbsize and not self.spare_part_is_last:
             log.info('--> creating spare partition')
             self.disk.create_spare_partition(
@@ -835,12 +864,21 @@ class DiskBuilder:
             device_map['root'].get_device(), '/',
             custom_root_mount_args, fs_check_interval
         )
-        if 'spare' in device_map and \
+        if device_map.get('spare') and \
            self.spare_part_fs and self.spare_part_mountpoint:
             self._add_generic_fstab_entry(
                 device_map['spare'].get_device(), self.spare_part_mountpoint
             )
-        if 'boot' in device_map:
+        if device_map.get('swap'):
+            if self.volume_manager_name:
+                self._add_simple_fstab_entry(
+                    device_map['swap'].get_device(), 'swap', 'swap'
+                )
+            else:
+                self._add_generic_fstab_entry(
+                    device_map['swap'].get_device(), 'swap'
+                )
+        if device_map.get('boot'):
             if self.bootloader == 'grub2_s390x_emu':
                 boot_mount_point = '/boot/zipl'
             else:
@@ -848,13 +886,28 @@ class DiskBuilder:
             self._add_generic_fstab_entry(
                 device_map['boot'].get_device(), boot_mount_point
             )
-        if 'efi' in device_map:
+        if device_map.get('efi'):
             self._add_generic_fstab_entry(
                 device_map['efi'].get_device(), '/boot/efi'
             )
         setup.create_fstab(
             self.generic_fstab_entries
         )
+
+    def _add_simple_fstab_entry(
+        self, device, mount_point, filesystem, options=None, check='0 0'
+    ):
+        if not options:
+            options = ['defaults']
+        fstab_entry = ' '.join(
+            [
+                device, mount_point, filesystem, ','.join(options), check
+            ]
+        )
+        if fstab_entry not in self.generic_fstab_entries:
+            self.generic_fstab_entries.append(
+                fstab_entry
+            )
 
     def _add_generic_fstab_entry(
         self, device, mount_point, options=None, check='0 0'
@@ -894,14 +947,14 @@ class DiskBuilder:
                 os.sep + os.path.basename(recovery_metadata)
             )
 
-    def _write_bootloader_config_to_system_image(self, device_map):
+    def _write_bootloader_meta_data_to_system_image(self, device_map):
         if self.bootloader != 'custom':
             log.info('Creating %s bootloader configuration', self.bootloader)
             boot_options = []
             if self.mdraid:
                 boot_options.append('rd.auto')
-            boot_names = self.boot_image.get_boot_names()
-            boot_device = device_map['root']
+            root_device = device_map['root']
+            boot_device = root_device
             if 'boot' in device_map:
                 boot_device = device_map['boot']
 
@@ -917,14 +970,9 @@ class DiskBuilder:
             self.bootloader_config.setup_disk_boot_images(
                 boot_uuid_unmapped
             )
-            self.bootloader_config.setup_disk_image_config(
-                boot_uuid=boot_uuid,
-                root_uuid=root_uuid,
-                kernel=boot_names.kernel_name,
-                initrd=boot_names.initrd_name,
-                boot_options=' '.join(boot_options)
+            self.bootloader_config.write_meta_data(
+                root_uuid=root_uuid, boot_options=' '.join(boot_options)
             )
-            self.bootloader_config.write()
 
             log.info('Creating config.bootoptions')
             filename = ''.join(
@@ -982,6 +1030,16 @@ class DiskBuilder:
             custom_install_arguments.update(
                 {'system_volumes': self.system.get_volumes()}
             )
+
+        # create bootloader config prior bootloader installation
+        self.bootloader_config.setup_disk_image_config(
+            boot_options=custom_install_arguments
+        )
+        if 's390' in self.arch:
+            self.bootloader_config.write()
+
+        # cleanup bootloader config resources taken prior to next steps
+        del self.bootloader_config
 
         if self.bootloader != 'custom':
             log.debug(

@@ -1360,10 +1360,10 @@ definition can be composed by other existing profiles.</a:documentation>
       <attribute name="alias">
         <a:documentation>Alias name to be used for this repository. This is an
 optional free form text. If not set the source attribute
-value is used and builds the alias name by replacing
-each '/' with a '_'. An alias name should be set if the
-source argument doesn't really explain what this repository
-contains</a:documentation>
+value is used and builds the alias name by running a md5 digest
+of the defined URI of the repository. An alias name should be
+set if the source argument doesn't really explain what this
+repository contains.</a:documentation>
       </attribute>
     </define>
     <define name="k.repository.components.attribute">
@@ -1429,6 +1429,21 @@ whether and how this information is passed</a:documentation>
 whether and how this information is passed</a:documentation>
       </ref>
     </define>
+    <define name="k.repository.sourcetype.attribute">
+      <attribute name="sourcetype">
+        <a:documentation>Specify the source type of the repository path.
+Depending on if the source path is a simple url or a
+pointer to a metadata file or mirror list, the
+configured package manager needs to be setup
+appropriately. By default the source is expected to
+be a simple repository url</a:documentation>
+        <choice>
+          <value>baseurl</value>
+          <value>metalink</value>
+          <value>mirrorlist</value>
+        </choice>
+      </attribute>
+    </define>
     <define name="k.repository.attlist">
       <interleave>
         <optional>
@@ -1439,6 +1454,9 @@ whether and how this information is passed</a:documentation>
         </optional>
         <optional>
           <ref name="k.repository.alias.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.repository.sourcetype.attribute"/>
         </optional>
         <optional>
           <ref name="k.repository.components.attribute"/>
@@ -2782,7 +2800,9 @@ to the user according to he specifing toolchain behaviour.</a:documentation>
         <optional>
           <ref name="k.user.groups.attribute"/>
         </optional>
-        <ref name="k.user.home.attribute"/>
+        <optional>
+          <ref name="k.user.home.attribute"/>
+        </optional>
         <optional>
           <ref name="k.user.id.attribute"/>
         </optional>

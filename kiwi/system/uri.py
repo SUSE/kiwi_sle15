@@ -16,6 +16,7 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import os
+import logging
 from tempfile import mkdtemp
 from urllib.parse import urlparse
 import requests
@@ -26,13 +27,14 @@ from kiwi.mount_manager import MountManager
 from kiwi.path import Path
 from kiwi.defaults import Defaults
 from kiwi.runtime_config import RuntimeConfig
-from kiwi.logger import log
 
 from kiwi.exceptions import (
     KiwiUriStyleUnknown,
     KiwiUriTypeUnknown,
     KiwiUriOpenError
 )
+
+log = logging.getLogger('kiwi')
 
 
 class Uri:
@@ -244,7 +246,7 @@ class Uri:
         return iso_mount.mountpoint
 
     def _local_path(self, path):
-        return os.path.normpath(path)
+        return os.path.abspath(os.path.normpath(path))
 
     def _obs_project_download_link(self, name):
         name_parts = name.split(os.sep)
