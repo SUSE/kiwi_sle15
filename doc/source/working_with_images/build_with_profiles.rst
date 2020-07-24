@@ -16,8 +16,7 @@ command line flag `--profile=$PROFILE_NAME`:
 
 .. code:: shell-session
 
-   $ sudo kiwi-ng --type iso system build \
-         --profile=workstation \
+   $ sudo kiwi-ng --type iso --profile=workstation system build \
          --description kiwi-descriptions/suse/x86_64/{exc_description} \
          --target-dir /tmp/myimage
 
@@ -29,10 +28,10 @@ Building with the Open Build Service
 ------------------------------------
 
 The Open Build Service (OBS) support profiles via the `multibuild
-<https://openbuildservice.org/help/manuals/obs-reference-guide/cha.obs.multibuild.html>`_
+<https://openbuildservice.org/help/manuals/obs-user-guide/cha.obs.multibuild.html>`_
 feature. An example project using this feature is the
-`openSUSE-Tumbleweed-JeOS
-<https://build.opensuse.org/package/show/openSUSE:Factory/openSUSE-Tumbleweed-JeOS>`_
+`openSUSE-Tumbleweed
+<https://build.opensuse.org/package/show/openSUSE:Factory/openSUSE-Tumbleweed>`_
 image.
 
 To enable and use the profiles, follow these steps:

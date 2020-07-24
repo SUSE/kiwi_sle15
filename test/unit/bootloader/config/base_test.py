@@ -239,13 +239,13 @@ class TestBootLoaderConfigBase:
     def test_get_menu_entry_title(self, mock_displayname):
         mock_displayname.return_value = None
         assert self.bootloader.get_menu_entry_title() == \
-            'LimeJeOS-openSUSE-13.2 [ OEM ]'
+            'LimeJeOS [ OEM ]'
 
     @patch('kiwi.xml_parse.image.get_displayname')
     def test_get_menu_entry_title_plain(self, mock_displayname):
         mock_displayname.return_value = None
         assert self.bootloader.get_menu_entry_title(plain=True) == \
-            'LimeJeOS-openSUSE-13.2'
+            'LimeJeOS'
 
     @patch('kiwi.xml_parse.image.get_displayname')
     def test_get_menu_entry_title_by_displayname(self, mock_displayname):
@@ -257,7 +257,7 @@ class TestBootLoaderConfigBase:
     def test_get_menu_entry_install_title(self, mock_displayname):
         mock_displayname.return_value = None
         assert self.bootloader.get_menu_entry_install_title() == \
-            'LimeJeOS-openSUSE-13.2'
+            'LimeJeOS'
 
     @patch('kiwi.xml_parse.type_.get_vga')
     def test_get_gfxmode_default(self, mock_get_vga):
@@ -276,6 +276,37 @@ class TestBootLoaderConfigBase:
         mock_get_vga.return_value = '0x318'
         assert self.bootloader.get_gfxmode('some-loader') == \
             mock_get_vga.return_value
+
+    @patch('kiwi.bootloader.config.base.MountManager')
+    def test_mount_system_s390(self, mock_MountManager):
+        tmp_mount = MagicMock()
+        proc_mount = MagicMock()
+        dev_mount = MagicMock()
+        root_mount = MagicMock()
+        root_mount.mountpoint = 'root_mount_point'
+        root_mount.device = 'rootdev'
+        boot_mount = MagicMock()
+        boot_mount.device = 'bootdev'
+
+        mount_managers = [
+            proc_mount, dev_mount, tmp_mount, boot_mount, root_mount
+        ]
+
+        def mount_managers_effect(**args):
+            return mount_managers.pop()
+
+        self.bootloader.arch = 's390x'
+
+        mock_MountManager.side_effect = mount_managers_effect
+        self.bootloader._mount_system(
+            'rootdev', 'bootdev'
+        )
+        assert mock_MountManager.call_args_list == [
+            call(device='rootdev'),
+            call(device='bootdev', mountpoint='root_mount_point/boot/zipl'),
+            call(device='/dev', mountpoint='root_mount_point/dev'),
+            call(device='/proc', mountpoint='root_mount_point/proc')
+        ]
 
     @patch('kiwi.bootloader.config.base.MountManager')
     def test_mount_system(self, mock_MountManager):

@@ -265,16 +265,14 @@ image="iso"
   system storage components. A useful pocket system for testing
   and demo and debugging purposes.
 
-image="vmx"
-  An image representing the system disk, useful for cloud frameworks
-  like Amazon EC2, Google Compute Engine or Microsoft Azure.
-
 image="oem"
   An image representing an expandable system disk. This means after
   deployment the system can resize itself to the new disk geometry.
   The resize operation is configurable as part of the image description
   and an installation image for CD/DVD, USB stick and Network deployment
-  can be created in addition.
+  can be created in addition. For use in cloud frameworks like
+  Amazon EC2, Google Compute Engine or Microsoft Azure this disk
+  type also supports the common virtual disk formats.
 
 image="docker"
   An archive image suitable for the docker container engine.
@@ -308,6 +306,21 @@ bootpartition="true|false":
   partition should be used or not (the default depends on the current
   layout). This will override {kiwi}'s default layout.
 
+bootpartsize="nonNegativeInteger":
+  For images with a separate boot partition this attribute
+  specifies the size in MB. If not set the boot partition
+  size is set to 200 MB
+
+efipartsize="nonNegativeInteger":
+  For images with an EFI fat partition this attribute
+  specifies the size in MB. If not set the EFI partition
+  size is set to 20 MB
+
+efiparttable="msdos|gpt":
+  For images with an EFI firmware specifies the partition
+  table type to use. If not set defaults to the GPT partition
+  table type
+
 btrfs_quota_groups="true|false":
   Boolean parameter to activate filesystem quotas if
   the filesystem is `btrfs`. By default quotas are inactive.
@@ -340,10 +353,10 @@ editbootinstall="file_path":
   after the bootloader is installed. The script runs relative to the
   directory which contains the image structure.
 
-filesystem="btrfs|ext2|ext3|ext4|squashfs|xfs"
+filesystem="btrfs|ext2|ext3|ext4|squashfs|xfs":
   The root filesystem
 
-firmware="efi|uefi"
+firmware="efi|uefi":
   Specifies the boot firmware of the appliance, supported
   options are: `bios`, `ec2`, `efi`, `uefi`, `ofw` and `opal`.
   This attribute is used to differentiate the image according to the
@@ -396,7 +409,7 @@ luks="passphrase":
   password. Note that the password must be entered when booting the
   appliance!
 
-target_blocksize="number"
+target_blocksize="number":
   Specifies the image blocksize in bytes which has to
   match the logical blocksize of the target storage device. By default 512
   Bytes is used, which works on many disks. You can obtain the blocksize
@@ -406,28 +419,238 @@ target_blocksize="number"
 
      blockdev --report $DEVICE
 
+target_removable="true|false":
+  Indicate if the target disk for oem images is deployed
+  to a removable device e.g a USB stick or not. This only
+  affects the EFI setup if requested and in the end avoids
+  the creation of a custom boot menu entry in the firmware
+  of the target machine. By default the target disk is
+  expected to be non-removable
+
+spare_part="number":
+  Request a spare partition right before the root partition
+  of the requested size. The attribute takes a size value
+  and allows a unit in MB or GB, e.g 200M. If no unit is given
+  the value is considered to be mbytes. A spare partition
+  can only be configured for the disk image type oem
+
+spare_part_mountpoint="dir_path":
+  Specify mount point for spare partition in the system.
+  Can only be configured for the disk image type oem
+
+spare_part_fs="btrfs|ext2|ext3|ext4|xfs":
+  Specify filesystem for spare partition in the system.
+  Can only be configured for the disk image type oem
+
+spare_part_fs_attributes="attribute_list":
+  Specify filesystem attributes for the spare partition.
+  Attributes can be specified as comma separated list.
+  Currently the attributes `no-copy-on-write` and `synchronous-updates`
+  are available. Can only be configured for the disk image
+  type oem
+
+spare_part_is_last="true|false":
+  Specify if the spare partition should be the last one in
+  the partition table. Can only be configured for the `oem`
+  type with oem-resize switched off. By default the root
+  partition is the last one and the spare partition lives
+  before it. With this attribute that setup can be toggled.
+  However, if the root partition is no longer the last one
+  the oem repart/resize code can no longer work because
+  the spare part would block it. Because of that moving
+  the spare part at the end of the disk is only applied
+  if oem-resize is switched off. There is a runtime
+  check in the {kiwi} code to check this condition
+
+devicepersistency="by-uuid|by-label|by-path":
+  Specifies which method to use for persistent device names.
+  This will affect all files written by kiwi that includes
+  device references for example `etc/fstab` or the `root=`
+  parameter in the kernel commandline. By default by-uuid
+  is used
+
+squashfscompression="uncompressed|gzip|lzo|lz4|xz|zstd":
+  Specifies the compression type for mksquashfs
+
+overlayroot="true|false"
+  For the `oem` type only, specifies to use an `overlayfs` based root
+  filesystem consisting out of a squashfs compressed read-only root
+  filesystem combined with a write-partition or tmpfs.
+  The optional kernel boot parameter `rd.root.overlay.readonly` can
+  be used to point the write area into a `tmpfs` instead of
+  the existing persistent write-partition. In this mode all
+  written data is temporary until reboot of the system. The kernel
+  boot parameter `rd.root.overlay.size` can be used to configure
+  the size for the `tmpfs` that is used for the `overlayfs` mount
+  process if `rd.root.overlay.readonly` is requested. That size
+  basically configures the amount of space available for writing
+  new data during the runtime of the system. The default value
+  is set to `50%` which means one half of the available RAM space can
+  be used for writing new data. By default the persistent
+  write-partition is used. The size of that partition can be
+  influenced via the optional `<size>` element in the `<type>`
+  section or via the optional `<oem-resize>` element in the
+  `<oemconfig>` section of the XML description. Setting a fixed
+  `<size>` value will set the size of the image disk to that
+  value and results in an image file of that size. The available
+  space for the write partition is that size reduced by the
+  size the squashfs read-only system needs. If the `<oem-resize>`
+  element is set to `true` an eventually given `<size>` element
+  will not have any effect because the write partition will be
+  resized on first boot to the available disk space.
+
+bootfilesystem="ext2|ext3|ext4|fat32|fat16":
+  If an extra boot partition is required this attribute
+  specify which filesystem should be used for it. The
+  type of the selected bootloader might overwrite this
+  setting if there is no alternative possible though.
+
+flags="overlay|dmsquash"
+  For the iso image type specifies the live iso technology and
+  dracut module to use. If set to overlay the kiwi-live dracut
+  module will be used to support a live iso system based on
+  squashfs+overlayfs. If set to dmsquash the dracut standard
+  dmsquash-live module will be used to support a live iso
+  system based on the capabilities of the upstream dracut
+  module.
+
+format="gce|ova|qcow2|vagrant|vmdk|vdi|vhd|vhdx|vhd-fixed":
+  For disk image type oem, specifies the format of
+  the virtual disk such that it can run on the desired target
+  virtualization platform.
+
+formatoptions="string":
+  Specifies additional format options passed on to qemu-img
+  formatoptions is a comma separated list of format specific
+  options in a name=value format like qemu-img expects it.
+  kiwi will take the information and pass it as parameter to
+  the -o option in the qemu-img call
+
+fsmountoptions="string":
+  Specifies the filesystem mount options which also ends up in fstab
+  The string given here is passed as value to the -o option of mount
+
+fscreateoptions="string":
+  Specifies options to use at creation time of the filesystem
+
+force_mbr="true|false":
+  Force use of MBR (msdos table) partition table even if the
+  use of the GPT would be the natural choice. On e.g some
+  arm systems an EFI partition layout is required but must
+  not be stored in a GPT. For those rare cases this attribute
+  allows to force the use of the msdos table including all
+  its restrictions in max partition size and amount of
+  partitions
+
+gpt_hybrid_mbr="true|false":
+  For GPT disk types only: Create a hybrid GPT/MBR partition table
+
+hybridpersistent="true|false":
+  For the live ISO type, triggers the creation of a partition for
+  a COW file to keep data persistent over a reboot
+
+hybridpersistent_filesystem="ext4|xfs":
+  For the live ISO type, set the filesystem to use for persistent
+  writing if a hybrid image is used as disk on e.g a USB Stick.
+  By default the ext4 filesystem is used.
+
+initrd_system="kiwi|dracut":
+  Specify which initrd builder to use, default is set to `dracut`
+
+metadata_path="dir_path":
+  Specifies a path to additional metadata required for the selected
+  image type or its tools used to create that image type.
+
+  .. note::
+
+     Currently this is only effective for the appx container image type.
+
+installboot="failsafe-install|harddisk|install":
+  Specifies the bootloader default boot entry for the initial
+  boot of a {kiwi} install image.
+
+  .. note::
+
+     This value is only evaluated for grub
+
+install_continue_on_timeout="true|false":
+  Specifies the boot timeout handling for the {kiwi}
+  install image. If set to "true" the configured timeout
+  or its default value applies. If set to "false" no
+  timeout applies in the boot menu of the install image.
+
+installprovidefailsafe="true|false":
+  Specifies if the bootloader menu should provide an
+  failsafe entry with special kernel parameters or not
+
+installiso="true|false"
+  Specifies if an install iso image should be created.
+  This attribute is only available for the `oem` type.
+  The generated ISO image is an hybrid ISO which can be
+  used as disk on e.g a USB stick or as ISO.
+
+installpxe="true|false":
+  Specifies if a tarball that contains all data for a pxe network
+  installation should be created. This attribute is only available
+  for the `oem` type.
+
+mediacheck="true|false":
+  For ISO images, specifies if the bootloader menu should provide an
+  mediacheck entry to verify ISO integrity or not. Disabled by default
+  and only available for the x86 arch family.
+
+mdraid="mirroring|striping":
+  Setup software raid in degraded mode with one disk
+  Thus only mirroring and striping is possible
+
+primary="true|false":
+  Specifies this type to be the primary type. If no type option
+  is given on the commandline, {kiwi} will build this type
+
+ramonly="true|false":
+  For all images that are configured to use the overlay filesystem
+  this setting forces any COW(Copy-On-Write) action to happen in RAM.
+
+rootfs_label="string":
+  Label name to set for the root filesystem. By default `ROOT` is used
+
+volid="string":
+  For the ISO type only, specifies the volume ID (volume name or label)
+  to be written into the master block. There is space for 32 characters.
+
+vhdfixedtag="GUID_string":
+  For the VHD disk format, specifies the GUID
+
+derived_from="string":
+  For container images, specifies the image URI of the container image.
+  The image created by {kiwi} will use the specified container as the
+  base root to work on.
+
+publisher="string":
+  For ISO images, specifies the publisher name of the ISO.
+
 The following sections shows the supported child elements of the `type`
 element including references to their usage in a detailed type setup:
 
 <preferences><type><bootloader>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Used to describe the bootloader setup in vmx or oem disk image types.
-For details see: :ref:`vmx-bootloader`
+Used to describe the bootloader setup in the oem disk image type.
+For details see: :ref:`disk-bootloader`
 
 <preferences><type><containerconfig>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Used to describe the container configuration metadata in docker or wsl
-image types. For details see: :ref:`building-docker-build` and:
-:ref:`building-wsl-build`
+image types. For details see: :ref:`building_docker_build` and:
+:ref:`building_wsl_build`
 
 <preferences><type><vagrantconfig>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Used to describe vagrant configuration metadata in vmx disk image
+Used to describe vagrant configuration metadata in a disk image
 that is being used as a vagrant box. For details see: :ref:`setup_vagrant`
 
 <preferences><type><systemdisk>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Used to describe the geometry, partitions and volumes, in a vmx or oem
+Used to describe the geometry, partitions and volumes, in a
 disk image. For details see: :ref:`custom_volumes`
 
 <preferences><type><oemconfig>
@@ -437,14 +660,14 @@ For details see: :ref:`oem_customize`
 
 <preferences><type><size>
 ~~~~~~~~~~~~~~~~~~~~~~~~~
-Used to customize the size of the resulting disk image in a vmx or
-oem image. For details see: :ref:`vmx-the-size-element`
+Used to customize the size of the resulting disk image in an
+oem image. For details see: :ref:`disk-the-size-element`
 
 <preferences><type><machine>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Used to customize the virtual machine configuration which describes
 the components of an emulated hardware.
-For details see: :ref:`vmx-the-machine-element`
+For details see: :ref:`disk-the-machine-element`
 
 .. _sec.repository:
 
@@ -859,15 +1082,15 @@ For example:
      <packagemanager name="zypper"/>
    </preferences>
 
-   <preferences profiles="vmx_qcow_format">
-     <type image="vmx" filesystem="ext4" format="qcow2"/>
+   <preferences profiles="oem_qcow_format">
+     <type image="oem" filesystem="ext4" format="qcow2"/>
    </preferences>
 
-   <preferences profiles="vmx_vmdk_format">
-     <type image="vmx" filesystem="ext4" format="vmdk"/>
+   <preferences profiles="oem_vmdk_format">
+     <type image="oem" filesystem="ext4" format="vmdk"/>
    </preferences>
 
-The above example configures two version of the same vmx type.
+The above example configures two version of the same oem type.
 One builds a disk in qcow2 format the other builds a disk in
 vmdk format. The global preferences section without a profile
 assigned will be used in any case and defines those preferences

@@ -68,7 +68,7 @@ class TestSystemPrepare:
         root_bind.setup_intermediate_config.assert_called_once_with()
         root_bind.mount_kernel_file_systems.assert_called_once_with()
 
-    @patch('kiwi.system.prepare.RootImport')
+    @patch('kiwi.system.prepare.RootImport.new')
     @patch('kiwi.system.prepare.RootInit')
     @patch('kiwi.system.prepare.RootBind')
     @patch('kiwi.logger.Logger.get_logfile')
@@ -91,7 +91,7 @@ class TestSystemPrepare:
         root_bind.root_dir = 'root_dir'
         mock_root_bind.return_value = root_bind
         state = XMLState(
-            xml, profiles=['vmxFlavour'], build_type='docker'
+            xml, profiles=['containerFlavour'], build_type='docker'
         )
         uri = mock.Mock()
         get_derived_from_image_uri = mock.Mock(
@@ -291,12 +291,15 @@ class TestSystemPrepare:
             'kiwi'
         )
         self.manager.process_install_requests_bootstrap.assert_called_once_with(
+            self.system.root_bind
         )
         mock_tar.assert_called_once_with(
             '{0}/bootstrap.tgz'.format(self.description_dir)
         )
         tar.extract.assert_called_once_with('root_dir')
-        self.manager.post_process_install_requests_bootstrap.assert_called_once_with()
+        self.manager.post_process_install_requests_bootstrap.assert_called_once_with(
+            self.system.root_bind
+        )
 
     @patch('kiwi.xml_state.XMLState.get_bootstrap_packages_sections')
     def test_install_bootstrap_skipped(self, mock_bootstrap_section):
