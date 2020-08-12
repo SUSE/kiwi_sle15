@@ -42,6 +42,10 @@ class BootLoaderTemplateGrub2:
             set timeout=${boot_timeout}
         ''').strip() + os.linesep
 
+        self.timeout_style = dedent('''
+            set timeout_style=${boot_timeout_style}
+        ''').strip() + os.linesep
+
         self.header_hybrid = dedent('''
             set linux=linux
             set initrd=initrd
@@ -61,7 +65,7 @@ class BootLoaderTemplateGrub2:
         ''').strip() + os.linesep
 
         self.header_serial = dedent('''
-            serial --speed=9600 --unit=0 --word=8 --parity=no --stop=1
+            ${serial_line_setup}
         ''').strip() + os.linesep
 
         self.header_terminal_setup = dedent('''
@@ -317,6 +321,7 @@ class BootLoaderTemplateGrub2:
         """
         template_data = self.header
         template_data += self.timeout
+        template_data += self.timeout_style
         if hybrid:
             template_data += self.header_hybrid
         if 'gfxterm' in terminal:
@@ -359,6 +364,7 @@ class BootLoaderTemplateGrub2:
         """
         template_data = self.header
         template_data += self.timeout
+        template_data += self.timeout_style
         if 'gfxterm' in terminal:
             template_data += self.header_gfxterm
             template_data += self.header_theme_iso
@@ -393,6 +399,7 @@ class BootLoaderTemplateGrub2:
         template_data = self.header
         if with_timeout:
             template_data += self.timeout
+            template_data += self.timeout_style
         if hybrid:
             template_data += self.header_hybrid
         if 'gfxterm' in terminal:
@@ -432,6 +439,7 @@ class BootLoaderTemplateGrub2:
         template_data = self.header
         if with_timeout:
             template_data += self.timeout
+            template_data += self.timeout_style
         if 'gfxterm' in terminal:
             template_data += self.header_gfxterm
             template_data += self.header_theme_iso

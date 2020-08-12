@@ -22,6 +22,7 @@ import shutil
 import datetime
 from xml.etree import ElementTree
 from xml.dom import minidom
+from typing import List
 
 # project
 from kiwi.command import Command
@@ -89,10 +90,10 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         """
         self.setup_mountpoint()
 
-        filesystem = FileSystem(
+        filesystem = FileSystem.new(
             name='btrfs',
             device_provider=MappedDevice(
-                device=self.device, device_provider=self
+                device=self.device, device_provider=self.device_provider_root
             ),
             custom_args=self.custom_filesystem_args
         )
@@ -287,6 +288,21 @@ class VolumeManagerBtrfs(VolumeManagerBase):
 
         return all_volumes_umounted
 
+    def get_mountpoint(self) -> str:
+        """
+        Provides btrfs root mount point directory
+
+        Effective use of the directory is guaranteed only after sync_data
+
+        :return: directory path name
+
+        :rtype: string
+        """
+        sync_target: List[str] = [self.mountpoint, '@']
+        if self.custom_args.get('root_is_snapshot'):
+            sync_target.extend(['.snapshots', '1', 'snapshot'])
+        return os.path.join(*sync_target)
+
     def sync_data(self, exclude=None):
         """
         Sync data into btrfs filesystem
@@ -297,19 +313,17 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         :param list exclude: files to exclude from sync
         """
         if self.toplevel_mount:
-            sync_target = self.mountpoint + '/@'
+            sync_target = self.get_mountpoint()
             if self.custom_args['root_is_snapshot']:
-                sync_target = self.mountpoint + '/@/.snapshots/1/snapshot'
                 self._create_snapshot_info(
                     ''.join([self.mountpoint, '/@/.snapshots/1/info.xml'])
                 )
             data = DataSync(self.root_dir, sync_target)
             data.sync_data(
-                options=['-a', '-H', '-X', '-A', '--one-file-system'],
-                exclude=exclude
+                options=Defaults.get_sync_options(), exclude=exclude
             )
             if self.custom_args['quota_groups'] and \
-                    self.custom_args['root_is_snapshot']:
+               self.custom_args['root_is_snapshot']:
                 self._create_snapper_quota_configuration()
 
     def set_property_readonly_root(self):
@@ -423,5 +437,8 @@ class VolumeManagerBtrfs(VolumeManagerBase):
     def __del__(self):
         if self.toplevel_mount:
             log.info('Cleaning up %s instance', type(self).__name__)
-            if self.umount_volumes():
-                Path.wipe(self.mountpoint)
+            if not self.umount_volumes():
+                log.warning('Subvolumes still busy')
+                return
+            Path.wipe(self.mountpoint)
+        self._cleanup_tempdirs()

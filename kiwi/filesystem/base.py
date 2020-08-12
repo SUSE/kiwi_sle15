@@ -20,6 +20,7 @@ import logging
 import copy
 
 # project
+from kiwi.defaults import Defaults
 from kiwi.utils.sync import DataSync
 from kiwi.mount_manager import MountManager
 from kiwi.command import Command
@@ -122,6 +123,19 @@ class FileSystemBase:
         """
         raise NotImplementedError
 
+    def get_mountpoint(self):
+        """
+        Provides mount point directory
+
+        Effective use of the directory is guaranteed only after sync_data
+
+        :return: directory path name
+
+        :rtype: string
+        """
+        if self.filesystem_mount:
+            return self.filesystem_mount.mountpoint
+
     def sync_data(self, exclude=None):
         """
         Copy root data tree into filesystem
@@ -147,10 +161,17 @@ class FileSystemBase:
             self.root_dir, self.filesystem_mount.mountpoint
         )
         data.sync_data(
-            options=['-a', '-H', '-X', '-A', '--one-file-system'],
-            exclude=exclude
+            exclude=exclude, options=Defaults.get_sync_options()
         )
-        self.filesystem_mount.umount()
+
+    def umount(self):
+        """
+        Umounts the filesystem in case it is mounted, does nothing otherwise
+        """
+        if self.filesystem_mount:
+            log.info('umount %s instance', type(self).__name__)
+            self.filesystem_mount.umount()
+            self.filesystem_mount = None
 
     def _apply_attributes(self):
         """
@@ -175,6 +196,5 @@ class FileSystemBase:
                 )
 
     def __del__(self):
-        if self.filesystem_mount:
-            log.info('Cleaning up %s instance', type(self).__name__)
-            self.filesystem_mount.umount()
+        log.info('Cleaning up %s instance', type(self).__name__)
+        self.umount()

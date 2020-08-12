@@ -214,7 +214,7 @@ class TestDiskBuilder:
         )
         assert disk_builder.arch == 'ix86'
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     def test_create_invalid_type_for_install_media(
         self, mock_cmd, mock_fs
@@ -264,7 +264,7 @@ class TestDiskBuilder:
         with raises(KiwiInstallMediaError):
             self.disk_builder.create_install_media(result_instance)
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('random.randrange')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
@@ -390,13 +390,15 @@ class TestDiskBuilder:
             'target_dir'
         )
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('random.randrange')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
     @patch('os.path.exists')
+    @patch('kiwi.builder.disk.SystemSetup')
     def test_create_disk_standard_root_with_dracut_initrd(
-        self, mock_path, mock_grub_dir, mock_command, mock_rand, mock_fs
+        self, mock_SystemSetup, mock_path, mock_grub_dir,
+        mock_command, mock_rand, mock_fs
     ):
         self.boot_image_task.get_boot_names.return_value = self.boot_names_type(
             kernel_name='vmlinuz-1.2.3-default',
@@ -408,6 +410,9 @@ class TestDiskBuilder:
         mock_fs.return_value = filesystem
         self.disk_builder.volume_manager_name = None
         self.disk_builder.initrd_system = 'dracut'
+        self.setup.script_exists.return_value = True
+        disk_system = mock.Mock()
+        mock_SystemSetup.return_value = disk_system
 
         m_open = mock_open()
         with patch('builtins.open', m_open, create=True):
@@ -452,6 +457,9 @@ class TestDiskBuilder:
                 'prep_device': '/dev/prep-device'
             }
         )
+        self.setup.script_exists.assert_called_once_with('disk.sh')
+        disk_system.import_description.assert_called_once_with()
+        disk_system.call_disk_script.assert_called_once_with()
         self.setup.call_edit_boot_config_script.assert_called_once_with(
             'btrfs', 1
         )
@@ -520,7 +528,7 @@ class TestDiskBuilder:
         assert self.boot_image_task.write_system_config_file.call_args_list == \
             []
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.FileSystemSquashFs')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
@@ -583,7 +591,7 @@ class TestDiskBuilder:
             config={'modules': ['kiwi-overlay']}
         )
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     def test_create_disk_standard_root_no_hypervisor_found(
         self, mock_command, mock_fs
@@ -596,7 +604,7 @@ class TestDiskBuilder:
             with raises(KiwiDiskBootImageError):
                 self.disk_builder.create_disk()
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     def test_create_disk_standard_root_xen_server_boot(
         self, mock_command, mock_fs
@@ -616,7 +624,7 @@ class TestDiskBuilder:
             'root_dir', '/boot/xen.gz'
         )
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
     def test_create_disk_standard_root_s390_boot(
@@ -640,7 +648,7 @@ class TestDiskBuilder:
             'ext2', self.device_map['boot'], 'root_dir/boot/zipl/'
         )
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
     def test_create_disk_standard_root_secure_boot(
@@ -658,7 +666,7 @@ class TestDiskBuilder:
         bootloader = self.bootloader_config
         bootloader.setup_disk_boot_images.assert_called_once_with('0815')
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
     def test_create_disk_mdraid_root(
@@ -687,7 +695,7 @@ class TestDiskBuilder:
             'kiwi_RaidDev': '/dev/md0'
         }
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
     def test_create_disk_luks_root(
@@ -719,7 +727,7 @@ class TestDiskBuilder:
             config_file='root_dir/etc/dracut.conf.d/99-luks-boot.conf'
         )
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.VolumeManager')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
@@ -770,7 +778,7 @@ class TestDiskBuilder:
             self.disk_builder.fstab
         )
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
     def test_create_disk_hybrid_gpt_requested(
@@ -787,7 +795,7 @@ class TestDiskBuilder:
 
         self.disk.create_hybrid_mbr.assert_called_once_with()
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
     def test_create_disk_force_mbr_requested(
@@ -821,7 +829,7 @@ class TestDiskBuilder:
         builder.append_unpartitioned_space.assert_called_once_with()
         builder.create_disk_format.assert_called_once_with(result)
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     @patch('kiwi.builder.disk.Defaults.get_grub_boot_directory_name')
     def test_create_disk_spare_part_requested(
@@ -892,7 +900,7 @@ class TestDiskBuilder:
         loopdevice.create.assert_called_once_with(overwrite=False)
         assert partitioner.resize_table.called
 
-    @patch('kiwi.builder.disk.FileSystem')
+    @patch('kiwi.builder.disk.FileSystem.new')
     @patch('kiwi.builder.disk.Command.run')
     def test_create_disk_format(self, mock_command, mock_fs):
         result_instance = mock.Mock()

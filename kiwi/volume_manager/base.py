@@ -58,6 +58,7 @@ class VolumeManagerBase(DeviceProvider):
     :raises KiwiVolumeManagerSetupError: if the given root_dir doesn't exist
     """
     def __init__(self, device_map, root_dir, volumes, custom_args=None):
+        self.temp_directories = []
         # all volumes are combined into one mountpoint. This is
         # needed at sync_data time. How to mount the volumes is
         # special to the volume management class
@@ -312,6 +313,18 @@ class VolumeManagerBase(DeviceProvider):
             )
         return mbsize
 
+    def get_mountpoint(self):
+        """
+        Provides mount point directory
+
+        Effective use of the directory is guaranteed only after sync_data
+
+        :return: directory path name
+
+        :rtype: string
+        """
+        return self.mountpoint
+
     def sync_data(self, exclude=None):
         """
         Implements sync of root directory to mounted volumes
@@ -324,10 +337,8 @@ class VolumeManagerBase(DeviceProvider):
                 self.mount_volumes()
             data = DataSync(self.root_dir, self.mountpoint)
             data.sync_data(
-                options=['-a', '-H', '-X', '-A', '--one-file-system'],
-                exclude=exclude
+                options=Defaults.get_sync_options(), exclude=exclude
             )
-            self.umount_volumes()
 
     def set_property_readonly_root(self):
         """
@@ -343,11 +354,8 @@ class VolumeManagerBase(DeviceProvider):
         the mounts of all volumes
         """
         self.mountpoint = mkdtemp(prefix='kiwi_volumes.')
+        self.temp_directories.append(self.mountpoint)
 
-    def __del__(self):
-        """
-        Implements destructor to cleanup all volume subsystems
-        and mount processes. overwrite in specialized volume
-        management class
-        """
-        pass
+    def _cleanup_tempdirs(self):
+        for directory in self.temp_directories:
+            Path.wipe(directory)

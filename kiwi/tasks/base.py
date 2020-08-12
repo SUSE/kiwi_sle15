@@ -87,7 +87,8 @@ class CliTask:
             'check_dracut_module_for_disk_oem_in_package_list': [],
             'check_dracut_module_for_oem_install_in_package_list': [],
             'check_architecture_supports_iso_firmware_setup': [],
-            'check_appx_naming_conventions_valid': []
+            'check_appx_naming_conventions_valid': [],
+            'check_syslinux_installed_if_isolinux_is_used': []
         }
         self.checks_after_command_args = {
             'check_repositories_configured': [],
@@ -142,10 +143,10 @@ class CliTask:
                 'no XML description found in %s' % description_directory
             )
 
-        description = XMLDescription(
+        self.description = XMLDescription(
             config_file
         )
-        self.xml_data = description.load()
+        self.xml_data = self.description.load()
         self.config_file = config_file.replace('//', '/')
         self.xml_state = XMLState(
             self.xml_data,

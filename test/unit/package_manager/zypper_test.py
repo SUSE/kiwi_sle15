@@ -57,7 +57,7 @@ class TestPackageManagerZypper:
                 'zypper', '--reposd-dir', 'root-dir/my/repos',
                 '--root', 'root-dir',
                 'install', '--auto-agree-with-licenses'
-            ] + self.manager.custom_args + ['vim'], self.command_env
+            ] + self.manager.custom_args + ['--', 'vim'], self.command_env
         )
 
     @patch('kiwi.command.Command.call')
@@ -80,7 +80,7 @@ class TestPackageManagerZypper:
         mock_call.assert_called_once_with(
             ['chroot', 'root-dir', 'zypper'] + self.chroot_zypper_args + [
                 'install', '--auto-agree-with-licenses'
-            ] + self.manager.custom_args + ['vim'], self.chroot_command_env
+            ] + self.manager.custom_args + ['--', 'vim'], self.chroot_command_env
         )
 
     @patch('kiwi.command.Command.call')
@@ -160,3 +160,22 @@ class TestPackageManagerZypper:
         assert self.manager.has_failed(1) is True
         assert self.manager.has_failed(4) is True
         assert self.manager.has_failed(-42) is True
+        assert self.manager.has_failed(127) is True
+
+    @patch('kiwi.package_manager.zypper.os.unlink')
+    @patch('kiwi.package_manager.zypper.os.path.exists')
+    @patch('kiwi.package_manager.zypper.Rpm')
+    def test_clean_leftovers(self, mock_rpm, mock_exists, mock_unlink):
+        mock_exists.return_value = True
+        mock_rpm.return_value = mock.Mock()
+        self.manager.clean_leftovers()
+        mock_rpm.assert_called_once_with(
+            'root-dir', 'macros.kiwi-image-config'
+        )
+        mock_rpm.return_value.wipe_config.assert_called_once_with()
+        mock_exists.assert_called_once_with(
+            'root-dir/var/lib/zypp/AnonymousUniqueId'
+        )
+        mock_unlink.assert_called_once_with(
+            'root-dir/var/lib/zypp/AnonymousUniqueId'
+        )

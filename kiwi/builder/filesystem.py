@@ -16,7 +16,6 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import logging
-import platform
 import os
 
 # project
@@ -62,7 +61,7 @@ class FileSystemBuilder:
         self.root_dir = root_dir
         self.target_dir = target_dir
         self.requested_image_type = xml_state.get_build_type_name()
-        if self.requested_image_type == 'pxe':
+        if self.requested_image_type in Defaults.get_kis_image_types():
             self.requested_filesystem = xml_state.build_type.get_filesystem()
         else:
             self.requested_filesystem = self.requested_image_type
@@ -86,7 +85,7 @@ class FileSystemBuilder:
             [
                 target_dir, '/',
                 xml_state.xml_data.get_name(),
-                '.' + platform.machine(),
+                '.' + Defaults.get_platform_name(),
                 '-' + xml_state.get_image_version(),
                 '.', self.requested_filesystem
             ]
@@ -168,7 +167,7 @@ class FileSystemBuilder:
             self.blocksize
         )
         loop_provider.create()
-        filesystem = FileSystem(
+        filesystem = FileSystem.new(
             self.requested_filesystem, loop_provider,
             self.root_dir + os.sep, self.filesystem_custom_parameters
         )
@@ -183,7 +182,7 @@ class FileSystemBuilder:
 
     def _operate_on_file(self):
         default_provider = DeviceProvider()
-        filesystem = FileSystem(
+        filesystem = FileSystem.new(
             self.requested_filesystem, default_provider,
             self.root_dir, self.filesystem_custom_parameters
         )

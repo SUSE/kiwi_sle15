@@ -73,7 +73,7 @@ prolog_replacements = {
     '{exc_repo}': 'obs://openSUSE:Leap:15.1/standard',
     '{exc_kiwi_repo}':
         'obs://Virtualization:Appliances:Builder/openSUSE_Leap_15.1',
-    '{schema_version}': '7.1',
+    '{schema_version}': '7.2',
     '{kiwi}': 'KIWI NG',
     '{kiwi-product}': 'KIWI Next Generation (KIWI NG)',
     '{kiwi-legacy}': 'KIWI Legacy'
@@ -128,7 +128,7 @@ author = 'Marcus Schäfer'
 # built documents.
 #
 # The short X.Y version.
-version = '9.20.5'
+version = '9.21.6'
 # The full version, including alpha/beta/rc tags.
 release = version
 
