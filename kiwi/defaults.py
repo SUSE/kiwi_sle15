@@ -22,13 +22,21 @@ import platform
 from pkg_resources import resource_filename
 
 # project
-from .path import Path
-from .version import (
+from kiwi.path import Path
+from kiwi.version import (
     __githash__,
     __version__
 )
 
-from .exceptions import KiwiBootLoaderGrubDataError
+from kiwi.exceptions import KiwiBootLoaderGrubDataError
+
+# Default module variables
+POST_DISK_SYNC_SCRIPT = 'disk.sh'
+POST_PREPARE_SCRIPT = 'config.sh'
+PRE_CREATE_SCRIPT = 'images.sh'
+EDIT_BOOT_CONFIG_SCRIPT = 'edit_boot_config.sh'
+EDIT_BOOT_INSTALL_SCRIPT = 'edit_boot_install.sh'
+IMAGE_METADATA_DIR = 'image'
 
 
 class Defaults:
@@ -37,6 +45,7 @@ class Defaults:
 
     Provides static methods for default values and state information
     """
+
     def __init__(self):
         self.defaults = {
             # alignment in bytes
@@ -94,6 +103,13 @@ class Defaults:
         ]
 
     @staticmethod
+    def get_platform_name():
+        arch = platform.machine()
+        if arch == 'i686' or arch == 'i586':
+            arch = 'ix86'
+        return arch
+
+    @staticmethod
     def is_x86_arch(arch):
         """
         Checks if machine architecture is x86 based
@@ -104,7 +120,10 @@ class Defaults:
 
         :rtype: bool
         """
-        if arch == 'x86_64' or arch == 'i686' or arch == 'i586':
+        x86_arch_names = [
+            'x86_64', 'i686', 'i586', 'ix86'
+        ]
+        if arch in x86_arch_names:
             return True
         return False
 
@@ -204,6 +223,17 @@ class Defaults:
         )).lstrip(os.sep)
 
     @staticmethod
+    def get_sync_options():
+        """
+        Provides list of default data sync options
+
+        :return: list of rsync options
+
+        :rtype: list
+        """
+        return ['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
+
+    @staticmethod
     def get_exclude_list_for_root_data_sync():
         """
         Provides the list of files or folders that are created
@@ -221,6 +251,7 @@ class Defaults:
         ]
         return exclude_list
 
+    @staticmethod
     def get_exclude_list_for_non_physical_devices():
         """
         Provides the list of folders that are not associated
@@ -299,6 +330,7 @@ class Defaults:
             '0x319': video_type(grub2='1280x1024', isolinux='1280 1024'),
             '0x31a': video_type(grub2='1280x1024', isolinux='1280 1024'),
             '0x31b': video_type(grub2='1280x1024', isolinux='1280 1024'),
+            'auto': video_type(grub2='auto', isolinux='800 600')
         }
 
     @staticmethod
@@ -337,13 +369,26 @@ class Defaults:
     @staticmethod
     def get_default_video_mode():
         """
-        Provides 800x600 default video mode as hex value for the kernel
+        Uses auto mode for default video. See get_video_mode_map
+        for details on the value depending which bootloader is
+        used
 
-        :return: vesa video kernel hex value
+        :return: auto
 
         :rtype: str
         """
-        return '0x303'
+        return 'auto'
+
+    @staticmethod
+    def get_default_bootloader():
+        """
+        Return default bootloader name which is grub2
+
+        :return: bootloader name
+
+        :rtype: str
+        """
+        return 'grub2'
 
     @staticmethod
     def get_grub_boot_directory_name(lookup_path):
@@ -427,7 +472,7 @@ class Defaults:
 
         :rtype: list
         """
-        host_architecture = platform.machine()
+        host_architecture = Defaults.get_platform_name()
         modules = Defaults.get_grub_basic_modules(multiboot) + [
             'part_gpt',
             'part_msdos',
@@ -669,6 +714,7 @@ class Defaults:
         """
         return [
             '/usr/share/syslinux',
+            '/usr/lib/syslinux/bios',
             '/usr/lib/syslinux/modules/bios',
             '/usr/lib/ISOLINUX'
         ]
@@ -710,6 +756,38 @@ class Defaults:
                 return signed_grub
 
     @staticmethod
+    def get_efi_vendor_directory(efi_path):
+        """
+        Provides EFI vendor directory if present
+
+        Looks up distribution specific EFI vendor directory
+
+        :param string root_path: path to efi mountpoint
+
+        :return: directory path or None
+
+        :rtype: str
+        """
+        efi_vendor_directories = [
+            'EFI/fedora',
+            'EFI/redhat',
+            'EFI/centos',
+            'EFI/opensuse'
+        ]
+        for efi_vendor_directory in efi_vendor_directories:
+            efi_vendor_directory = os.sep.join([efi_path, efi_vendor_directory])
+            if os.path.exists(efi_vendor_directory):
+                return efi_vendor_directory
+
+    @staticmethod
+    def get_vendor_grubenv(efi_path):
+        efi_vendor_directory = Defaults.get_efi_vendor_directory(efi_path)
+        if efi_vendor_directory:
+            grubenv = os.sep.join([efi_vendor_directory, 'grubenv'])
+            if os.path.exists(grubenv):
+                return grubenv
+
+    @staticmethod
     def get_shim_vendor_directory(root_path):
         """
         Provides shim vendor directory
@@ -725,8 +803,8 @@ class Defaults:
         :rtype: str
         """
         shim_vendor_patterns = [
-            '/boot/efi/EFI/*/shim.efi',
-            '/EFI/*/shim.efi'
+            '/boot/efi/EFI/*/shim*.efi',
+            '/EFI/*/shim*.efi'
         ]
         for shim_vendor_pattern in shim_vendor_patterns:
             for shim_file in glob.iglob(root_path + shim_vendor_pattern):
@@ -871,6 +949,7 @@ class Defaults:
             'x86_64': ['efi', 'uefi', 'bios', 'ec2hvm', 'ec2'],
             'i586': ['bios'],
             'i686': ['bios'],
+            'ix86': ['bios'],
             'aarch64': ['efi', 'uefi'],
             'arm64': ['efi', 'uefi'],
             'armv5el': ['efi', 'uefi'],
@@ -891,7 +970,7 @@ class Defaults:
         """
         Provides default firmware for specified architecture
 
-        :param string arch: platform.machine
+        :param string arch: machine architecture name
 
         :return: firmware name
 
@@ -901,6 +980,7 @@ class Defaults:
             'x86_64': 'bios',
             'i586': 'bios',
             'i686': 'bios',
+            'ix86': 'bios',
             'ppc': 'ofw',
             'ppc64': 'ofw',
             'ppc64le': 'ofw',
@@ -947,7 +1027,7 @@ class Defaults:
         Provides architecture specific EFI directory name which
         stores the EFI binaries for the desired architecture.
 
-        :param string arch: platform.machine
+        :param string arch: machine architecture name
 
         :return: directory name
 
@@ -987,7 +1067,7 @@ class Defaults:
         """
         Provides architecture specific EFI boot binary name
 
-        :param string arch: platform.machine
+        :param string arch: machine architecture name
 
         :return: name
 
@@ -1135,25 +1215,25 @@ class Defaults:
         return '/etc/dracut.conf.d/02-kiwi.conf'
 
     @staticmethod
-    def get_live_dracut_module_from_flag(flag_name):
+    def get_live_dracut_modules_from_flag(flag_name):
         """
-        Provides flag_name to dracut module name map
+        Provides flag_name to dracut modules name map
 
         Depending on the value of the flag attribute in the KIWI image
-        description a specific dracut module needs to be selected
+        description specific dracut modules need to be selected
 
-        :return: dracut module name
+        :return: dracut module names as list
 
-        :rtype: str
+        :rtype: list
         """
         live_modules = {
-            'overlay': 'kiwi-live',
-            'dmsquash': 'dmsquash-live livenet'
+            'overlay': ['kiwi-live'],
+            'dmsquash': ['dmsquash-live', 'livenet']
         }
         if flag_name in live_modules:
             return live_modules[flag_name]
         else:
-            return 'kiwi-live'
+            return ['kiwi-live']
 
     @staticmethod
     def get_default_live_iso_root_filesystem():
@@ -1208,15 +1288,15 @@ class Defaults:
         return ['iso']
 
     @staticmethod
-    def get_network_image_types():
+    def get_kis_image_types():
         """
-        Provides supported pxe image types
+        Provides supported kis image types
 
-        :return: pxe image type names
+        :return: kis image type names
 
         :rtype: list
         """
-        return ['pxe']
+        return ['kis', 'pxe']
 
     @staticmethod
     def get_boot_image_description_path():
@@ -1321,10 +1401,9 @@ class Defaults:
 
         :rtype: str
         """
-        arch = platform.machine()
-        if arch == 'i686' or arch == 'i586':
-            arch = 'ix86'
-        return os.sep.join(['boot', arch])
+        return os.sep.join(
+            ['boot', Defaults.get_platform_name()]
+        )
 
     @staticmethod
     def get_iso_tool_category():
@@ -1467,6 +1546,8 @@ class Defaults:
             return 'rpm'
         elif package_manager in deb_based:
             return 'dpkg'
+        elif package_manager == 'pacman':
+            return 'pacman'
 
     def get(self, key):
         """
@@ -1481,6 +1562,7 @@ class Defaults:
         if key in self.defaults:
             return self.defaults[key]
 
+    @staticmethod
     def get_profile_file(root_dir):
         """
         Return name of profile file for given root directory

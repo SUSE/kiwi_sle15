@@ -18,7 +18,6 @@
 import os
 import logging
 from tempfile import mkdtemp
-import platform
 import shutil
 
 # project
@@ -59,9 +58,7 @@ class InstallImageBuilder:
         self, xml_state, root_dir, target_dir, boot_image_task,
         custom_args=None
     ):
-        self.arch = platform.machine()
-        if self.arch == 'i686' or self.arch == 'i586':
-            self.arch = 'ix86'
+        self.arch = Defaults.get_platform_name()
         self.root_dir = root_dir
         self.target_dir = target_dir
         self.boot_image_task = boot_image_task
@@ -241,6 +238,7 @@ class InstallImageBuilder:
             custom_args=self.custom_iso_args
         )
         iso_image.create_on_file(self.isoname)
+        self.boot_image_task.cleanup()
 
     def create_install_pxe_archive(self):
         """
@@ -348,6 +346,7 @@ class InstallImageBuilder:
         archive = ArchiveTar(self.pxetarball)
 
         archive.create(self.pxe_dir)
+        self.boot_image_task.cleanup()
 
     def _create_pxe_install_kernel_and_initrd(self):
         kernelname = 'pxeboot.{0}.kernel'.format(self.pxename)

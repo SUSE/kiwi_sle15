@@ -47,6 +47,7 @@ class XMLState:
     """
     def __init__(self, xml_data, profiles=None, build_type=None):
         self.root_partition_uuid = None
+        self.root_filesystem_uuid = None
         self.host_architecture = platform.machine()
         self.xml_data = xml_data
         self.profiles = self._used_profiles(profiles)
@@ -136,8 +137,8 @@ class XMLState:
 
         :rtype: str
         """
-        if self.get_build_type_name() in ['vmx', 'iso']:
-            # vmx and iso image types always use dracut as initrd system
+        if self.get_build_type_name() in ['vmx', 'iso', 'kis']:
+            # vmx, iso and kis image types always use dracut as initrd system
             initrd_system = 'dracut'
         elif self.get_build_type_name() in ['oem', 'pxe']:
             # pxe and oem image types default to kiwi if unset
@@ -757,6 +758,93 @@ class XMLState:
                 return vmconfig_entries
 
         return []
+
+    def get_build_type_bootloader_section(self):
+        """
+        First bootloader section from the build type section
+
+        :return: <bootloader> section reference
+
+        :rtype: xml_parse::bootloader
+        """
+        bootloader_sections = self.build_type.get_bootloader()
+        if bootloader_sections:
+            return bootloader_sections[0]
+
+    def get_build_type_bootloader_name(self):
+        """
+        Return bootloader name for selected build type
+
+        :return: bootloader name
+
+        :rtype: string
+        """
+        bootloader = self.get_build_type_bootloader_section()
+        return bootloader.get_name() if bootloader else \
+            Defaults.get_default_bootloader()
+
+    def get_build_type_bootloader_console(self):
+        """
+        Return bootloader console setting for selected build type
+
+        :return: console string
+
+        :rtype: string
+        """
+        bootloader = self.get_build_type_bootloader_section()
+        if bootloader:
+            return bootloader.get_console()
+
+    def get_build_type_bootloader_serial_line_setup(self):
+        """
+        Return bootloader serial line setup parameters for the
+        selected build type
+
+        :return: serial line setup
+
+        :rtype: string
+        """
+        bootloader = self.get_build_type_bootloader_section()
+        if bootloader:
+            return bootloader.get_serial_line()
+
+    def get_build_type_bootloader_timeout(self):
+        """
+        Return bootloader timeout setting for selected build type
+
+        :return: timeout string
+
+        :rtype: string
+        """
+        bootloader = self.get_build_type_bootloader_section()
+        if bootloader:
+            return bootloader.get_timeout()
+
+    def get_build_type_bootloader_timeout_style(self):
+        """
+        Return bootloader timeout style setting for selected build type
+
+        :return: timeout_style string
+
+        :rtype: string
+        """
+        bootloader = self.get_build_type_bootloader_section()
+        if bootloader:
+            return bootloader.get_timeout_style()
+
+    def get_build_type_bootloader_targettype(self):
+        """
+        Return bootloader target type setting. Only relevant for
+        the zipl bootloader because zipl is installed differently
+        depending on the storage target it runs later
+
+        :return: target type string
+
+        :rtype: string
+        """
+        bootloader = self.get_build_type_bootloader_section()
+        if bootloader:
+            return bootloader.get_targettype()
 
     def get_build_type_oemconfig_section(self):
         """
@@ -1519,6 +1607,18 @@ class XMLState:
                 [machine_section]
             )
 
+    def copy_bootloader_section(self, target_state):
+        """
+        Copy bootloader section from this xml state to the target xml state
+
+        :param object target_state: XMLState instance
+        """
+        bootloader_section = self.get_build_type_bootloader_section()
+        if bootloader_section:
+            target_state.build_type.set_bootloader(
+                [bootloader_section]
+            )
+
     def copy_oemconfig_section(self, target_state):
         """
         Copy oemconfig sections from this xml state to the target xml state
@@ -1822,6 +1922,20 @@ class XMLState:
         Return preserved PARTUUID
         """
         return self.root_partition_uuid
+
+    def set_root_filesystem_uuid(self, uuid):
+        """
+        Store UUID provided in uuid as state information
+
+        :param string uuid: UUID
+        """
+        self.root_filesystem_uuid = uuid
+
+    def get_root_filesystem_uuid(self):
+        """
+        Return preserved UUID
+        """
+        return self.root_filesystem_uuid
 
     def _used_profiles(self, profiles=None):
         """

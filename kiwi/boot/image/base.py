@@ -17,9 +17,9 @@
 #
 import re
 import os
-import platform
 import pickle
 import logging
+import glob
 from collections import namedtuple
 
 # project
@@ -56,8 +56,6 @@ class BootImageBase:
         self.initrd_filename = None
         self.boot_xml_state = None
         self.setup = None
-        self.temp_directories = []
-        self.call_destructor = True
         self.signing_keys = signing_keys
         self.boot_root_directory = root_dir
 
@@ -69,7 +67,7 @@ class BootImageBase:
         self.initrd_base_name = ''.join(
             [
                 self.xml_state.xml_data.get_name(),
-                '.' + platform.machine(),
+                '.' + Defaults.get_platform_name(),
                 '-' + self.xml_state.get_image_version(),
                 '.initrd'
             ]
@@ -151,23 +149,10 @@ class BootImageBase:
         try:
             with open(filename, 'wb') as boot_image:
                 pickle.dump(self, boot_image)
-            self.disable_cleanup()
         except Exception as e:
             raise KiwiBootImageDumpError(
                 'Failed to pickle dump boot image: %s' % format(e)
             )
-
-    def disable_cleanup(self):
-        """
-        Deactivate cleanup(deletion) of boot root directory
-        """
-        self.call_destructor = False
-
-    def enable_cleanup(self):
-        """
-        Activate cleanup(deletion) of boot root directory
-        """
-        self.call_destructor = True
 
     def get_boot_names(self):
         """
@@ -197,7 +182,9 @@ class BootImageBase:
                 'No kernel in boot image tree %s found' %
                 self.boot_root_directory
             )
-        dracut_output_format = self._get_boot_image_output_file_format()
+        dracut_output_format = self._get_boot_image_output_file_format(
+            kernel_info.version
+        )
         return boot_names_type(
             kernel_name=kernel_info.name,
             initrd_name=dracut_output_format.format(
@@ -331,10 +318,7 @@ class BootImageBase:
         )
         type_attributes = [
             'bootkernel',
-            'bootloader',
-            'bootloader_console',
             'bootprofile',
-            'boottimeout',
             'btrfs_root_is_snapshot',
             'gpt_hybrid_mbr',
             'devicepersistency',
@@ -354,6 +338,9 @@ class BootImageBase:
         ]
         self.xml_state.copy_build_type_attributes(
             type_attributes, self.boot_xml_state
+        )
+        self.xml_state.copy_bootloader_section(
+            self.boot_xml_state
         )
         self.xml_state.copy_systemdisk_section(
             self.boot_xml_state
@@ -381,15 +368,30 @@ class BootImageBase:
                     boot_description
             return boot_description
 
-    def _get_boot_image_output_file_format(self):
+    def cleanup(self):
+        """
+        Cleanup temporary boot image data if any
+        """
+        pass
+
+    def _get_boot_image_output_file_format(self, kernel_version):
         """
         The initrd output file format varies between
         the different Linux distributions. Tools like lsinitrd, and also
         grub2 rely on the initrd output file to be in that format. Thus
         kiwi should use the same file format to stay compatible
-        with the distributions. The format is determined by the
-        outfile format used in the dracut initrd tool which is the
-        standard on all major linux distributions.
+        with the distributions. The format is determined in three
+        stages:
+
+        a) check for an existing initrd file and use this naming schema
+        b) if no initrd file is found check the dracut binary for its
+           default output file name schema
+        c) if no output file schema could be detected from the dracut
+           binary return a default output file format which is
+           initramfs-{kernel_version}.img
+
+        Let's hope all this mess can be deleted once all distros just
+        can agree on one initrd file name schema
         """
         if self.xml_state.get_initrd_system() == 'kiwi':
             # The custom kiwi initrd system is used only on SUSE systems.
@@ -401,6 +403,27 @@ class BootImageBase:
             default_outfile_format = 'initrd-{kernel_version}'
         else:
             default_outfile_format = 'initramfs-{kernel_version}.img'
+
+        outfile_format = \
+            self._get_boot_image_output_file_format_from_existing_file(
+                kernel_version
+            )
+        if not outfile_format:
+            outfile_format = \
+                self._get_boot_image_output_file_format_from_dracut_code()
+
+        if outfile_format:
+            return outfile_format
+        else:
+            log.warning('Could not detect dracut output file format')
+            log.warning(
+                'Using default initrd file name format {0}'.format(
+                    default_outfile_format
+                )
+            )
+            return default_outfile_format
+
+    def _get_boot_image_output_file_format_from_dracut_code(self):
         dracut_tool = Path.which(
             'dracut', root_dir=self.boot_root_directory, access_mode=os.X_OK
         )
@@ -411,15 +434,11 @@ class BootImageBase:
                 if matches:
                     return matches[0].replace('$kernel', '{kernel_version}')
 
-        log.warning('Could not detect dracut output file format')
-        log.warning('Using default initrd file name format {0}'.format(
-            default_outfile_format
-        ))
-        return default_outfile_format
-
-    def __del__(self):
-        if self.call_destructor:
-            log.info('Cleaning up %s instance', type(self).__name__)
-            for directory in self.temp_directories:
-                if directory and os.path.exists(directory):
-                    Path.wipe(directory)
+    def _get_boot_image_output_file_format_from_existing_file(
+        self, kernel_version
+    ):
+        for initrd_file in glob.iglob(self.boot_root_directory + '/boot/init*'):
+            if not os.path.islink(initrd_file):
+                return os.path.basename(initrd_file).replace(
+                    kernel_version, '{kernel_version}'
+                )

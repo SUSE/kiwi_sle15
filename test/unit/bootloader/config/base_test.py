@@ -85,9 +85,11 @@ class TestBootLoaderConfigBase:
     def test_get_boot_timeout_seconds_default_applies(self):
         assert self.bootloader.get_boot_timeout_seconds() == 10
 
-    @patch('kiwi.xml_parse.type_.get_boottimeout')
-    def test_get_boot_timeout_seconds(self, mock_get_boottimeout):
-        mock_get_boottimeout.return_value = 0
+    @patch('kiwi.xml_parse.type_.get_bootloader')
+    def test_get_boot_timeout_seconds(self, mock_get_bootloader):
+        bootloader = Mock()
+        bootloader.get_timeout.return_value = 0
+        mock_get_bootloader.return_value = [bootloader]
         assert self.bootloader.get_boot_timeout_seconds() == 0
 
     @patch('kiwi.xml_parse.type_.get_installprovidefailsafe')
@@ -261,7 +263,7 @@ class TestBootLoaderConfigBase:
     def test_get_gfxmode_default(self, mock_get_vga):
         mock_get_vga.return_value = None
         assert self.bootloader.get_gfxmode('isolinux') == '800 600'
-        assert self.bootloader.get_gfxmode('grub2') == '800x600'
+        assert self.bootloader.get_gfxmode('grub2') == 'auto'
 
     @patch('kiwi.xml_parse.type_.get_vga')
     def test_get_gfxmode(self, mock_get_vga):

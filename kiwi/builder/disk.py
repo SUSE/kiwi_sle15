@@ -17,11 +17,12 @@
 #
 import os
 import logging
-import platform
 import pickle
 from tempfile import NamedTemporaryFile
 
 # project
+import kiwi.defaults as defaults
+
 from kiwi.defaults import Defaults
 from kiwi.bootloader.config import BootLoaderConfig
 from kiwi.bootloader.install import BootLoaderInstall
@@ -68,10 +69,9 @@ class DiskBuilder:
         * signing_keys: list of package signing keys
         * xz_options: string of XZ compression parameters
     """
+
     def __init__(self, xml_state, target_dir, root_dir, custom_args=None):
-        self.arch = platform.machine()
-        if self.arch == 'i686' or self.arch == 'i586':
-            self.arch = 'ix86'
+        self.arch = Defaults.get_platform_name()
         self.root_dir = root_dir
         self.target_dir = target_dir
         self.xml_state = xml_state
@@ -102,7 +102,7 @@ class DiskBuilder:
         self.requested_filesystem = xml_state.build_type.get_filesystem()
         self.requested_boot_filesystem = \
             xml_state.build_type.get_bootfilesystem()
-        self.bootloader = xml_state.build_type.get_bootloader()
+        self.bootloader = xml_state.get_build_type_bootloader_name()
         self.initrd_system = xml_state.get_initrd_system()
         self.target_removable = xml_state.build_type.get_target_removable()
         self.root_filesystem_is_multipath = \
@@ -237,13 +237,13 @@ class DiskBuilder:
 
         # create the disk
         log.info('Creating raw disk image %s', self.diskname)
-        loop_provider = LoopDevice(
+        self.loop_provider = LoopDevice(
             self.diskname, disksize_mbytes, self.blocksize
         )
-        loop_provider.create()
+        self.loop_provider.create()
 
         self.disk = Disk(
-            self.firmware.get_partition_table_type(), loop_provider,
+            self.firmware.get_partition_table_type(), self.loop_provider,
             self.xml_state.get_disk_start_sector()
         )
 
@@ -252,7 +252,7 @@ class DiskBuilder:
             self.bootloader, self.xml_state, root_dir=self.root_dir,
             boot_dir=self.root_dir, custom_args={
                 'targetbase':
-                    loop_provider.get_device(),
+                    self.loop_provider.get_device(),
                 'grub_directory_name':
                     Defaults.get_grub_boot_directory_name(self.root_dir),
                 'boot_is_crypto':
@@ -323,22 +323,22 @@ class DiskBuilder:
                 'image_type':
                     self.xml_state.get_build_type_name()
             }
-            volume_manager = VolumeManager(
+            self.volume_manager = VolumeManager(
                 self.volume_manager_name, device_map,
                 self.root_dir + '/',
                 self.volumes,
                 volume_manager_custom_parameters
             )
-            volume_manager.setup(
+            self.volume_manager.setup(
                 self.volume_group_name
             )
-            volume_manager.create_volumes(
+            self.volume_manager.create_volumes(
                 self.requested_filesystem
             )
-            volume_manager.mount_volumes()
-            self.system = volume_manager
-            device_map['root'] = volume_manager.get_device().get('root')
-            device_map['swap'] = volume_manager.get_device().get('swap')
+            self.volume_manager.mount_volumes()
+            self.system = self.volume_manager
+            device_map['root'] = self.volume_manager.get_device().get('root')
+            device_map['swap'] = self.volume_manager.get_device().get('swap')
         else:
             log.info(
                 'Creating root(%s) filesystem on %s',
@@ -348,7 +348,7 @@ class DiskBuilder:
                 'mount_options': self.custom_root_mount_args,
                 'create_options': self.custom_root_creation_args
             }
-            filesystem = FileSystem(
+            filesystem = FileSystem.new(
                 self.requested_filesystem, device_map['root'],
                 self.root_dir + '/',
                 filesystem_custom_parameters
@@ -360,15 +360,16 @@ class DiskBuilder:
 
         # create swap on current root device if requested
         if self.swap_mbytes:
-            swap = FileSystem(
+            swap = FileSystem.new(
                 'swap', device_map['swap']
             )
             swap.create_on_device(
                 label='SWAP'
             )
 
-        # store root partition uuid for profile
+        # store root partition/filesystem uuid for profile
         self._preserve_root_partition_uuid(device_map)
+        self._preserve_root_filesystem_uuid(device_map)
 
         # create a random image identifier
         self.mbrid = SystemIdentifier()
@@ -460,6 +461,17 @@ class DiskBuilder:
             self.system.sync_data(
                 self._get_exclude_list_for_root_data_sync(device_map)
             )
+
+        # run post sync script hook
+        if self.system_setup.script_exists(
+            defaults.POST_DISK_SYNC_SCRIPT
+        ):
+            disk_system = SystemSetup(
+                self.xml_state, self.system.get_mountpoint()
+            )
+            disk_system.import_description()
+            disk_system.call_disk_script()
+            disk_system.cleanup()
 
         # install boot loader
         self._install_bootloader(device_map)
@@ -605,7 +617,6 @@ class DiskBuilder:
         try:
             with open(boot_image_dump_file, 'rb') as boot_image_dump:
                 boot_image = pickle.load(boot_image_dump)
-            boot_image.enable_cleanup()
             Path.wipe(boot_image_dump_file)
         except Exception as e:
             raise KiwiInstallMediaError(
@@ -658,7 +669,7 @@ class DiskBuilder:
                 spare_part_data_path = self.root_dir + '{0}/'.format(
                     self.spare_part_mountpoint
                 )
-            filesystem = FileSystem(
+            filesystem = FileSystem.new(
                 self.spare_part_fs,
                 device_map['spare'],
                 spare_part_data_path,
@@ -675,7 +686,7 @@ class DiskBuilder:
                 'Creating EFI(fat16) filesystem on %s',
                 device_map['efi'].get_device()
             )
-            filesystem = FileSystem(
+            filesystem = FileSystem.new(
                 'fat16', device_map['efi'], self.root_dir + '/boot/efi/'
             )
             filesystem.create_on_device(
@@ -695,7 +706,7 @@ class DiskBuilder:
                 'Creating boot(%s) filesystem on %s',
                 boot_filesystem, device_map['boot'].get_device()
             )
-            filesystem = FileSystem(
+            filesystem = FileSystem.new(
                 boot_filesystem, device_map['boot'], boot_directory
             )
             filesystem.create_on_device(
@@ -952,6 +963,16 @@ class DiskBuilder:
         if partition_uuid:
             self.xml_state.set_root_partition_uuid(
                 partition_uuid
+            )
+
+    def _preserve_root_filesystem_uuid(self, device_map):
+        block_operation = BlockID(
+            device_map['root'].get_device()
+        )
+        rootfs_uuid = block_operation.get_blkid('UUID')
+        if rootfs_uuid:
+            self.xml_state.set_root_filesystem_uuid(
+                rootfs_uuid
             )
 
     def _write_image_identifier_to_system_image(self):

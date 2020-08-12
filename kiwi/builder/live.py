@@ -19,7 +19,6 @@ import os
 import logging
 from tempfile import mkdtemp
 from tempfile import NamedTemporaryFile
-import platform
 import shutil
 
 # project
@@ -60,9 +59,7 @@ class LiveImageBuilder:
     def __init__(self, xml_state, target_dir, root_dir, custom_args=None):
         self.media_dir = None
         self.live_container_dir = None
-        self.arch = platform.machine()
-        if self.arch == 'i686' or self.arch == 'i586':
-            self.arch = 'ix86'
+        self.arch = Defaults.get_platform_name()
         self.root_dir = root_dir
         self.target_dir = target_dir
         self.xml_state = xml_state
@@ -91,7 +88,7 @@ class LiveImageBuilder:
             [
                 target_dir, '/',
                 xml_state.xml_data.get_name(),
-                '.' + platform.machine(),
+                '.' + Defaults.get_platform_name(),
                 '-' + xml_state.get_image_version(),
                 '.iso'
             ]
@@ -185,15 +182,16 @@ class LiveImageBuilder:
 
         # create dracut initrd for live image
         log.info('Creating live ISO boot image')
-        live_dracut_module = Defaults.get_live_dracut_module_from_flag(
+        live_dracut_modules = Defaults.get_live_dracut_modules_from_flag(
             self.live_type
         )
-        self.boot_image.include_module('pollcdrom')
-        self.boot_image.include_module(live_dracut_module)
+        live_dracut_modules.append('pollcdrom')
+        for dracut_module in live_dracut_modules:
+            self.boot_image.include_module(dracut_module)
         self.boot_image.omit_module('multipath')
         self.boot_image.write_system_config_file(
             config={
-                'modules': ['pollcdrom', live_dracut_module],
+                'modules': live_dracut_modules,
                 'omit_modules': ['multipath']
             },
             config_file=self.root_dir + '/etc/dracut.conf.d/02-livecd.conf'
@@ -230,7 +228,7 @@ class LiveImageBuilder:
             self.xml_state.build_type.get_target_blocksize()
         )
         loop_provider.create()
-        live_filesystem = FileSystem(
+        live_filesystem = FileSystem.new(
             name=root_filesystem,
             device_provider=loop_provider,
             root_dir=self.root_dir + os.sep,
@@ -243,6 +241,8 @@ class LiveImageBuilder:
         live_filesystem.sync_data(
             Defaults.get_exclude_list_for_root_data_sync()
         )
+        live_filesystem.umount()
+
         log.info('--> Creating squashfs container for root image')
         self.live_container_dir = mkdtemp(
             prefix='live-container.', dir=self.target_dir
@@ -251,7 +251,7 @@ class LiveImageBuilder:
         shutil.copy(
             root_image.name, self.live_container_dir + '/LiveOS/rootfs.img'
         )
-        live_container_image = FileSystem(
+        live_container_image = FileSystem.new(
             name='squashfs',
             device_provider=None,
             root_dir=self.live_container_dir,

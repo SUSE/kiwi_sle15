@@ -64,13 +64,13 @@ class TestDefaults:
             lookup_path='lookup_path'
         ) == 'grub'
 
-    def test_get_live_dracut_module_from_flag(self):
-        assert Defaults.get_live_dracut_module_from_flag('foo') == \
-            'kiwi-live'
-        assert Defaults.get_live_dracut_module_from_flag('overlay') == \
-            'kiwi-live'
-        assert Defaults.get_live_dracut_module_from_flag('dmsquash') == \
-            'dmsquash-live livenet'
+    def test_get_live_dracut_modules_from_flag(self):
+        assert Defaults.get_live_dracut_modules_from_flag('foo') == \
+            ['kiwi-live']
+        assert Defaults.get_live_dracut_modules_from_flag('overlay') == \
+            ['kiwi-live']
+        assert Defaults.get_live_dracut_modules_from_flag('dmsquash') == \
+            ['dmsquash-live', 'livenet']
 
     @patch('platform.machine')
     def test_get_iso_boot_path(self, mock_machine):
@@ -89,3 +89,9 @@ class TestDefaults:
     def test_is_x86_arch(self):
         assert Defaults.is_x86_arch('x86_64') is True
         assert Defaults.is_x86_arch('aarch64') is False
+
+    @patch('os.path.exists')
+    def test_get_vendor_grubenv(self, mock_path_exists):
+        mock_path_exists.return_value = True
+        assert Defaults.get_vendor_grubenv('boot/efi') == \
+            'boot/efi/EFI/fedora/grubenv'

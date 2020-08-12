@@ -77,7 +77,7 @@ class TestVolumeManagerBtrfs:
 
     @patch('os.path.exists')
     @patch('kiwi.volume_manager.btrfs.Command.run')
-    @patch('kiwi.volume_manager.btrfs.FileSystem')
+    @patch('kiwi.volume_manager.btrfs.FileSystem.new')
     @patch('kiwi.volume_manager.btrfs.MappedDevice')
     @patch('kiwi.volume_manager.btrfs.MountManager')
     @patch('kiwi.volume_manager.base.mkdtemp')
@@ -108,7 +108,7 @@ class TestVolumeManagerBtrfs:
 
     @patch('os.path.exists')
     @patch('kiwi.volume_manager.btrfs.Command.run')
-    @patch('kiwi.volume_manager.btrfs.FileSystem')
+    @patch('kiwi.volume_manager.btrfs.FileSystem.new')
     @patch('kiwi.volume_manager.btrfs.MappedDevice')
     @patch('kiwi.volume_manager.btrfs.MountManager')
     @patch('kiwi.volume_manager.base.mkdtemp')
@@ -150,11 +150,12 @@ class TestVolumeManagerBtrfs:
 
     @patch('os.path.exists')
     @patch('kiwi.volume_manager.btrfs.Command.run')
-    @patch('kiwi.volume_manager.btrfs.FileSystem')
+    @patch('kiwi.volume_manager.btrfs.FileSystem.new')
     @patch('kiwi.volume_manager.btrfs.MappedDevice')
     @patch('kiwi.volume_manager.btrfs.MountManager')
+    @patch('kiwi.volume_manager.base.mkdtemp')
     def test_setup_volume_id_not_detected(
-        self, mock_mount, mock_mapped_device, mock_fs,
+        self, mock_mkdtemp, mock_mount, mock_mapped_device, mock_fs,
         mock_command, mock_os_exists
     ):
         command_call = Mock()
@@ -279,7 +280,7 @@ class TestVolumeManagerBtrfs:
 
     @patch('os.path.exists')
     @patch('kiwi.volume_manager.btrfs.Command.run')
-    @patch('kiwi.volume_manager.btrfs.FileSystem')
+    @patch('kiwi.volume_manager.btrfs.FileSystem.new')
     @patch('kiwi.volume_manager.btrfs.MappedDevice')
     @patch('kiwi.volume_manager.btrfs.MountManager')
     @patch('kiwi.volume_manager.base.mkdtemp')
@@ -414,7 +415,7 @@ class TestVolumeManagerBtrfs:
         )
         sync.sync_data.assert_called_once_with(
             exclude=['exclude_me'],
-            options=['-a', '-H', '-X', '-A', '--one-file-system']
+            options=['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
         )
         assert m_open.call_args_list == [
             call('tmpdir/@/.snapshots/1/info.xml', 'w'),
@@ -473,7 +474,7 @@ class TestVolumeManagerBtrfs:
         )
         sync.sync_data.assert_called_once_with(
             exclude=['exclude_me'],
-            options=['-a', '-H', '-X', '-A', '--one-file-system']
+            options=['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
         )
         assert m_open.call_args_list == [
             call('tmpdir/@/.snapshots/1/info.xml', 'w'),
@@ -507,7 +508,7 @@ class TestVolumeManagerBtrfs:
         )
         sync.sync_data.assert_called_once_with(
             exclude=['exclude_me'],
-            options=['-a', '-H', '-X', '-A', '--one-file-system']
+            options=['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
         )
 
     @patch('kiwi.volume_manager.btrfs.Command.run')
@@ -531,3 +532,8 @@ class TestVolumeManagerBtrfs:
             self.volume_manager.__del__()
             mock_umount_volumes.assert_called_once_with()
             mock_wipe.assert_called_once_with(self.volume_manager.mountpoint)
+        mock_umount_volumes.reset_mock()
+        mock_umount_volumes.return_value = False
+        with self._caplog.at_level(logging.WARNING):
+            self.volume_manager.__del__()
+            mock_umount_volumes.assert_called_once_with()

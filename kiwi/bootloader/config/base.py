@@ -18,7 +18,6 @@
 import os
 import re
 import logging
-import platform
 from collections import namedtuple
 
 # project
@@ -46,7 +45,7 @@ class BootLoaderConfigBase:
         self.root_dir = root_dir
         self.boot_dir = boot_dir or root_dir
         self.xml_state = xml_state
-        self.arch = platform.machine()
+        self.arch = Defaults.get_platform_name()
 
         self.volumes_mount = []
         self.root_mount = None
@@ -230,7 +229,7 @@ class BootLoaderConfigBase:
 
         :rtype: int
         """
-        timeout_seconds = self.xml_state.build_type.get_boottimeout()
+        timeout_seconds = self.xml_state.get_build_type_bootloader_timeout()
         if timeout_seconds is None:
             timeout_seconds = Defaults.get_default_boot_timeout_seconds()
         return timeout_seconds

@@ -15,7 +15,6 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
-import platform
 import logging
 import re
 
@@ -53,7 +52,7 @@ class BootLoaderConfigZipl(BootLoaderConfigBase):
                 {'targetbase': 'device_name'}
         """
         self.custom_args = custom_args
-        arch = platform.machine()
+        arch = Defaults.get_platform_name()
         if 's390' in arch:
             self.arch = arch
         else:
@@ -72,11 +71,13 @@ class BootLoaderConfigZipl(BootLoaderConfigBase):
         self.cmdline_failsafe = ' '.join(
             [self.cmdline, Defaults.get_failsafe_kernel_options()]
         )
-        self.target_blocksize = self.xml_state.build_type.get_target_blocksize()
+        self.target_blocksize = \
+            self.xml_state.build_type.get_target_blocksize()
         if not self.target_blocksize:
             self.target_blocksize = Defaults.get_s390_disk_block_size()
 
-        self.target_type = self.xml_state.build_type.get_zipl_targettype()
+        self.target_type = \
+            self.xml_state.get_build_type_bootloader_targettype()
         if not self.target_type:
             self.target_type = Defaults.get_s390_disk_type()
 
