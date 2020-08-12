@@ -20,6 +20,7 @@ import os
 import logging
 
 # project
+from kiwi.defaults import Defaults
 from kiwi.command import Command
 from kiwi.utils.sync import DataSync
 from kiwi.path import Path
@@ -134,14 +135,12 @@ class PackageManagerApt(PackageManagerBase):
             # debootstrap takes care to install apt-get
             self.package_requests.remove('apt-get')
         try:
-            if self.repository.unauthenticated == 'false':
-                log.warning(
-                    'KIWI does not support signature checks for apt-get '
-                    'package manager during the bootstrap procedure, any '
-                    'provided key will only be used inside the chroot '
-                    'environment'
-                )
-            cmd = ['debootstrap', '--no-check-gpg']
+            cmd = ['debootstrap']
+            if self.repository.unauthenticated == 'false' and \
+               os.path.exists(self.repository.keyring):
+                cmd.append('--keyring={}'.format(self.repository.keyring))
+            else:
+                cmd.append('--no-check-gpg')
             if self.deboostrap_minbase:
                 cmd.append('--variant=minbase')
             if self.repository.components:
@@ -158,13 +157,9 @@ class PackageManagerApt(PackageManagerBase):
                 bootstrap_dir + '/', self.root_dir
             )
             data.sync_data(
-                options=['-a', '-H', '-X', '-A'],
+                options=Defaults.get_sync_options(),
                 exclude=['proc', 'sys', 'dev']
             )
-            for key in self.repository.signing_keys:
-                Command.run([
-                    'chroot', self.root_dir, 'apt-key', 'add', key
-                ], self.command_env)
         except Exception as e:
             raise KiwiDebootstrapError(
                 '%s: %s' % (type(e).__name__, format(e))

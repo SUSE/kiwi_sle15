@@ -61,9 +61,12 @@ Overlay Files
    A directory structure with files and subdirectories stored as part
    of the Image Description. This directory structure is packaged as
    a file :file:`root.tar.gz` or stored inside a directory named
-   :file:`root`. The content of the directory structure is copied on top of
-   the the existing file system (overlayed) of the appliance root.
-   This also includes permissions and attributes as a supplement.
+   :file:`root`. Additional overlay directories for selected profiles
+   are supported too and are taken into account if the directory
+   name matches the name of the profile. The content of each of the
+   directory structures is copied on top of the the existing file
+   system (overlayed) of the appliance root. This also includes
+   permissions and attributes as a supplement.
 
 {kiwi}
    An OS appliance builder.
@@ -80,14 +83,12 @@ System Requirements
 To use and run {kiwi}, you need:
 
 * A recent Linux distribution, see :ref:`supported-distributions` for
-  details. Alternatively a Linux distribution which supports the docker
-  container system, where {kiwi} can be run inside a container, see:
-  :ref:`container-building`
+  details.
 
 * Enough free disk space to build and store the image. We recommend a
   minimum of 15GB.
 
-* Python version 3.4 or higher
+* Python version 3.5 or higher
 
 * Git (package ``git``) to clone a repository.
 

@@ -26,37 +26,39 @@ class TestRepositoryApt:
         root_bind.shared_location = '/shared-dir'
 
         with patch('builtins.open', create=True):
-            self.repo = RepositoryApt(root_bind, ['exclude_docs'])
+            self.repo = RepositoryApt(
+                root_bind, custom_args=['exclude_docs']
+            )
 
-        self.exclude_docs = True
-        self.apt_conf.get_host_template.assert_called_once_with(
-            self.exclude_docs
-        )
-        template.substitute.assert_called_once_with(
-            {
-                'apt_shared_base': '/shared-dir/apt-get',
-                'unauthenticated': 'true'
-            }
-        )
+            self.exclude_docs = True
+            self.apt_conf.get_host_template.assert_called_once_with(
+                self.exclude_docs
+            )
+            template.substitute.assert_called_once_with(
+                {
+                    'apt_shared_base': '/shared-dir/apt-get',
+                    'unauthenticated': 'true'
+                }
+            )
+            repo = RepositoryApt(
+                root_bind, custom_args=['check_signatures']
+            )
+            assert repo.custom_args == []
+            assert repo.unauthenticated == 'false'
 
-    @patch('kiwi.repository.apt.NamedTemporaryFile')
-    @patch('kiwi.repository.apt.Path.create')
-    def test_post_init_no_custom_args(self, mock_path, mock_temp):
-        self.repo.post_init()
-        assert self.repo.custom_args == []
-
-    @patch('kiwi.repository.apt.NamedTemporaryFile')
-    @patch('kiwi.repository.apt.Path.create')
-    def test_post_init_with_custom_args(self, mock_path, mock_temp):
-        self.repo.post_init(['check_signatures'])
-        assert self.repo.custom_args == []
-        assert self.repo.unauthenticated == 'false'
+            repo = RepositoryApt(root_bind)
+            assert repo.custom_args == []
+            assert repo.unauthenticated == 'true'
 
     def test_use_default_location(self):
         template = mock.Mock()
         template.substitute.return_value = 'template-data'
         self.apt_conf.get_image_template.return_value = template
         self.repo.use_default_location()
+        assert self.repo.shared_apt_get_dir['sources-dir'] == \
+            '../data/etc/apt/sources.list.d'
+        assert self.repo.shared_apt_get_dir['preferences-dir'] == \
+            '../data/etc/apt/preferences.d'
         self.apt_conf.get_image_template.assert_called_once_with(
             self.exclude_docs
         )
@@ -177,9 +179,31 @@ class TestRepositoryApt:
                 '/shared-dir/apt-get/sources.list.d/foo.list', 'w'
             )
 
-    def test_import_trusted_keys(self):
+    @patch('kiwi.repository.apt.os.unlink')
+    @patch('kiwi.repository.apt.os.path.exists')
+    @patch('kiwi.repository.apt.Command.run')
+    def test_import_trusted_keys(self, mock_run, mock_exists, mock_unlink):
+        mock_exists.return_value = True
         self.repo.import_trusted_keys(['key-file-a.asc', 'key-file-b.asc'])
-        assert self.repo.signing_keys == ['key-file-a.asc', 'key-file-b.asc']
+        assert mock_run.call_args_list == [
+            call([
+                'gpg', '--no-options', '--no-default-keyring',
+                '--no-auto-check-trustdb', '--trust-model', 'always',
+                '--keyring', '/shared-dir/apt-get/trusted-keybox.gpg',
+                '--import', '--ignore-time-conflict', 'key-file-a.asc'
+            ]), call([
+                'gpg', '--no-options', '--no-default-keyring',
+                '--no-auto-check-trustdb', '--trust-model', 'always',
+                '--keyring', '/shared-dir/apt-get/trusted-keybox.gpg',
+                '--import', '--ignore-time-conflict', 'key-file-b.asc'
+            ]), call([
+                'gpg', '--no-options', '--no-default-keyring',
+                '--no-auto-check-trustdb', '--trust-model', 'always',
+                '--keyring', '/shared-dir/apt-get/trusted-keybox.gpg',
+                '--export', '--yes', '--output',
+                '/shared-dir/apt-get/trusted.gpg'
+            ])
+        ]
 
     @patch('kiwi.path.Path.wipe')
     def test_delete_repo(self, mock_wipe):

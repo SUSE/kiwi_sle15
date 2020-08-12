@@ -18,12 +18,14 @@
 import glob
 import os
 import logging
-import platform
+import copy
 from collections import OrderedDict
 from collections import namedtuple
 from tempfile import NamedTemporaryFile
 
 # project
+import kiwi.defaults as defaults
+
 from kiwi.mount_manager import MountManager
 from kiwi.system.uri import Uri
 from kiwi.repository import Repository
@@ -40,6 +42,7 @@ from kiwi.archive.tar import ArchiveTar
 from kiwi.utils.compress import Compress
 from kiwi.utils.command_capabilities import CommandCapabilities
 from kiwi.utils.rpm_database import RpmDataBase
+from kiwi.system.profile import Profile
 
 from kiwi.exceptions import (
     KiwiImportDescriptionError,
@@ -58,8 +61,7 @@ class SystemSetup:
     a minimal work environment inside of the image according to
     the desired image type.
 
-    :param str arch: platform.machine. The 32bit x86 platform is
-        handled as 'ix86'
+    :param str arch: Defaults.get_platform_name
     :param object xml_state: instance of :class:`XMLState`
     :param str description_dir: path to image description directory
     :param derived_description_dir: path to derived_description_dir
@@ -69,10 +71,9 @@ class SystemSetup:
         image archives, overlay files
     :param str root_dir: root directory path name
     """
+
     def __init__(self, xml_state, root_dir):
-        self.arch = platform.machine()
-        if self.arch == 'i686' or self.arch == 'i586':
-            self.arch = 'ix86'
+        self.arch = Defaults.get_platform_name()
         self.xml_state = xml_state
         self.description_dir = \
             xml_state.xml_data.description_dir
@@ -88,9 +89,15 @@ class SystemSetup:
         script helper methods
         """
         log.info('Importing Image description to system tree')
-        description = self.root_dir + '/image/config.xml'
-        log.info('--> Importing state XML description as image/config.xml')
-        Path.create(self.root_dir + '/image')
+        description = os.path.join(
+            self.root_dir, defaults.IMAGE_METADATA_DIR, 'config.xml'
+        )
+        log.info(
+            '--> Importing state XML description to {0}'.format(description)
+        )
+        Path.create(
+            os.path.join(self.root_dir, defaults.IMAGE_METADATA_DIR)
+        )
         with open(description, 'w', encoding='utf-8') as config:
             config.write('<?xml version="1.0" encoding="utf-8"?>')
             self.xml_state.xml_data.export(outfile=config, level=0)
@@ -99,12 +106,23 @@ class SystemSetup:
         self._import_custom_archives()
         self._import_cdroot_archive()
 
+    def script_exists(self, name):
+        """
+        Check if provided script base name exists in the image description
+        """
+        return os.path.exists(os.path.join(self.description_dir, name))
+
     def cleanup(self):
         """
         Delete all traces of a kiwi description which are not
         required in the later image
         """
-        Command.run(['rm', '-r', '-f', '/.kconfig', '/image'])
+        Command.run(
+            [
+                'chroot', self.root_dir,
+                'rm', '-rf', '.kconfig', defaults.IMAGE_METADATA_DIR
+            ]
+        )
 
     def import_repositories_marked_as_imageinclude(self):
         """
@@ -139,10 +157,10 @@ class SystemSetup:
             )
             if not repo_alias:
                 repo_alias = uri.alias()
-            log.info('Setting up image repository %s', repo_source)
-            log.info('--> Type: %s', repo_type)
-            log.info('--> Translated: %s', repo_source_translated)
-            log.info('--> Alias: %s', repo_alias)
+            log.info('Setting up image repository {0}'.format(repo_source))
+            log.info('--> Type: {0}'.format(repo_type))
+            log.info('--> Translated: {0}'.format(repo_source_translated))
+            log.info('--> Alias: {0}'.format(repo_alias))
             repo.add_repo(
                 repo_alias, repo_source_translated,
                 repo_type, repo_priority, repo_dist, repo_components,
@@ -177,7 +195,18 @@ class SystemSetup:
         Copy overlay files from the image description to
         the image root tree. Supported are a root/ directory
         or a root.tar.gz tarball. The root/ directory takes
-        precedence over the tarball
+        precedence over the tarball.
+
+        In addition the method also supports profile specific
+        overlay files which are searched in a directory of the
+        same name as the profile name.
+
+        The overall order for including overlay files is as
+        follows:
+
+        1. root/ dir or root.tar.gz
+        2. PROFILE_NAME/ dir(s) in the order of the selected
+           profiles
 
         :param bool follow_links: follow symlinks true|false
         :param bool preserve_owner_group: preserve permissions true|false
@@ -185,27 +214,23 @@ class SystemSetup:
         overlay_directory = self.description_dir + '/root/'
         overlay_archive = self.description_dir + '/root.tar.gz'
         if os.path.exists(overlay_directory):
-            log.info('Copying user defined files to image tree')
-            sync_options = [
-                '-r', '-p', '-t', '-D', '-H', '-X', '-A', '--one-file-system'
-            ]
-            if follow_links:
-                sync_options.append('--copy-links')
-            else:
-                sync_options.append('--links')
-            if preserve_owner_group:
-                sync_options.append('-o')
-                sync_options.append('-g')
-            data = DataSync(
-                overlay_directory, self.root_dir
-            )
-            data.sync_data(
-                options=sync_options
+            self._sync_overlay_files(
+                overlay_directory, follow_links, preserve_owner_group
             )
         elif os.path.exists(overlay_archive):
             log.info('Extracting user defined files from archive to image tree')
             archive = ArchiveTar(overlay_archive)
             archive.extract(self.root_dir)
+
+        for profile in self.xml_state.profiles:
+            overlay_directory = os.path.join(
+                self.description_dir, profile
+            ) + os.sep
+            if os.path.exists(overlay_directory):
+                self._sync_overlay_files(
+                    overlay_directory, follow_links, preserve_owner_group,
+                    profile
+                )
 
     def setup_machine_id(self):
         """
@@ -224,8 +249,8 @@ class SystemSetup:
         Deleting the machine-id without the dracut initrd
         creating a new one produces an inconsistent system
         """
-        machine_id = os.sep.join(
-            [self.root_dir, 'etc', 'machine-id']
+        machine_id = os.path.join(
+            self.root_dir, 'etc', 'machine-id'
         )
 
         if os.path.exists(machine_id):
@@ -267,7 +292,7 @@ class SystemSetup:
         """
         if 'keytable' in self.preferences:
             log.info(
-                'Setting up keytable: %s', self.preferences['keytable']
+                'Setting up keytable: {0}'.format(self.preferences['keytable'])
             )
             if CommandCapabilities.has_option_in_help(
                 'systemd-firstboot', '--keymap',
@@ -302,7 +327,9 @@ class SystemSetup:
                 locale = '{0}.UTF-8'.format(
                     self.preferences['locale'].split(',')[0]
                 )
-            log.info('Setting up locale: %s', self.preferences['locale'])
+            log.info(
+                'Setting up locale: {0}'.format(self.preferences['locale'])
+            )
             if CommandCapabilities.has_option_in_help(
                 'systemd-firstboot', '--locale',
                 root=self.root_dir, raise_on_error=False
@@ -312,13 +339,6 @@ class SystemSetup:
                     'chroot', self.root_dir, 'systemd-firstboot',
                     '--locale=' + locale
                 ])
-            if os.path.exists(self.root_dir + '/etc/sysconfig/language'):
-                Shell.run_common_function(
-                    'baseUpdateSysConfig', [
-                        self.root_dir + '/etc/sysconfig/language',
-                        'RC_LANG', locale
-                    ]
-                )
 
     def setup_timezone(self):
         """
@@ -326,7 +346,7 @@ class SystemSetup:
         """
         if 'timezone' in self.preferences:
             log.info(
-                'Setting up timezone: %s', self.preferences['timezone']
+                'Setting up timezone: {0}'.format(self.preferences['timezone'])
             )
             if CommandCapabilities.has_option_in_help(
                 'systemd-firstboot', '--timezone',
@@ -353,7 +373,7 @@ class SystemSetup:
         for user in self.xml_state.get_users():
             for group in self.xml_state.get_user_groups(user.get_name()):
                 if not system_users.group_exists(group):
-                    log.info('Adding group %s', group)
+                    log.info('Adding group {0}'.format(group))
                     system_users.group_add(group, [])
 
     def setup_users(self):
@@ -363,7 +383,7 @@ class SystemSetup:
         system_users = Users(self.root_dir)
 
         for user in self.xml_state.get_users():
-            log.info('Setting up user %s', user.get_name())
+            log.info('Setting up user {0}'.format(user.get_name()))
             password = user.get_password()
             password_format = user.get_pwdformat()
             home_path = user.get_home()
@@ -396,7 +416,7 @@ class SystemSetup:
                 system_users.user_add(user_name, options)
                 if home_path:
                     log.info(
-                        '--> Setting permissions for %s', home_path
+                        '--> Setting permissions for {0}'.format(home_path)
                     )
                     # Emtpy group string assumes the login or default group
                     system_users.setup_home_for_user(
@@ -431,9 +451,13 @@ class SystemSetup:
         image_id = self.xml_state.xml_data.get_id()
         if image_id and os.path.exists(self.root_dir + '/etc'):
             image_id_file = self.root_dir + '/etc/ImageID'
-            log.info('Creating identifier: %s as %s', image_id, image_id_file)
+            log.info(
+                'Creating image identifier: {0} in {1}'.format(
+                    image_id, image_id_file
+                )
+            )
             with open(image_id_file, 'w') as identifier:
-                identifier.write('%s\n' % image_id)
+                identifier.write('{0}{1}'.format(image_id, os.linesep))
 
     def set_selinux_file_contexts(self, security_context_file):
         """
@@ -492,6 +516,9 @@ class SystemSetup:
         elif packager == 'dpkg':
             self._export_deb_package_list(filename)
             return filename
+        elif packager == 'pacman':
+            self._export_pacman_package_list(filename)
+            return filename
 
     def export_package_verification(self, target_dir):
         """
@@ -519,17 +546,29 @@ class SystemSetup:
             self._export_deb_package_verification(filename)
             return filename
 
+    def call_disk_script(self):
+        """
+        Call disk.sh script chrooted
+        """
+        self._call_script(
+            defaults.POST_DISK_SYNC_SCRIPT
+        )
+
     def call_config_script(self):
         """
         Call config.sh script chrooted
         """
-        self._call_script('config.sh')
+        self._call_script(
+            defaults.POST_PREPARE_SCRIPT
+        )
 
     def call_image_script(self):
         """
         Call images.sh script chrooted
         """
-        self._call_script('images.sh')
+        self._call_script(
+            defaults.PRE_CREATE_SCRIPT
+        )
 
     def call_edit_boot_config_script(
         self, filesystem, boot_part_id, working_directory=None
@@ -545,7 +584,7 @@ class SystemSetup:
         :param str working_directory: directory name
         """
         self._call_script_no_chroot(
-            name='edit_boot_config.sh',
+            name=defaults.EDIT_BOOT_CONFIG_SCRIPT,
             option_list=[filesystem, format(boot_part_id)],
             working_directory=working_directory
         )
@@ -564,7 +603,7 @@ class SystemSetup:
         :param str working_directory: directory name
         """
         self._call_script_no_chroot(
-            name='edit_boot_install.sh',
+            name=defaults.EDIT_BOOT_INSTALL_SCRIPT,
             option_list=[diskname, boot_device_node],
             working_directory=working_directory
         )
@@ -679,9 +718,9 @@ class SystemSetup:
         # recovery.tar.filesystem
         recovery_filesystem = self.xml_state.build_type.get_filesystem()
         with open(metadata['partition_filesystem'], 'w') as partfs:
-            partfs.write('%s' % recovery_filesystem)
+            partfs.write('{0}'.format(recovery_filesystem))
         log.info(
-            '--> Recovery partition filesystem: %s', recovery_filesystem
+            '--> Recovery partition filesystem: {0}'.format(recovery_filesystem)
         )
         # recovery.tar.files
         bash_comand = [
@@ -692,17 +731,18 @@ class SystemSetup:
         )
         tar_files_count = int(tar_files_call.output.rstrip('\n'))
         with open(metadata['archive_filecount'], 'w') as files:
-            files.write('%d\n' % tar_files_count)
+            files.write('{0}{1}'.format(tar_files_count, os.linesep))
         log.info(
-            '--> Recovery file count: %d files', tar_files_count
+            '--> Recovery file count: {0} files'.format(tar_files_count)
         )
         # recovery.tar.size
         recovery_archive_size_bytes = os.path.getsize(metadata['archive_name'])
         with open(metadata['archive_size'], 'w') as size:
-            size.write('%d' % recovery_archive_size_bytes)
+            size.write('{0}'.format(recovery_archive_size_bytes))
         log.info(
-            '--> Recovery uncompressed size: %d mbytes',
-            int(recovery_archive_size_bytes / 1048576)
+            '--> Recovery uncompressed size: {0} mbytes'.format(
+                int(recovery_archive_size_bytes / 1048576)
+            )
         )
         # recovery.tar.gz
         log.info('--> Compressing recovery archive')
@@ -715,10 +755,11 @@ class SystemSetup:
         recovery_partition_mbytes = recovery_archive_gz_size_mbytes \
             + Defaults.get_recovery_spare_mbytes()
         with open(metadata['partition_size'], 'w') as gzsize:
-            gzsize.write('%d' % recovery_partition_mbytes)
+            gzsize.write('{0}'.format(recovery_partition_mbytes))
         log.info(
-            '--> Recovery partition size: %d mbytes',
-            recovery_partition_mbytes
+            '--> Recovery partition size: {0} mbytes'.format(
+                recovery_partition_mbytes
+            )
         )
         # delete recovery archive if inplace recovery is requested
         # In this mode the recovery archive is created at install time
@@ -766,13 +807,16 @@ class SystemSetup:
     def _import_cdroot_archive(self):
         glob_match = self.description_dir + '/config-cdroot.tar*'
         for cdroot_archive in sorted(glob.iglob(glob_match)):
+            archive_file = os.path.join(
+                self.root_dir, defaults.IMAGE_METADATA_DIR
+            )
             log.info(
-                '--> Importing {0} archive as /image/{0}'.format(
-                    cdroot_archive
+                '--> Importing {0} archive to {1}'.format(
+                    cdroot_archive, archive_file
                 )
             )
             Command.run(
-                ['cp', cdroot_archive, self.root_dir + '/image/']
+                ['cp', cdroot_archive, archive_file + os.sep]
             )
             break
 
@@ -788,14 +832,16 @@ class SystemSetup:
         if bootstrap_archives:
             archive_list += bootstrap_archives
 
-        description_target = self.root_dir + '/image/'
+        archive_target_dir = os.path.join(
+            self.root_dir, defaults.IMAGE_METADATA_DIR
+        ) + os.sep
 
         for archive in archive_list:
-            archive_is_absolute = archive.startswith('/')
+            archive_is_absolute = archive.startswith(os.sep)
             if archive_is_absolute:
                 archive_file = archive
             else:
-                archive_file = self.description_dir + '/' + archive
+                archive_file = os.path.join(self.description_dir, archive)
 
             archive_exists = os.path.exists(archive_file)
 
@@ -806,15 +852,16 @@ class SystemSetup:
 
             if archive_exists:
                 log.info(
-                    '--> Importing %s archive as %s',
-                    archive_file, 'image/' + archive
+                    '--> Importing {0} archive to {1}'.format(
+                        archive_file, archive_target_dir
+                    )
                 )
                 Command.run(
-                    ['cp', archive_file, description_target]
+                    ['cp', archive_file, archive_target_dir]
                 )
             else:
                 raise KiwiImportDescriptionError(
-                    'Specified archive %s does not exist' % archive_file
+                    'Specified archive {0} does not exist'.format(archive_file)
                 )
 
     def _import_custom_scripts(self):
@@ -832,19 +879,23 @@ class SystemSetup:
             'script_type', ['filepath', 'raise_if_not_exists']
         )
         custom_scripts = {
-            'config.sh': script_type(
-                filepath='config.sh',
+            defaults.POST_PREPARE_SCRIPT: script_type(
+                filepath=defaults.POST_PREPARE_SCRIPT,
                 raise_if_not_exists=False
             ),
-            'images.sh': script_type(
-                filepath='images.sh',
+            defaults.PRE_CREATE_SCRIPT: script_type(
+                filepath=defaults.PRE_CREATE_SCRIPT,
                 raise_if_not_exists=False
             ),
-            'edit_boot_config.sh': script_type(
+            defaults.POST_DISK_SYNC_SCRIPT: script_type(
+                filepath=defaults.POST_DISK_SYNC_SCRIPT,
+                raise_if_not_exists=False
+            ),
+            defaults.EDIT_BOOT_CONFIG_SCRIPT: script_type(
                 filepath=self.xml_state.build_type.get_editbootconfig(),
                 raise_if_not_exists=True
             ),
-            'edit_boot_install.sh': script_type(
+            defaults.EDIT_BOOT_INSTALL_SCRIPT: script_type(
                 filepath=self.xml_state.build_type.get_editbootinstall(),
                 raise_if_not_exists=True
             )
@@ -853,7 +904,9 @@ class SystemSetup:
             sorted(custom_scripts.items())
         )
 
-        description_target = self.root_dir + '/image/'
+        script_target_dir = os.path.join(
+            self.root_dir, defaults.IMAGE_METADATA_DIR
+        )
         need_script_helper_functions = False
 
         for name, script in list(sorted_custom_scripts.items()):
@@ -861,19 +914,27 @@ class SystemSetup:
                 if script.filepath.startswith('/'):
                     script_file = script.filepath
                 else:
-                    script_file = self.description_dir + '/' + script.filepath
+                    script_file = os.path.join(
+                        self.description_dir, script.filepath
+                    )
                 if os.path.exists(script_file):
+                    script_target_file = os.path.join(
+                        script_target_dir, name
+                    )
                     log.info(
-                        '--> Importing %s script as %s',
-                        script.filepath, 'image/' + name
+                        '--> Importing {0} script to {1}'.format(
+                            script.filepath, script_target_file
+                        )
                     )
                     Command.run(
-                        ['cp', script_file, description_target + name]
+                        ['cp', script_file, script_target_file]
                     )
                     need_script_helper_functions = True
                 elif script.raise_if_not_exists:
                     raise KiwiImportDescriptionError(
-                        'Specified script %s does not exist' % script_file
+                        'Specified script {0} does not exist'.format(
+                            script_file
+                        )
                     )
 
         if need_script_helper_functions:
@@ -886,21 +947,28 @@ class SystemSetup:
                 ]
             )
 
-    def _call_script(self, name):
+    def _call_script(self, name, option_list=None):
         script_path = os.path.join(self.root_dir, 'image', name)
         if os.path.exists(script_path):
+            options = option_list or []
             command = ['chroot', self.root_dir]
             if not Path.access(script_path, os.X_OK):
-                command += ['bash']
-            command += ['/image/' + name]
-            config_script = Command.call(command)
+                command.append('bash')
+            command.append(
+                os.path.join(defaults.IMAGE_METADATA_DIR, name)
+            )
+            command.extend(options)
+            profile = Profile(self.xml_state)
+            caller_environment = copy.deepcopy(os.environ)
+            caller_environment.update(profile.get_settings())
+            config_script = Command.call(command, caller_environment)
             process = CommandProcess(
                 command=config_script, log_topic='Calling ' + name + ' script'
             )
             result = process.poll_and_watch()
             if result.returncode != 0:
                 raise KiwiScriptFailed(
-                    '%s failed: %s' % (name, format(result.stderr))
+                    '{0} failed: {1}'.format(name, result.stderr)
                 )
 
     def _call_script_no_chroot(
@@ -925,7 +993,7 @@ class SystemSetup:
             result = process.poll_and_watch()
             if result.returncode != 0:
                 raise KiwiScriptFailed(
-                    '%s failed: %s' % (name, format(result.stderr))
+                    '{0} failed: {1}'.format(name, result.stderr)
                 )
 
     def _create_passwd_hash(self, password):
@@ -1009,6 +1077,19 @@ class SystemSetup:
             )
             packages.write(os.linesep)
 
+    def _export_pacman_package_list(self, filename):
+        log.info('Export pacman packages metadata')
+        query_call = Command.run(['pacman', '-Qe'])
+        with open(filename, 'w') as packages:
+            for line in query_call.output.splitlines():
+                package, _, version_release = line.partition(' ')
+                version, _, release = version_release.partition('-')
+                packages.writelines([
+                    '{0}|None|{1}|{2}|None|None|None{3}'.format(
+                        package, version, release, os.linesep
+                    )
+                ])
+
     def _export_rpm_package_verification(self, filename):
         log.info('Export rpm verification metadata')
         dbpath_option = [
@@ -1047,3 +1128,29 @@ class SystemSetup:
         if shared_mount.is_mounted():
             shared_mount.umount_lazy()
         return dbpath
+
+    def _sync_overlay_files(
+        self, overlay_directory, follow_links=False,
+        preserve_owner_group=False, profile=None
+    ):
+        log.info(
+            'Copying user defined {0} to image tree'.format(
+                'files for profile: {0}'.format(profile) if profile else 'files'
+            )
+        )
+        sync_options = [
+            '-r', '-p', '-t', '-D', '-H', '-X', '-A', '--one-file-system'
+        ]
+        if follow_links:
+            sync_options.append('--copy-links')
+        else:
+            sync_options.append('--links')
+        if preserve_owner_group:
+            sync_options.append('-o')
+            sync_options.append('-g')
+        data = DataSync(
+            overlay_directory, self.root_dir
+        )
+        data.sync_data(
+            options=sync_options
+        )
