@@ -69,7 +69,7 @@ class KisBuilder:
         self.xz_options = custom_args['xz_options'] if custom_args \
             and 'xz_options' in custom_args else None
 
-        self.boot_image_task = BootImage(
+        self.boot_image_task = BootImage.new(
             xml_state, target_dir, root_dir,
             signing_keys=self.boot_signing_keys
         )
@@ -241,6 +241,15 @@ class KisBuilder:
             ),
             use_for_bundle=True,
             compress=False,
+            shasum=False
+        )
+        self.result.add(
+            key='image_changes',
+            filename=self.system_setup.export_package_changes(
+                self.target_dir
+            ),
+            use_for_bundle=True,
+            compress=True,
             shasum=False
         )
         self.result.add(

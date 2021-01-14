@@ -43,10 +43,9 @@ scripts or configuration data.
 
 A collection of example image descriptions can be found on the github
 repository here: https://github.com/OSInside/kiwi-descriptions. Most of the
-descriptions provide a so called JeOS image. JeOS means Just enough
-Operating System. A JeOS is a small, text only based image including a
-predefined remote source setup to allow installation of missing
-software components at a later point in time.
+descriptions provide a so called appliance image. Appliance means that it's a small, text only based
+image including a predefined remote source setup to allow installation of missing software
+components at a later point in time.
 
 {kiwi} operates in two steps. The system build command combines
 both steps into one to make it easier to start with {kiwi}. The first
@@ -124,7 +123,7 @@ EXAMPLE
 
    $ git clone https://github.com/OSInside/kiwi-descriptions
 
-   $ kiwi --type vmx system build \
+   $ kiwi --type oem system build \
        --description kiwi-descriptions/suse/x86_64/{exc_description} \
        --target-dir /tmp/myimage
 
@@ -142,4 +141,4 @@ to use a legacy {kiwi} commandline as follows:
 
    $ kiwi compat \
        --build kiwi-descriptions/suse/x86_64/{exc_description} \
-       --type vmx -d /tmp/myimage
+       --type oem -d /tmp/myimage

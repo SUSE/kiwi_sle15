@@ -23,6 +23,8 @@ from collections import namedtuple
 from textwrap import dedent
 
 # project
+import kiwi.defaults as defaults
+
 from kiwi import xml_parse
 from kiwi.system.uri import Uri
 from kiwi.defaults import Defaults
@@ -140,9 +142,12 @@ class XMLState:
         if self.get_build_type_name() in ['vmx', 'iso', 'kis']:
             # vmx, iso and kis image types always use dracut as initrd system
             initrd_system = 'dracut'
-        elif self.get_build_type_name() in ['oem', 'pxe']:
-            # pxe and oem image types default to kiwi if unset
+        elif self.get_build_type_name() == 'pxe':
+            # pxe image type defaults to kiwi if unset
             initrd_system = self.build_type.get_initrd_system() or 'kiwi'
+        elif self.get_build_type_name() == 'oem':
+            # oem image type defaults to dracut if unset
+            initrd_system = self.build_type.get_initrd_system() or 'dracut'
         else:
             initrd_system = self.build_type.get_initrd_system()
         return initrd_system
@@ -395,7 +400,7 @@ class XMLState:
         )
         if package_list:
             for package in package_list:
-                result.append(package.package_section.get_name())
+                result.append(package.package_section.get_name().strip())
             if self.get_system_packages():
                 result.append(self.get_package_manager())
         if plus_packages:
@@ -420,7 +425,7 @@ class XMLState:
         )
         if package_list:
             for package in package_list:
-                result.append(package.package_section.get_name())
+                result.append(package.package_section.get_name().strip())
         return sorted(list(set(result)))
 
     def get_bootstrap_archives(self):
@@ -438,7 +443,7 @@ class XMLState:
                 archive_list = bootstrap_packages_section.get_archive()
                 if archive_list:
                     for archive in archive_list:
-                        result.append(archive.get_name())
+                        result.append(archive.get_name().strip())
         return sorted(result)
 
     def get_system_archives(self):
@@ -456,7 +461,7 @@ class XMLState:
         )
         for packages in image_packages_sections:
             for archive in packages.get_archive():
-                result.append(archive.get_name())
+                result.append(archive.get_name().strip())
         return sorted(result)
 
     def get_system_ignore_packages(self):
@@ -475,7 +480,7 @@ class XMLState:
         for packages in image_packages_sections:
             for package in packages.get_ignore():
                 if self.package_matches_host_architecture(package):
-                    result.append(package.get_name())
+                    result.append(package.get_name().strip())
         return sorted(result)
 
     def get_collection_type(self, section_type='image'):
@@ -858,10 +863,25 @@ class XMLState:
         if oemconfig_sections:
             return oemconfig_sections[0]
 
+    def get_oemconfig_oem_resize(self):
+        """
+        State value to activate/deactivate disk resize. Returns a
+        boolean value if specified or True to set resize on by default
+
+        :return: Content of <oem-resize> section value
+
+        :rtype: bool
+        """
+        oemconfig = self.get_build_type_oemconfig_section()
+        if oemconfig and oemconfig.get_oem_resize():
+            return oemconfig.get_oem_resize()[0]
+        else:
+            return True
+
     def get_oemconfig_oem_multipath_scan(self):
         """
         State value to activate multipath maps. Returns a boolean
-        value if specified or None
+        value if specified or False
 
         :return: Content of <oem-multipath-scan> section value
 
@@ -870,6 +890,7 @@ class XMLState:
         oemconfig = self.get_build_type_oemconfig_section()
         if oemconfig and oemconfig.get_oem_multipath_scan():
             return oemconfig.get_oem_multipath_scan()[0]
+        return False
 
     def get_oemconfig_swap_mbytes(self):
         """
@@ -1101,6 +1122,16 @@ class XMLState:
         container_config.update(
             self._match_docker_history()
         )
+
+        desc = self.get_description_section()
+        author_contact = "{0} <{1}>".format(desc.author, desc.contact)
+        if 'history' not in container_config:
+            container_config['history'] = {}
+        if 'author' not in container_config['history']:
+            container_config['history']['author'] = author_contact
+        if 'maintainer' not in container_config:
+            container_config['maintainer'] = author_contact
+
         return container_config
 
     def set_container_config_tag(self, tag):
@@ -1195,7 +1226,8 @@ class XMLState:
                         mountpoint=path,
                         fullsize=True,
                         label=volume_label,
-                        attributes=['no-copy-on-write']
+                        attributes=['no-copy-on-write'],
+                        is_root_volume=True|False
                     )
                 ]
 
@@ -1215,7 +1247,8 @@ class XMLState:
                 'mountpoint',
                 'fullsize',
                 'label',
-                'attributes'
+                'attributes',
+                'is_root_volume'
             ]
         )
 
@@ -1234,6 +1267,7 @@ class XMLState:
                 fullsize = False
                 label = volume.get_label()
                 attributes = []
+                is_root_volume = False
 
                 if volume.get_copy_on_write() is False:
                     # by default copy-on-write is switched on for any
@@ -1242,11 +1276,21 @@ class XMLState:
                     attributes.append('no-copy-on-write')
 
                 if '@root' in name:
-                    # setup root volume, it takes a fixed volume name and
-                    # has no specific mountpoint
+                    # setup root volume, it takes an optional volume
+                    # name if specified as @root=name and has no specific
+                    # mountpoint. The default name is set to
+                    # defaults.ROOT_VOLUME_NAME if no other root volume
+                    # name is provided
                     mountpoint = None
                     realpath = '/'
-                    name = 'LVRoot'
+                    is_root_volume = True
+                    root_volume_expression = re.match(
+                        r'@root=(.+)', name
+                    )
+                    if root_volume_expression:
+                        name = root_volume_expression.group(1)
+                    else:
+                        name = defaults.ROOT_VOLUME_NAME
                     have_root_volume_setup = True
                 elif not mountpoint:
                     # setup volume without mountpoint. In this case the name
@@ -1282,7 +1326,8 @@ class XMLState:
                         mountpoint=mountpoint,
                         realpath=realpath,
                         label=label,
-                        attributes=attributes
+                        attributes=attributes,
+                        is_root_volume=is_root_volume
                     )
                 )
 
@@ -1299,13 +1344,14 @@ class XMLState:
                 fullsize = True
             volume_type_list.append(
                 volume_type(
-                    name='LVRoot',
+                    name=defaults.ROOT_VOLUME_NAME,
                     size=size,
                     fullsize=fullsize,
                     mountpoint=None,
                     realpath='/',
                     label=None,
-                    attributes=[]
+                    attributes=[],
+                    is_root_volume=True
                 )
             )
 
@@ -1318,7 +1364,8 @@ class XMLState:
                     mountpoint=None,
                     realpath='swap',
                     label='SWAP',
-                    attributes=[]
+                    attributes=[],
+                    is_root_volume=False
                 )
             )
 

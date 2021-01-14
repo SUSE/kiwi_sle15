@@ -41,7 +41,7 @@ class DiskSetup:
         self.root_filesystem_is_overlay = xml_state.build_type.get_overlayroot()
         self.swap_mbytes = xml_state.get_oemconfig_swap_mbytes()
         self.configured_size = xml_state.get_build_type_size()
-        self.build_type_name = xml_state.get_build_type_name()
+        self.disk_resize_requested = xml_state.get_oemconfig_oem_resize()
         self.filesystem = xml_state.build_type.get_filesystem()
         self.bootpart_requested = xml_state.build_type.get_bootpartition()
         self.bootpart_mbytes = xml_state.build_type.get_bootpartsize()
@@ -197,8 +197,6 @@ class DiskSetup:
             return True
         if self.root_filesystem_is_overlay:
             return True
-        if self.bootloader == 'grub2_s390x_emu':
-            return True
 
     def get_boot_label(self):
         """
@@ -208,10 +206,7 @@ class DiskSetup:
 
         :rtype: str
         """
-        label = 'BOOT'
-        if self.bootloader == 'grub2_s390x_emu':
-            label = 'ZIPL'
-        return label
+        return 'BOOT'
 
     def get_root_label(self):
         """
@@ -278,10 +273,10 @@ class DiskSetup:
         data_volume_mbytes = self._calculate_volume_mbytes()
         root_volume = self._get_root_volume_configuration()
 
-        # For oem types we only add the default min volume size
-        # because their target size request is handled on first boot
-        # of the disk image in oemboot/repart
-        if self.build_type_name == 'oem':
+        # If disk resize is requested we only add the default min
+        # volume size because their target size request is handled
+        # on first boot of the disk image in oemboot/repart
+        if self.disk_resize_requested:
             for volume in self.volumes:
                 disk_volume_mbytes += Defaults.get_min_volume_mbytes()
             return disk_volume_mbytes
@@ -327,7 +322,7 @@ class DiskSetup:
 
     def _get_root_volume_configuration(self):
         """
-        Provide LVRoot volume configuration if present and in
+        Provide root volume configuration if present and in
         use according to the selected volume management. So far
         this only affects the LVM volume manager
         """
@@ -335,7 +330,7 @@ class DiskSetup:
             'root_volume_type', ['size_type', 'req_size']
         )
         for volume in self.volumes:
-            if volume.name == 'LVRoot':
+            if volume.is_root_volume:
                 if volume.size:
                     [size_type, req_size] = volume.size.split(':')
                     return root_volume_type(

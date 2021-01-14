@@ -113,11 +113,6 @@ class TestDiskSetup:
         self.setup.filesystem = 'xfs'
         assert self.setup.need_boot_partition() is True
 
-    def test_need_boot_partition_grub2_s390x_emu(self):
-        self._init_bootpart_check()
-        self.setup.bootloader = 'grub2_s390x_emu'
-        assert self.setup.need_boot_partition() is True
-
     def test_boot_partition_size(self):
         self.setup.bootpart_requested = True
         assert self.setup.boot_partition_size() == \
@@ -146,7 +141,6 @@ class TestDiskSetup:
 
     def test_get_disksize_mbytes_configured_additive(self):
         self.setup.configured_size = mock.Mock()
-        self.setup.build_type_name = 'vmx'
         self.setup.configured_size.additive = True
         self.setup.configured_size.mbytes = 42
         root_size = self.size.accumulate_mbyte_file_sizes.return_value
@@ -159,7 +153,6 @@ class TestDiskSetup:
 
     def test_get_disksize_mbytes_configured(self):
         self.setup.configured_size = mock.Mock()
-        self.setup.build_type_name = 'vmx'
         self.setup.configured_size.additive = False
         self.setup.configured_size.mbytes = 42
         with self._caplog.at_level(logging.WARNING):
@@ -218,8 +211,6 @@ class TestDiskSetup:
 
     def test_get_boot_label(self):
         assert self.setup.get_boot_label() == 'BOOT'
-        self.setup.bootloader = 'grub2_s390x_emu'
-        assert self.setup.get_boot_label() == 'ZIPL'
 
     def test_get_efi_label(self):
         assert self.setup.get_efi_label() == 'EFI'

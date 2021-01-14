@@ -19,7 +19,7 @@ elements of the `systemdisk` element:
 
 .. code:: xml
 
-   <image schemaversion="7.2" name="openSUSE-Leap-15.1">
+   <image schemaversion="{schema_version}" name="openSUSE-Leap-15.1">
      <type image="oem" filesystem="btrfs" preferlvm="true">
        <systemdisk name="vgroup">
          <volume name="usr/lib" size="1G" label="library"/>
@@ -53,6 +53,16 @@ attributes:
      .. code:: xml
 
         <volume name="@root" size="4G"/>
+
+     In addition to the custom size of the root volume it's also possible
+     to setup the name of the root volume as follows:
+
+     .. code:: xml
+
+        <volume name="@root=rootlv" size="4G"/>
+
+     If no name for the root volume is specified the
+     default name: **LVRoot** applies.
 
 - `freespace`: Optional attribute defining the additional free space added
   to the volume. If no suffix (`M` or `G`) is used, the value is considered

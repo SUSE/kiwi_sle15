@@ -1,6 +1,7 @@
 import io
 import os
 import logging
+from collections import namedtuple
 from mock import (
     patch, call, MagicMock, Mock
 )
@@ -21,7 +22,8 @@ from kiwi.exceptions import (
     KiwiTemplateError,
     KiwiBootLoaderGrubDataError,
     KiwiBootLoaderGrubFontError,
-    KiwiBootLoaderGrubModulesError
+    KiwiBootLoaderGrubModulesError,
+    KiwiDiskGeometryError
 )
 
 
@@ -36,6 +38,9 @@ class TestBootLoaderConfigGrub2:
     def setup(
         self, mock_machine, mock_theme, mock_firmware
     ):
+        self.command_type = namedtuple(
+            'command_return_type', ['output']
+        )
         self.find_grub = {}
         self.os_exists = {
             'root_dir/boot/grub2/fonts/unicode.pf2': True,
@@ -104,7 +109,9 @@ class TestBootLoaderConfigGrub2:
         )
         self.bootloader = BootLoaderConfigGrub2(
             self.state, 'root_dir', None, {
-                'grub_directory_name': 'grub2', 'boot_is_crypto': True
+                'grub_directory_name': 'grub2',
+                'boot_is_crypto': True,
+                'targetbase': 'rootdev'
             }
         )
         self.bootloader.cmdline = 'some-cmdline root=UUID=foo'
@@ -188,6 +195,16 @@ class TestBootLoaderConfigGrub2:
         assert bootloader.arch == mock_machine.return_value
 
     @patch('platform.machine')
+    def test_post_init_s390_platform(self, mock_machine):
+        xml_state = MagicMock()
+        xml_state.build_type.get_firmware = Mock(
+            return_value=None
+        )
+        mock_machine.return_value = 's390x'
+        bootloader = BootLoaderConfigGrub2(xml_state, 'root_dir')
+        assert bootloader.arch == mock_machine.return_value
+
+    @patch('platform.machine')
     def test_post_init_arm64_platform(self, mock_machine):
         xml_state = MagicMock()
         xml_state.build_type.get_firmware = Mock(
@@ -238,6 +255,19 @@ class TestBootLoaderConfigGrub2:
         self.bootloader.write_meta_data()
         mock_setup_default_grub.assert_called_once_with()
         mock_setup_sysconfig_bootloader.assert_called_once_with()
+
+    @patch.object(BootLoaderConfigGrub2, '_setup_default_grub')
+    @patch.object(BootLoaderConfigGrub2, '_setup_sysconfig_bootloader')
+    @patch.object(BootLoaderConfigGrub2, '_setup_zipl2grub_conf')
+    def test_write_meta_data_s390(
+        self, mock_setup_zipl2grub_conf, mock_setup_sysconfig_bootloader,
+        mock_setup_default_grub
+    ):
+        self.bootloader.arch = 's390x'
+        self.bootloader.write_meta_data()
+        mock_setup_default_grub.assert_called_once_with()
+        mock_setup_sysconfig_bootloader.assert_called_once_with()
+        mock_setup_zipl2grub_conf.assert_called_once_with()
 
     @patch('os.path.exists')
     @patch.object(BootLoaderConfigGrub2, '_copy_grub_config_to_efi_path')
@@ -314,6 +344,171 @@ class TestBootLoaderConfigGrub2:
             'config_file', 'root_dir/EFI/fedora/grub.cfg'
         )
 
+    @patch('shutil.copy')
+    @patch('os.path.exists')
+    @patch('kiwi.bootloader.config.grub2.Command.run')
+    def test_setup_zipl2grub_conf_512_byte_target(
+        self, mock_Command_run, mock_exists, mock_shutil_copy
+    ):
+        path_return_values = [True, False]
+
+        def path_exists(arg):
+            return path_return_values.pop(0)
+
+        command = Mock()
+        command.output = '  2048'
+        self.bootloader.target_table_type = 'msdos'
+        mock_Command_run.return_value = command
+        mock_exists.side_effect = path_exists
+        xml_state = MagicMock()
+        xml_state.get_build_type_bootloader_targettype = Mock(
+            return_value='FBA'
+        )
+        xml_state.build_type.get_target_blocksize = Mock(
+            return_value=None
+        )
+        self.bootloader.xml_state = xml_state
+        with open('../data/etc/default/zipl2grub.conf.in') as zipl_grub:
+            zipl_config = zipl_grub.read()
+        with patch('builtins.open', create=True) as mock_open:
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.return_value = zipl_config
+            self.bootloader._setup_zipl2grub_conf()
+            assert \
+                '    targettype = FBA\n' \
+                '    targetbase = rootdev\n' \
+                '    targetblocksize = 512\n' \
+                '    targetoffset = 2048' \
+                in file_handle.write.call_args[0][0]
+        mock_shutil_copy.assert_called_once_with(
+            'root_dir/etc/default/zipl2grub.conf.in',
+            'root_dir/etc/default/zipl2grub.conf.in.orig'
+        )
+        path_return_values = [True, True]
+        mock_shutil_copy.reset_mock()
+        with patch('builtins.open', create=True) as mock_open:
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.return_value = zipl_config
+            self.bootloader._setup_zipl2grub_conf()
+        mock_shutil_copy.assert_called_once_with(
+            'root_dir/etc/default/zipl2grub.conf.in.orig',
+            'root_dir/etc/default/zipl2grub.conf.in'
+        )
+
+    @patch('shutil.copy')
+    @patch('os.path.exists')
+    @patch('kiwi.bootloader.config.grub2.Command.run')
+    def test_setup_zipl2grub_conf_4096_byte_target(
+        self, mock_Command_run, mock_exists, mock_shutil_copy
+    ):
+        path_return_values = [True, False]
+        command_return_values = [
+            self.command_type(
+                output='  blocks per track .....: 12\n'
+            ),
+            self.command_type(
+                output=' /dev/loop01 2 6401 6400 1 Linux native\n'
+            ),
+            self.command_type(
+                output='  cylinders ............: 10017\n'
+            ),
+            self.command_type(
+                output='  tracks per cylinder ..: 15\n'
+            ),
+            self.command_type(
+                output='  blocks per track .....: 12\n'
+            )
+        ]
+
+        def path_exists(arg):
+            return path_return_values.pop(0)
+
+        def command_run(arg):
+            return command_return_values.pop(0)
+
+        self.bootloader.target_table_type = 'dasd'
+        mock_Command_run.side_effect = command_run
+        mock_exists.side_effect = path_exists
+        xml_state = MagicMock()
+        xml_state.get_build_type_bootloader_targettype = Mock(
+            return_value='CDL'
+        )
+        xml_state.build_type.get_target_blocksize = Mock(
+            return_value=4096
+        )
+        self.bootloader.xml_state = xml_state
+        with open('../data/etc/default/zipl2grub.conf.in') as zipl_grub:
+            zipl_config = zipl_grub.read()
+        with patch('builtins.open', create=True) as mock_open:
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.return_value = zipl_config
+            self.bootloader._setup_zipl2grub_conf()
+            assert \
+                '    targettype = CDL\n' \
+                '    targetbase = rootdev\n' \
+                '    targetblocksize = 4096\n' \
+                '    targetoffset = 24\n' \
+                '    targetgeometry = 10017,15,12' \
+                in file_handle.write.call_args[0][0]
+
+        assert mock_Command_run.call_args_list == [
+            call(
+                [
+                    'bash', '-c',
+                    'fdasd -f -p rootdev | grep "blocks per track"'
+                ]
+            ),
+            call(
+                [
+                    'bash', '-c',
+                    'fdasd -f -s -p rootdev | grep "^ " | '
+                    'head -n 1 | tr -s " "'
+                ]
+            ),
+            call(
+                [
+                    'bash', '-c', 'fdasd -f -p rootdev | grep "cylinders"'
+                ]
+            ),
+            call(
+                [
+                    'bash', '-c',
+                    'fdasd -f -p rootdev | grep "tracks per cylinder"'
+                ]
+            ),
+            call(
+                [
+                    'bash', '-c',
+                    'fdasd -f -p rootdev | grep "blocks per track"'
+                ]
+            )
+        ]
+
+    @patch('kiwi.bootloader.config.grub2.Command.run')
+    @patch.object(BootLoaderConfigGrub2, '_get_dasd_disk_geometry_element')
+    def test_get_partition_start_raises(
+        self, mock_get_dasd_disk_geometry_element, mock_Command_run
+    ):
+        self.bootloader.target_table_type = 'dasd'
+        mock_Command_run.return_value = self.command_type(
+            output='bogus data'
+        )
+        with raises(KiwiDiskGeometryError):
+            self.bootloader._get_partition_start('/dev/disk')
+
+    @patch('kiwi.bootloader.config.grub2.Command.run')
+    def test_get_dasd_disk_geometry_element_raises(
+        self, mock_Command_run
+    ):
+        self.bootloader.target_table_type = 'dasd'
+        mock_Command_run.return_value = self.command_type(
+            output='bogus data'
+        )
+        with raises(KiwiDiskGeometryError):
+            self.bootloader._get_dasd_disk_geometry_element(
+                '/dev/disk', 'tracks per cylinder'
+            )
+
     @patch('os.path.exists')
     @patch('kiwi.bootloader.config.grub2.SysConfig')
     @patch('kiwi.bootloader.config.grub2.Command.run')
@@ -328,6 +523,7 @@ class TestBootLoaderConfigGrub2:
         mock_exists.return_value = True
         self.bootloader.terminal = 'serial'
         self.bootloader.theme = 'openSUSE'
+        self.bootloader.displayname = 'Bob'
         self.firmware.efi_mode.return_value = 'efi'
         self.bootloader._setup_default_grub()
 
@@ -339,6 +535,7 @@ class TestBootLoaderConfigGrub2:
                 '/boot/grub2/themes/openSUSE/background.png'
             ),
             call('GRUB_CMDLINE_LINUX_DEFAULT', '"some-cmdline"'),
+            call('GRUB_DISTRIBUTOR', '"Bob"'),
             call('GRUB_ENABLE_BLSCFG', 'true'),
             call('GRUB_ENABLE_CRYPTODISK', 'y'),
             call('GRUB_GFXMODE', '800x600'),
@@ -424,17 +621,15 @@ class TestBootLoaderConfigGrub2:
     @patch.object(BootLoaderConfigGrub2, '_mount_system')
     @patch.object(BootLoaderConfigGrub2, '_copy_grub_config_to_efi_path')
     @patch('kiwi.bootloader.config.grub2.Command.run')
-    @patch('kiwi.bootloader.config.grub2.CommandCapabilities.check_version')
     @patch('kiwi.bootloader.config.grub2.Path.which')
     @patch('kiwi.defaults.Defaults.get_vendor_grubenv')
     @patch('glob.iglob')
     def test_setup_disk_image_config(
         self, mock_iglob, mock_get_vendor_grubenv, mock_Path_which,
-        mock_CommandCapabilities_check_version, mock_Command_run,
-        mock_copy_grub_config_to_efi_path, mock_mount_system
+        mock_Command_run, mock_copy_grub_config_to_efi_path,
+        mock_mount_system
     ):
         mock_iglob.return_value = ['some_entry.conf']
-        mock_CommandCapabilities_check_version.return_value = True
         mock_get_vendor_grubenv.return_value = 'grubenv'
         mock_Path_which.return_value = '/path/to/grub2-mkconfig'
         self.firmware.efi_mode = Mock(
@@ -450,15 +645,15 @@ class TestBootLoaderConfigGrub2:
         with patch('builtins.open', create=True) as mock_open:
             mock_open_grub = MagicMock(spec=io.IOBase)
             mock_open_menu = MagicMock(spec=io.IOBase)
+            mock_open_grubenv = MagicMock(spec=io.IOBase)
 
             def open_file(filename, mode=None):
-                print(filename)
                 if filename == 'root_mount_point/boot/grub2/grub.cfg':
                     return mock_open_grub.return_value
                 elif filename == 'some_entry.conf':
                     return mock_open_menu.return_value
                 elif filename == 'grubenv':
-                    return mock_open_grub.return_value
+                    return mock_open_grubenv.return_value
 
             mock_open.side_effect = open_file
 
@@ -466,8 +661,13 @@ class TestBootLoaderConfigGrub2:
                 mock_open_grub.return_value.__enter__.return_value
             file_handle_menu = \
                 mock_open_menu.return_value.__enter__.return_value
+            file_handle_grubenv = \
+                mock_open_grubenv.return_value.__enter__.return_value
 
-            file_handle_grub.read.return_value = 'root=rootdev'
+            file_handle_grub.read.return_value = \
+                'root=rootdev nomodeset console=ttyS0 console=tty0\n' \
+                'root=PARTUUID=xx'
+            file_handle_grubenv.read.return_value = 'root=rootdev'
             file_handle_menu.read.return_value = 'options foo bar'
 
             self.bootloader.setup_disk_image_config(
@@ -488,25 +688,46 @@ class TestBootLoaderConfigGrub2:
                 'efi_mount_point', 'earlyboot.cfg'
             )
             assert file_handle_grub.write.call_args_list == [
-                call('root=overlay:UUID=ID'),
-                call('root=overlay:UUID=ID')
+                # first write of grub.cfg, adapting to linux/initrd as variables
+                call(
+                    'set linux=linux\n'
+                    'set initrd=initrd\n'
+                    'if [ "${grub_cpu}" = "x86_64" -o '
+                    '"${grub_cpu}" = "i386" ];then\n'
+                    '    if [ "${grub_platform}" = "efi" ]; then\n'
+                    '        set linux=linuxefi\n'
+                    '        set initrd=initrdefi\n'
+                    '    fi\n'
+                    'fi\n'
+                ),
+                call(
+                    'root=rootdev nomodeset console=ttyS0 console=tty0'
+                    '\n'
+                    'root=PARTUUID=xx'
+                ),
+                # second write of grub.cfg, setting overlay root
+                call(
+                    'root=overlay:UUID=ID nomodeset console=ttyS0 console=tty0'
+                    '\n'
+                    'root=overlay:UUID=ID'
+                )
             ]
-            assert file_handle_menu.write.call_args_list == [
-                call('options some-cmdline root=UUID=foo')
-            ]
+            file_handle_grubenv.write.assert_called_once_with(
+                'root=overlay:UUID=ID'
+            )
+            file_handle_menu.write.assert_called_once_with(
+                'options some-cmdline root=UUID=foo'
+            )
 
     @patch.object(BootLoaderConfigGrub2, '_mount_system')
     @patch.object(BootLoaderConfigGrub2, '_copy_grub_config_to_efi_path')
     @patch('kiwi.bootloader.config.grub2.Command.run')
-    @patch('kiwi.bootloader.config.grub2.CommandCapabilities.check_version')
     @patch('kiwi.bootloader.config.grub2.Path.which')
     def test_setup_disk_image_config_validate_linuxefi(
-        self, mock_Path_which, mock_CommandCapabilities_check_version,
-        mock_Command_run, mock_copy_grub_config_to_efi_path,
-        mock_mount_system
+        self, mock_Path_which, mock_Command_run,
+        mock_copy_grub_config_to_efi_path, mock_mount_system
     ):
         mock_Path_which.return_value = '/path/to/grub2-mkconfig'
-        mock_CommandCapabilities_check_version.return_value = False
         self.firmware.efi_mode = Mock(
             return_value='uefi'
         )
@@ -703,8 +924,8 @@ class TestBootLoaderConfigGrub2:
                     'gettext', 'font', 'minicmd', 'gfxterm', 'gfxmenu',
                     'all_video', 'xfs', 'btrfs', 'lvm', 'luks',
                     'gcry_rijndael', 'gcry_sha256', 'gcry_sha512', 'crypto',
-                    'cryptodisk', 'test', 'true', 'multiboot', 'part_gpt',
-                    'part_msdos', 'efi_gop', 'efi_uga', 'linuxefi'
+                    'cryptodisk', 'test', 'true', 'loadenv', 'multiboot',
+                    'part_gpt', 'part_msdos', 'efi_gop', 'efi_uga', 'linuxefi'
                 ]
             )
         ]
@@ -753,7 +974,7 @@ class TestBootLoaderConfigGrub2:
                 call('set root="cryptouuid/0815"\n'),
                 call('search --fs-uuid --set=root 0815\n'),
                 call('set prefix=($root)//grub2\n'),
-                call('configfile ($root)/boot/grub2/grub.cfg\n')
+                call('configfile ($root)//grub2/grub.cfg\n')
             ]
         assert mock_command.call_args_list == [
             call(
@@ -775,8 +996,8 @@ class TestBootLoaderConfigGrub2:
                     'gettext', 'font', 'minicmd', 'gfxterm', 'gfxmenu',
                     'all_video', 'xfs', 'btrfs', 'lvm', 'luks',
                     'gcry_rijndael', 'gcry_sha256', 'gcry_sha512', 'crypto',
-                    'cryptodisk', 'test', 'true', 'part_gpt', 'part_msdos',
-                    'efi_gop', 'efi_uga', 'linuxefi'
+                    'cryptodisk', 'test', 'true', 'loadenv', 'part_gpt',
+                    'part_msdos', 'efi_gop', 'efi_uga', 'linuxefi'
                 ]
             )
         ]
@@ -811,7 +1032,7 @@ class TestBootLoaderConfigGrub2:
                 call('set root="cryptouuid/0815"\n'),
                 call('search --fs-uuid --set=root 0815\n'),
                 call('set prefix=($root)//grub2\n'),
-                call('configfile ($root)/boot/grub2/grub.cfg\n')
+                call('configfile ($root)//grub2/grub.cfg\n')
             ]
             mock_open.assert_called_once_with(
                 'root_dir/boot/efi/EFI/BOOT/grub.cfg', 'w'
@@ -881,6 +1102,39 @@ class TestBootLoaderConfigGrub2:
         mock_get_boot_path.return_value = '/boot'
         mock_machine.return_value = 'ppc64le'
         self.bootloader.arch = 'ppc64le'
+        self.firmware.efi_mode = Mock(
+            return_value=None
+        )
+        self.bootloader.xen_guest = False
+        self.os_exists['root_dir/boot/grub2/fonts/unicode.pf2'] = False
+        self.os_exists['root_dir/usr/share/grub2/unicode.pf2'] = True
+
+        def side_effect(arg):
+            return self.os_exists[arg]
+
+        mock_exists.side_effect = side_effect
+
+        self.bootloader.setup_disk_boot_images('0815')
+
+        mock_command.assert_called_once_with(
+            [
+                'cp', 'root_dir/usr/share/grub2/unicode.pf2',
+                'root_dir/boot/grub2/fonts'
+            ]
+        )
+
+    @patch('kiwi.bootloader.config.base.BootLoaderConfigBase.get_boot_path')
+    @patch('kiwi.bootloader.config.grub2.Command.run')
+    @patch('kiwi.bootloader.config.grub2.DataSync')
+    @patch('os.path.exists')
+    @patch('platform.machine')
+    def test_setup_disk_boot_images_s390(
+        self, mock_machine, mock_exists, mock_sync,
+        mock_command, mock_get_boot_path
+    ):
+        mock_get_boot_path.return_value = '/boot'
+        mock_machine.return_value = 's390x'
+        self.bootloader.arch = 's390x'
         self.firmware.efi_mode = Mock(
             return_value=None
         )
@@ -1187,8 +1441,8 @@ class TestBootLoaderConfigGrub2:
                     'gettext', 'font', 'minicmd', 'gfxterm', 'gfxmenu',
                     'all_video', 'xfs', 'btrfs', 'lvm', 'luks',
                     'gcry_rijndael', 'gcry_sha256', 'gcry_sha512',
-                    'crypto', 'cryptodisk', 'test', 'true', 'part_gpt',
-                    'part_msdos', 'biosdisk', 'vga', 'vbe',
+                    'crypto', 'cryptodisk', 'test', 'true', 'loadenv',
+                    'part_gpt', 'part_msdos', 'biosdisk', 'vga', 'vbe',
                     'chain', 'boot'
                 ]
             ),
@@ -1212,8 +1466,8 @@ class TestBootLoaderConfigGrub2:
                     'gettext', 'font', 'minicmd', 'gfxterm', 'gfxmenu',
                     'all_video', 'xfs', 'btrfs', 'lvm', 'luks',
                     'gcry_rijndael', 'gcry_sha256', 'gcry_sha512',
-                    'crypto', 'cryptodisk', 'test', 'true', 'part_gpt',
-                    'part_msdos', 'efi_gop', 'efi_uga', 'linuxefi'
+                    'crypto', 'cryptodisk', 'test', 'true', 'loadenv',
+                    'part_gpt', 'part_msdos', 'efi_gop', 'efi_uga', 'linuxefi'
                 ]
             )
         ]

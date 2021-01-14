@@ -27,7 +27,7 @@ from kiwi.filesystem import FileSystem
 from kiwi.filesystem.isofs import FileSystemIsoFs
 from kiwi.filesystem.setup import FileSystemSetup
 from kiwi.storage.loop_device import LoopDevice
-from kiwi.boot.image import BootImageDracut
+from kiwi.boot.image.dracut import BootImageDracut
 from kiwi.system.size import SystemSize
 from kiwi.system.setup import SystemSetup
 from kiwi.firmware import FirmWare
@@ -143,7 +143,7 @@ class LiveImageBuilder:
             # This also embedds an MBR and the respective BIOS modules
             # for compat boot. The complete bootloader setup will be
             # based on grub
-            bootloader_config = BootLoaderConfig(
+            bootloader_config = BootLoaderConfig.new(
                 'grub2', self.xml_state, root_dir=self.root_dir,
                 boot_dir=self.media_dir, custom_args={
                     'grub_directory_name':
@@ -157,7 +157,7 @@ class LiveImageBuilder:
             # setup bootloader config to boot the ISO via isolinux.
             # This allows for booting on x86 platforms in BIOS mode
             # only.
-            bootloader_config = BootLoaderConfig(
+            bootloader_config = BootLoaderConfig.new(
                 'isolinux', self.xml_state, root_dir=self.root_dir,
                 boot_dir=self.media_dir
             )
@@ -299,6 +299,15 @@ class LiveImageBuilder:
             ),
             use_for_bundle=True,
             compress=False,
+            shasum=False
+        )
+        self.result.add(
+            key='image_changes',
+            filename=self.system_setup.export_package_changes(
+                self.target_dir
+            ),
+            use_for_bundle=True,
+            compress=True,
             shasum=False
         )
         self.result.add(

@@ -24,7 +24,6 @@ import shutil
 from collections import OrderedDict
 
 # project
-from kiwi.utils.command_capabilities import CommandCapabilities
 from kiwi.bootloader.config.base import BootLoaderConfigBase
 from kiwi.bootloader.template.grub2 import BootLoaderTemplateGrub2
 from kiwi.command import Command
@@ -40,6 +39,7 @@ from kiwi.exceptions import (
     KiwiBootLoaderGrubModulesError,
     KiwiBootLoaderGrubSecureBootError,
     KiwiBootLoaderGrubFontError,
+    KiwiDiskGeometryError
 )
 
 log = logging.getLogger('kiwi')
@@ -74,6 +74,9 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         elif arch == 'aarch64' or arch.startswith('arm'):
             # grub2 support for efi systems
             self.arch = arch
+        elif arch.startswith('s390'):
+            # grub2 support for s390x systems
+            self.arch = arch
         else:
             raise KiwiBootLoaderGrubPlatformError(
                 'host architecture %s not supported for grub2 setup' % arch
@@ -91,6 +94,7 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         self.timeout = self.get_boot_timeout_seconds()
         self.timeout_style = \
             self.xml_state.get_build_type_bootloader_timeout_style()
+        self.displayname = self.xml_state.xml_data.get_displayname()
         self.serial_line_setup = \
             self.xml_state.get_build_type_bootloader_serial_line_setup()
         self.continue_on_timeout = self.get_continue_on_timeout()
@@ -100,6 +104,7 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         self.firmware = FirmWare(
             self.xml_state
         )
+        self.target_table_type = self.firmware.get_partition_table_type()
 
         self.live_type = self.xml_state.build_type.get_flags()
         if not self.live_type:
@@ -171,6 +176,7 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
 
         * cmdline arguments initialization
         * etc/default/grub setup file
+        * etc/default/zipl2grub.conf.in (s390 only)
         * etc/sysconfig/bootloader
 
         :param string root_uuid: root device UUID
@@ -187,6 +193,8 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
 
         self._setup_default_grub()
         self._setup_sysconfig_bootloader()
+        if self.arch.startswith('s390'):
+            self._setup_zipl2grub_conf()
 
     def setup_disk_image_config(
         self, boot_uuid=None, root_uuid=None, hypervisor=None,
@@ -235,90 +243,15 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
             ]
         )
 
-        if self.firmware.efi_mode():
-            # On systems that are configured to use EFI with a grub2
-            # version less than 2.04 there is no support for dynamic
-            # EFI environment checking. In this condition we change
-            # the grub config to add this support as follows:
-            #
-            # * Apply only on grub < 2.04
-            #    1. Modify grub.cfg to set linux/initrd as variables
-            #    2. Prepend hybrid setup to select linux vs. linuxefi on demand
-            #
-            # Please note this is a one time modification done by kiwi
-            # Any subsequent call of the grub config tool will overwrite
-            # the setup and disables dynamic EFI environment checking
-            # at boot time
-            if not CommandCapabilities.check_version(
-                self._get_grub2_mkconfig_tool(),
-                version_waterline=(2, 4), raise_on_error=False
-            ):
-                with open(config_file) as grub_config_file:
-                    grub_config = grub_config_file.read()
-                    grub_config = re.sub(
-                        r'([ \t]+)linux(efi|16)*([ \t]+)', r'\1$linux\3',
-                        grub_config
-                    )
-                    grub_config = re.sub(
-                        r'([ \t]+)initrd(efi|16)*([ \t]+)', r'\1$initrd\3',
-                        grub_config
-                    )
-                with open(config_file, 'w') as grub_config_file:
-                    grub_config_file.write(
-                        Template(self.grub2.header_hybrid).substitute()
-                    )
-                    grub_config_file.write(grub_config)
-
-        if self.root_reference:
-            if self.root_filesystem_is_overlay or \
-               Defaults.is_buildservice_worker():
-                # grub2-mkconfig has no idea how the correct root= setup is
-                # for disk images created with overlayroot enabled or in a
-                # buildservice worker environment. Because of that the mkconfig
-                # tool just finds the raw partition loop device and includes it
-                # which is wrong. In this particular case we have to patch the
-                # written config file and replace the wrong root= reference with
-                # the correct value.
-                with open(config_file) as grub_config_file:
-                    grub_config = grub_config_file.read()
-                    grub_config = grub_config.replace(
-                        'root={0}'.format(boot_options.get('root_device')),
-                        self.root_reference
-                    )
-                with open(config_file, 'w') as grub_config_file:
-                    grub_config_file.write(grub_config)
-
-                loader_entries_pattern = os.sep.join(
-                    [
-                        self.root_mount.mountpoint,
-                        'boot', 'loader', 'entries', '*.conf'
-                    ]
-                )
-                for menu_entry_file in glob.iglob(loader_entries_pattern):
-                    with open(menu_entry_file) as grub_menu_entry_file:
-                        menu_entry = grub_menu_entry_file.read()
-                        menu_entry = re.sub(
-                            r'options (.*)',
-                            r'options {0}'.format(self.cmdline),
-                            menu_entry
-                        )
-                    with open(menu_entry_file, 'w') as grub_menu_entry_file:
-                        grub_menu_entry_file.write(menu_entry)
-
-                if self.firmware.efi_mode():
-                    vendor_grubenv_file = \
-                        Defaults.get_vendor_grubenv(self.efi_mount.mountpoint)
-                    if vendor_grubenv_file:
-                        with open(vendor_grubenv_file) as vendor_grubenv:
-                            grubenv = vendor_grubenv.read()
-                            grubenv = grubenv.replace(
-                                'root={0}'.format(boot_options.get(
-                                    'root_device')
-                                ),
-                                self.root_reference
-                            )
-                        with open(vendor_grubenv_file, 'w') as vendor_grubenv:
-                            vendor_grubenv.write(grubenv)
+        # Patch the written grub config file to actually work:
+        # Unfortunately the grub tooling has several bugs and issues
+        # which prevents it to work in image build environments.
+        # More details can be found in the individual methods.
+        # One fine day the following fix methods can hopefully
+        # be deleted...
+        self._fix_grub_to_support_dynamic_efi_and_bios_boot(config_file)
+        self._fix_grub_root_device_reference(config_file, boot_options)
+        self._fix_grub_loader_entries_boot_cmdline()
 
         if self.firmware.efi_mode() and self.early_boot_script_efi:
             self._copy_grub_config_to_efi_path(
@@ -603,6 +536,49 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
                 sysconfig_bootloader[key] = value
             sysconfig_bootloader.write()
 
+    def _setup_zipl2grub_conf(self):
+        zipl2grub_config_file = ''.join(
+            [self.root_dir, '/etc/default/zipl2grub.conf.in']
+        )
+        zipl2grub_config_file_orig = ''.join(
+            [self.root_dir, '/etc/default/zipl2grub.conf.in.orig']
+        )
+        target_type = self.xml_state.get_build_type_bootloader_targettype()
+        target_blocksize = self.xml_state.build_type.get_target_blocksize()
+        if target_type and os.path.exists(zipl2grub_config_file):
+            if os.path.exists(zipl2grub_config_file_orig):
+                # reset the original template file first
+                shutil.copy(zipl2grub_config_file_orig, zipl2grub_config_file)
+            else:
+                # no copy of the original template, create it
+                shutil.copy(zipl2grub_config_file, zipl2grub_config_file_orig)
+            with open(zipl2grub_config_file) as zipl_config_file:
+                zipl_config = zipl_config_file.read()
+                zipl_config = re.sub(
+                    r'(:menu)',
+                    ':menu\n'
+                    '    targettype = {0}\n'
+                    '    targetbase = {1}\n'
+                    '    targetblocksize = {2}\n'
+                    '    targetoffset = {3}\n'
+                    '    {4}'.format(
+                        target_type,
+                        self.custom_args['targetbase'],
+                        target_blocksize or 512,
+                        self._get_partition_start(
+                            self.custom_args['targetbase']
+                        ),
+                        self._get_disk_geometry(
+                            self.custom_args['targetbase']
+                        )
+                    ),
+                    zipl_config
+                )
+            log.debug('Updated zipl template as follows')
+            with open(zipl2grub_config_file, 'w') as zipl_config_file:
+                log.debug(zipl_config)
+                zipl_config_file.write(zipl_config)
+
     def _setup_default_grub(self):  # noqa: C901
         """
         Create or update etc/default/grub by parameters required
@@ -619,12 +595,17 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         * GRUB_CMDLINE_LINUX_DEFAULT
         * GRUB_GFXMODE
         * GRUB_TERMINAL
+        * GRUB_DISTRIBUTOR
         """
         grub_default_entries = {
             'GRUB_TIMEOUT': self.timeout,
             'GRUB_GFXMODE': self.gfxmode,
             'GRUB_TERMINAL': '"{0}"'.format(self.terminal)
         }
+        if self.displayname:
+            grub_default_entries['GRUB_DISTRIBUTOR'] = '"{0}"'.format(
+                self.displayname
+            )
         if self.timeout_style:
             grub_default_entries['GRUB_TIMEOUT_STYLE'] = self.timeout_style
         if self.cmdline:
@@ -893,8 +874,8 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
                 )
             )
             early_boot.write(
-                'configfile ($root)/boot/{0}/grub.cfg{1}'.format(
-                    self.boot_directory_name, os.linesep
+                'configfile ($root){0}/{1}/grub.cfg{2}'.format(
+                    self.get_boot_path(), self.boot_directory_name, os.linesep
                 )
             )
 
@@ -1128,3 +1109,176 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         return Path.which(
             filename='shim-install', root_dir=self.boot_dir
         )
+
+    def _fix_grub_to_support_dynamic_efi_and_bios_boot(self, config_file):
+        if self.firmware.efi_mode():
+            # On systems that are configured to use EFI with grub2
+            # there is no support for dynamic EFI environment checking.
+            # In this condition we change the grub config to add this
+            # support as follows:
+            #
+            # * Apply on grub with EFI
+            #    1. Modify grub.cfg to set linux/initrd as variables
+            #    2. Prepend hybrid setup to select linux vs. linuxefi on demand
+            #
+            # Please note this is a one time modification done by kiwi
+            # Any subsequent call of the grub config tool will overwrite
+            # the setup and disables dynamic EFI environment checking
+            # at boot time
+            with open(config_file) as grub_config_file:
+                grub_config = grub_config_file.read()
+                grub_config = re.sub(
+                    r'([ \t]+)linux(efi|16)*([ \t]+)', r'\1$linux\3',
+                    grub_config
+                )
+                grub_config = re.sub(
+                    r'([ \t]+)initrd(efi|16)*([ \t]+)', r'\1$initrd\3',
+                    grub_config
+                )
+            with open(config_file, 'w') as grub_config_file:
+                grub_config_file.write(
+                    Template(self.grub2.header_hybrid).substitute()
+                )
+                grub_config_file.write(grub_config)
+
+    def _fix_grub_root_device_reference(self, config_file, boot_options):
+        if self.root_reference:
+            if self.root_filesystem_is_overlay or \
+               self.arch.startswith('s390') or \
+               Defaults.is_buildservice_worker():
+                # grub2-mkconfig has no idea how the correct root= setup is
+                # for disk images created with overlayroot enabled or in a
+                # buildservice worker environment. Because of that the mkconfig
+                # tool just finds the raw partition loop device and includes it
+                # which is wrong. In this particular case we have to patch the
+                # written config file and replace the wrong root= reference with
+                # the correct value.
+                with open(config_file) as grub_config_file:
+                    grub_config = grub_config_file.read()
+                    # The following expression matches any of the following
+                    # grub mkconfig root= settings and replaces it with a
+                    # correct value
+                    # 1. root=LOCAL-KIWI-MAPPED-DEVICE
+                    # 2. root=[a-zA-Z]=ANY-LINUX-BY-ID-VALUE
+                    grub_config = re.sub(
+                        r'(root=[a-zA-Z]+=[a-zA-Z0-9:\.-]+)|(root={0})'.format(
+                            boot_options.get('root_device')
+                        ),
+                        '{0}'.format(self.root_reference),
+                        grub_config
+                    )
+
+                with open(config_file, 'w') as grub_config_file:
+                    grub_config_file.write(grub_config)
+
+                if self.firmware.efi_mode():
+                    vendor_grubenv_file = \
+                        Defaults.get_vendor_grubenv(self.efi_mount.mountpoint)
+                    if vendor_grubenv_file:
+                        with open(vendor_grubenv_file) as vendor_grubenv:
+                            grubenv = vendor_grubenv.read()
+                            grubenv = grubenv.replace(
+                                'root={0}'.format(
+                                    boot_options.get('root_device')
+                                ),
+                                self.root_reference
+                            )
+                        with open(vendor_grubenv_file, 'w') as vendor_grubenv:
+                            vendor_grubenv.write(grubenv)
+
+    def _fix_grub_loader_entries_boot_cmdline(self):
+        if self.cmdline:
+            # For distributions that follows the bootloader spec here:
+            # https://www.freedesktop.org/wiki/Specifications/BootLoaderSpec
+            # the menu entries are managed in extra files written to
+            # boot/loader/entries. The grub2-mkconfig tool imports the
+            # information from there and has no own menu entries data
+            # in grub.cfg anymore. Unfortunately the system that writes
+            # those new boot/loader/entries has several issues. It produces
+            # a complete mess when used in chroot environments. In such
+            # an environment it takes the proc/cmdline data from the host
+            # that built the image and completely ignores the setup of
+            # the image description. Overall for image building the
+            # tooling is completely broken and we are forced to patch the
+            # entire cmdline for the menuentries on such systems.
+            loader_entries_pattern = os.sep.join(
+                [
+                    self.root_mount.mountpoint,
+                    'boot', 'loader', 'entries', '*.conf'
+                ]
+            )
+            for menu_entry_file in glob.iglob(loader_entries_pattern):
+                with open(menu_entry_file) as grub_menu_entry_file:
+                    menu_entry = grub_menu_entry_file.read()
+                    menu_entry = re.sub(
+                        r'options (.*)',
+                        r'options {0}'.format(self.cmdline),
+                        menu_entry
+                    )
+                with open(menu_entry_file, 'w') as grub_menu_entry_file:
+                    grub_menu_entry_file.write(menu_entry)
+
+    def _get_partition_start(self, disk_device):
+        if self.target_table_type == 'dasd':
+            blocks = self._get_dasd_disk_geometry_element(
+                disk_device, 'blocks per track'
+            )
+            bash_command = [
+                'fdasd', '-f', '-s', '-p', disk_device,
+                '|', 'grep', '"^ "',
+                '|', 'head', '-n', '1',
+                '|', 'tr', '-s', '" "'
+            ]
+            fdasd_call = Command.run(
+                ['bash', '-c', ' '.join(bash_command)]
+            )
+            fdasd_output = fdasd_call.output
+            try:
+                start_track = int(fdasd_output.split(' ')[2].lstrip())
+            except Exception:
+                raise KiwiDiskGeometryError(
+                    'unknown partition format: %s' % fdasd_output
+                )
+            return '{0}'.format(start_track * blocks)
+        else:
+            bash_command = ' '.join(
+                [
+                    'sfdisk', '--dump', disk_device,
+                    '|', 'grep', '"1 :"',
+                    '|', 'cut', '-f1', '-d,',
+                    '|', 'cut', '-f2', '-d='
+                ]
+            )
+            return Command.run(
+                ['bash', '-c', bash_command]
+            ).output.strip()
+
+    def _get_disk_geometry(self, disk_device):
+        disk_geometry = ''
+        if self.target_table_type == 'dasd':
+            disk_geometry = 'targetgeometry = {0},{1},{2}'.format(
+                self._get_dasd_disk_geometry_element(
+                    disk_device, 'cylinders'
+                ),
+                self._get_dasd_disk_geometry_element(
+                    disk_device, 'tracks per cylinder'
+                ),
+                self._get_dasd_disk_geometry_element(
+                    disk_device, 'blocks per track'
+                )
+            )
+        return disk_geometry
+
+    def _get_dasd_disk_geometry_element(self, disk_device, search):
+        fdasd = ['fdasd', '-f', '-p', disk_device]
+        bash_command = fdasd + ['|', 'grep', '"' + search + '"']
+        fdasd_call = Command.run(
+            ['bash', '-c', ' '.join(bash_command)]
+        )
+        fdasd_output = fdasd_call.output
+        try:
+            return int(fdasd_output.split(':')[1].lstrip())
+        except Exception:
+            raise KiwiDiskGeometryError(
+                'unknown format for disk geometry: %s' % fdasd_output
+            )

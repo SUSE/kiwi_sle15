@@ -37,6 +37,7 @@ PRE_CREATE_SCRIPT = 'images.sh'
 EDIT_BOOT_CONFIG_SCRIPT = 'edit_boot_config.sh'
 EDIT_BOOT_INSTALL_SCRIPT = 'edit_boot_install.sh'
 IMAGE_METADATA_DIR = 'image'
+ROOT_VOLUME_NAME = 'LVRoot'
 
 
 class Defaults:
@@ -166,28 +167,6 @@ class Defaults:
         :rtype: str
         """
         return 'http://download.opensuse.org/repositories'
-
-    @staticmethod
-    def get_s390_disk_block_size():
-        """
-        Provides the default block size for s390 storage disks
-
-        :return: blocksize value
-
-        :rtype: int
-        """
-        return '4096'
-
-    @staticmethod
-    def get_s390_disk_type():
-        """
-        Provides the default disk type for s390 storage disks
-
-        :return: type name
-
-        :rtype: str
-        """
-        return 'CDL'
 
     @staticmethod
     def get_solvable_location():
@@ -455,7 +434,8 @@ class Defaults:
             'crypto',
             'cryptodisk',
             'test',
-            'true'
+            'true',
+            'loadenv'
         ]
         if multiboot:
             modules.append('multiboot')
@@ -510,6 +490,22 @@ class Defaults:
     def get_grub_ofw_modules():
         """
         Provides list of grub ofw modules (ppc)
+
+        :return: list of module names
+
+        :rtype: list
+        """
+        modules = Defaults.get_grub_basic_modules(multiboot=False) + [
+            'part_gpt',
+            'part_msdos',
+            'boot'
+        ]
+        return modules
+
+    @staticmethod
+    def get_grub_s390_modules():
+        """
+        Provides list of grub ofw modules (s390)
 
         :return: list of module names
 
@@ -1274,7 +1270,7 @@ class Defaults:
 
         :rtype: list
         """
-        return ['oem', 'vmx']
+        return ['oem']
 
     @staticmethod
     def get_live_image_types():

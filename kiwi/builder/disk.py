@@ -107,6 +107,8 @@ class DiskBuilder:
         self.target_removable = xml_state.build_type.get_target_removable()
         self.root_filesystem_is_multipath = \
             xml_state.get_oemconfig_oem_multipath_scan()
+        self.disk_resize_requested = \
+            xml_state.get_oemconfig_oem_resize()
         self.swap_mbytes = xml_state.get_oemconfig_swap_mbytes()
         self.disk_setup = DiskSetup(
             xml_state, root_dir
@@ -119,7 +121,7 @@ class DiskBuilder:
         if custom_args and 'signing_keys' in custom_args:
             self.signing_keys = custom_args['signing_keys']
 
-        self.boot_image = BootImage(
+        self.boot_image = BootImage.new(
             xml_state, target_dir, root_dir, signing_keys=self.signing_keys
         )
         self.firmware = FirmWare(
@@ -216,8 +218,9 @@ class DiskBuilder:
         """
         if self.install_media and self.build_type_name != 'oem':
             raise KiwiInstallMediaError(
-                'Install media requires oem type setup, got %s' %
-                self.build_type_name
+                'Install media requires oem type setup, got {0}'.format(
+                    self.build_type_name
+                )
             )
 
         if self.root_filesystem_is_overlay and self.volume_manager_name:
@@ -248,7 +251,7 @@ class DiskBuilder:
         )
 
         # create the bootloader instance
-        self.bootloader_config = BootLoaderConfig(
+        self.bootloader_config = BootLoaderConfig.new(
             self.bootloader, self.xml_state, root_dir=self.root_dir,
             boot_dir=self.root_dir, custom_args={
                 'targetbase':
@@ -320,10 +323,10 @@ class DiskBuilder:
                     self.xml_state.build_type.get_btrfs_root_is_readonly_snapshot(),
                 'quota_groups':
                     self.xml_state.build_type.get_btrfs_quota_groups(),
-                'image_type':
-                    self.xml_state.get_build_type_name()
+                'resize_on_boot':
+                    self.disk_resize_requested
             }
-            self.volume_manager = VolumeManager(
+            self.volume_manager = VolumeManager.new(
                 self.volume_manager_name, device_map,
                 self.root_dir + '/',
                 self.volumes,
@@ -403,7 +406,7 @@ class DiskBuilder:
                 self.boot_image.write_system_config_file(
                     config={'modules': ['kiwi-overlay']}
                 )
-            if self.build_type_name == 'oem':
+            if self.disk_resize_requested:
                 self.boot_image.include_module('kiwi-repart')
 
         # create initrd cpio archive
@@ -512,6 +515,15 @@ class DiskBuilder:
             shasum=False
         )
         self.result.add(
+            key='image_changes',
+            filename=self.system_setup.export_package_changes(
+                self.target_dir
+            ),
+            use_for_bundle=True,
+            compress=True,
+            shasum=False
+        )
+        self.result.add(
             key='image_verified',
             filename=self.system_setup.export_package_verification(
                 self.target_dir
@@ -536,7 +548,7 @@ class DiskBuilder:
         """
         if self.image_format:
             log.info('Creating %s Disk Format', self.image_format)
-            disk_format = DiskFormat(
+            disk_format = DiskFormat.new(
                 self.image_format, self.xml_state,
                 self.root_dir, self.target_dir
             )
@@ -554,7 +566,7 @@ class DiskBuilder:
                 'Expanding disk with %d bytes of unpartitioned space',
                 self.unpartitioned_bytes
             )
-            disk_format = DiskFormat(
+            disk_format = DiskFormat.new(
                 'raw', self.xml_state, self.root_dir, self.target_dir
             )
             disk_format.resize_raw_disk(self.unpartitioned_bytes, append=True)
@@ -644,7 +656,7 @@ class DiskBuilder:
             exclude_list.append(
                 '{0}/.*'.format(self.spare_part_mountpoint.lstrip(os.sep))
             )
-        if 'boot' in device_map and self.bootloader == 'grub2_s390x_emu':
+        if 'boot' in device_map and 's390' in self.arch:
             exclude_list.append('boot/zipl/*')
             exclude_list.append('boot/zipl/.*')
         elif 'boot' in device_map:
@@ -699,9 +711,8 @@ class DiskBuilder:
             if not boot_filesystem:
                 boot_filesystem = self.requested_filesystem
             boot_directory = self.root_dir + '/boot/'
-            if self.bootloader == 'grub2_s390x_emu':
+            if 's390' in self.arch:
                 boot_directory = self.root_dir + '/boot/zipl/'
-                boot_filesystem = 'ext2'
             log.info(
                 'Creating boot(%s) filesystem on %s',
                 boot_filesystem, device_map['boot'].get_device()
@@ -892,7 +903,7 @@ class DiskBuilder:
             custom_root_mount_args, fs_check_interval
         )
         if device_map.get('boot'):
-            if self.bootloader == 'grub2_s390x_emu':
+            if 's390' in self.arch:
                 boot_mount_point = '/boot/zipl'
             else:
                 boot_mount_point = '/boot'
@@ -1093,7 +1104,7 @@ class DiskBuilder:
                 "custom arguments for bootloader installation %s",
                 custom_install_arguments
             )
-            bootloader = BootLoaderInstall(
+            bootloader = BootLoaderInstall.new(
                 self.bootloader, self.root_dir, self.disk.storage_provider,
                 custom_install_arguments
             )

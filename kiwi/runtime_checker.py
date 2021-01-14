@@ -20,6 +20,7 @@ import re
 from textwrap import dedent
 
 # project
+from io import StringIO
 from kiwi.xml_description import XMLDescription
 from kiwi.firmware import FirmWare
 from kiwi.xml_state import XMLState
@@ -316,6 +317,37 @@ class RuntimeChecker:
                     )
                 )
 
+    def check_initrd_selection_required(self):
+        """
+        If the boot attribute is used without selecting kiwi
+        as the initrd_system, the setting of the boot attribute
+        will not have any effect. We assume that configurations
+        which explicitly specify the boot attribute wants to use
+        the custom kiwi initrd system and not dracut.
+        """
+        message_kiwi_initrd_system_not_selected = dedent('''\n
+            Missing initrd_system selection for boot attribute
+
+            The selected boot="'{0}'" boot description indicates
+            the custom kiwi initrd system should be used instead
+            of dracut. If this is correct please explicitly request
+            the kiwi initrd system as follows:
+
+            <type initrd_system="kiwi"/>
+
+            If this is not want you want and dracut should be used
+            as initrd system, please delete the boot attribute
+            as it is obsolete in this case.
+        ''')
+        initrd_system = self.xml_state.get_initrd_system()
+        boot_image_reference = self.xml_state.build_type.get_boot()
+        if initrd_system != 'kiwi' and boot_image_reference:
+            raise KiwiRuntimeError(
+                message_kiwi_initrd_system_not_selected.format(
+                    boot_image_reference
+                )
+            )
+
     def check_boot_description_exists(self):
         """
         If a kiwi initrd is used, a lookup to the specified boot
@@ -574,8 +606,10 @@ class RuntimeChecker:
         ''')
         required_dracut_package = 'dracut-kiwi-oem-repart'
         initrd_system = self.xml_state.get_initrd_system()
+        disk_resize_requested = self.xml_state.get_oemconfig_oem_resize()
         build_type = self.xml_state.get_build_type_name()
-        if build_type == 'oem' and initrd_system == 'dracut':
+        if build_type == 'oem' and initrd_system == 'dracut' and \
+           disk_resize_requested:
             package_names = \
                 self.xml_state.get_bootstrap_packages() + \
                 self.xml_state.get_system_packages()
@@ -758,3 +792,44 @@ class RuntimeChecker:
 
         if not self.xml_state.get_image_version():
             raise KiwiRuntimeError(message_missing_version)
+
+    def check_image_type_unique(self):
+        """
+        Verify that the selected image type is unique within
+        the range of the configured types and profiles.
+        """
+        message = dedent('''\n
+            Conflicting image type setup detected
+
+            The selected image type '{0}' in the {1} profile
+            selection is not unique. There are the followng type
+            settings which overrides each other:
+            {2}
+            To solve this conflict please move the image type
+            setup into its own profile and select them using
+            the --profile option at call time.
+        ''')
+        image_type_sections = []
+        type_dict = {}
+        for preferences in self.xml_state.get_preferences_sections():
+            image_type_sections += preferences.get_type()
+
+        for image_type in image_type_sections:
+            type_name = image_type.get_image()
+            if type_dict.get(type_name):
+                type_dict[type_name].append(image_type)
+            else:
+                type_dict[type_name] = [image_type]
+
+        for type_name, type_list in list(type_dict.items()):
+            if len(type_list) > 1:
+                type_export = StringIO()
+                for image_type in type_list:
+                    type_export.write(os.linesep)
+                    image_type.export(type_export, 0)
+                raise KiwiRuntimeError(
+                    message.format(
+                        type_name, self.xml_state.profiles or ['Default'],
+                        type_export.getvalue()
+                    )
+                )

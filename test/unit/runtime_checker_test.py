@@ -68,7 +68,7 @@ class TestRuntimeChecker:
 
     def test_check_volume_setup_defines_reserved_labels(self):
         xml_state = XMLState(
-            self.description.load(), ['vmxFlavour'], 'vmx'
+            self.description.load(), ['vmxSimpleFlavour'], 'oem'
         )
         runtime_checker = RuntimeChecker(xml_state)
         with raises(KiwiRuntimeError):
@@ -180,6 +180,15 @@ class TestRuntimeChecker:
         runtime_checker = RuntimeChecker(xml_state)
         with raises(KiwiRuntimeError):
             runtime_checker.check_consistent_kernel_in_boot_and_system_image()
+
+    def test_check_initrd_selection_required(self):
+        description = XMLDescription(
+            '../data/example_runtime_checker_no_initrd_system_reference.xml'
+        )
+        xml_state = XMLState(description.load())
+        runtime_checker = RuntimeChecker(xml_state)
+        with raises(KiwiRuntimeError):
+            runtime_checker.check_initrd_selection_required()
 
     def test_check_boot_description_exists_no_boot_ref(self):
         description = XMLDescription(
@@ -297,7 +306,7 @@ class TestRuntimeChecker:
 
     def test_check_preferences_data_no_packagemanager(self):
         xml_state = XMLState(
-            self.description.load(), ['xenFlavour'], 'vmx'
+            self.description.load(), ['xenDom0Flavour'], 'oem'
         )
         runtime_checker = RuntimeChecker(xml_state)
         with raises(KiwiRuntimeError):
@@ -315,7 +324,7 @@ class TestRuntimeChecker:
         with raises(KiwiRuntimeError):
             runtime_checker.check_architecture_supports_iso_firmware_setup()
         xml_state = XMLState(
-            self.description.load(), ['xenFlavour'], 'oem'
+            self.description.load(), ['xenDom0Flavour'], 'oem'
         )
         runtime_checker = RuntimeChecker(xml_state)
         with raises(KiwiRuntimeError):
@@ -335,11 +344,20 @@ class TestRuntimeChecker:
         with raises(KiwiRuntimeError):
             runtime_checker.check_syslinux_installed_if_isolinux_is_used()
         xml_state = XMLState(
-            self.description.load(), ['xenFlavour'], 'oem'
+            self.description.load(), ['xenDom0Flavour'], 'oem'
         )
         runtime_checker = RuntimeChecker(xml_state)
         with raises(KiwiRuntimeError):
             runtime_checker.check_syslinux_installed_if_isolinux_is_used()
+
+    def test_check_image_type_unique(self):
+        description = XMLDescription(
+            '../data/example_runtime_checker_conflicting_types.xml'
+        )
+        xml_state = XMLState(description.load())
+        runtime_checker = RuntimeChecker(xml_state)
+        with raises(KiwiRuntimeError):
+            runtime_checker.check_image_type_unique()
 
     def teardown(self):
         sys.argv = argv_kiwi_tests

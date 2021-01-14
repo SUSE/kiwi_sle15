@@ -1,14 +1,17 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.2" name="TW-OpenStack">
+<image schemaversion="7.3" name="kiwi-test-image-qcow-openstack">
     <description type="system">
         <author>KIWI Team</author>
         <contact>kiwi-images@googlegroups.com</contact>
         <specification>SUSE Tumbleweed guest image for OpenStack</specification>
     </description>
     <preferences>
-        <type image="vmx" filesystem="ext4" format="qcow2" kernelcmdline="console=tty1 console=ttyS0 net.ifnames=0">
-            <bootloader name="grub2" timeout="1"/>
+        <type image="oem" filesystem="ext4" format="qcow2" kernelcmdline="console=ttyS0 net.ifnames=0">
+            <oemconfig>
+                <oem-resize>false</oem-resize>
+            </oemconfig>
+            <bootloader name="grub2" timeout="1" console="serial gfxterm"/>
             <size unit="M">10240</size>
         </type>
         <version>0.3.10</version>
@@ -113,60 +116,7 @@
         <package name="elfutils"/>
         <package name="iputils"/>
         <package name="timezone"/>
-        <package name="yast2"/>
-        <package name="yast2-add-on"/>
-        <package name="yast2-audit-laf"/>
-        <package name="yast2-bootloader"/>
-        <package name="yast2-core"/>
-        <package name="yast2-country"/>
-        <package name="yast2-country-data"/>
-        <package name="yast2-dhcp-server"/>
-        <package name="yast2-dns-server"/>
-        <package name="yast2-firewall"/>
-        <package name="yast2-ftp-server"/>
-        <package name="yast2-hardware-detection"/>
-        <package name="yast2-http-server"/>
-        <package name="yast2-iscsi-client"/>
-        <package name="yast2-iscsi-lio-server"/>
-        <package name="yast2-isns"/>
-        <package name="yast2-kdump"/>
-        <package name="yast2-ldap"/>
-        <package name="yast2-mail"/>
-        <package name="yast2-network"/>
-        <package name="yast2-nfs-client"/>
-        <package name="yast2-nfs-common"/>
-        <package name="yast2-nfs-server"/>
-        <package name="yast2-nis-client"/>
-        <package name="yast2-nis-server"/>
-        <package name="yast2-ntp-client"/>
-        <package name="yast2-online-update"/>
-        <package name="yast2-online-update-frontend"/>
-        <package name="yast2-packager"/>
-        <package name="yast2-pam"/>
-        <package name="yast2-perl-bindings"/>
-        <package name="yast2-pkg-bindings"/>
-        <package name="yast2-printer"/>
-        <package name="yast2-samba-client"/>
-        <package name="yast2-samba-server"/>
-        <package name="yast2-schema"/>
-        <package name="yast2-security"/>
-        <package name="yast2-slp"/>
-        <package name="yast2-slp-server"/>
-        <package name="yast2-squid"/>
-        <package name="yast2-storage-ng"/>
-        <package name="yast2-sudo"/>
-        <package name="yast2-support"/>
-        <package name="yast2-sysconfig"/>
-        <package name="yast2-tftp-server"/>
-        <package name="yast2-transfer"/>
-        <package name="yast2-trans-stats"/>
-        <package name="yast2-tune"/>
-        <package name="yast2-update"/>
-        <package name="yast2-users"/>
-        <package name="yast2-xml"/>
-        <package name="yast2-ycp-ui-bindings"/>
         <package name="docker"/>
-        <package name="yast2-docker"/>
         <package name="cloud-init"/>
         <package name="cloud-init-config-suse"/>
     </packages>

@@ -53,6 +53,7 @@ function get_disk_list {
         disk_id=${kiwi_devicepersistency}
     fi
     max_disk=0
+    kiwi_oemmultipath_scan=$(bool "${kiwi_oemmultipath_scan}")
     kiwi_oem_maxdisk=$(getarg rd.kiwi.oem.maxdisk=)
     if [ -n "${kiwi_oem_maxdisk}" ]; then
         max_disk=$(binsize_to_bytesize "${kiwi_oem_maxdisk}") || max_disk=0
@@ -71,7 +72,7 @@ function get_disk_list {
         # target should be a ramdisk on request. Thus instruct
         # lsblk to list only ramdisk devices (Major=1)
         blk_opts="-I 1 ${blk_opts}"
-    elif [ -n "${kiwi_oemmultipath_scan}" ];then
+    elif [ "${kiwi_oemmultipath_scan}" = "true" ];then
         scan_multipath_devices
     fi
     for disk_meta in $(
@@ -137,7 +138,7 @@ function get_selected_disk {
         local count=0
         local device_index=0
         for entry in ${disk_list};do
-            if [ $((count % 3)) -eq 0 ];then
+            if [ $((count % 2)) -eq 0 ];then
                 device_array[${device_index}]=${entry}
                 device_index=$((device_index + 1))
             fi

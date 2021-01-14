@@ -100,11 +100,11 @@ The notable differences to running {kiwi} locally include:
 
         <!-- OBS-Profiles: foo_profile bar_profile -->
 
-        <image schemaversion="7.2" name="openSUSE-Leap-15.1">
+        <image schemaversion="{schema_version}" name="openSUSE-Leap-15.1">
           <!-- image description with the profiles foo_profile and bar_profile
         </image>
 
-  2. Use the `multibuild <https://openbuildservice.org/help/manuals/obs-reference-guide/cha.obs.multibuild.html>`_ feature.
+  2. Use the `multibuild <https://openbuildservice.org/help/manuals/obs-user-guide/cha.obs.multibuild.html>`_ feature.
 
   The first option is simpler to use, but has the disadvantage that your
   appliances are built sequentially. The `multibuild` feature allows to
@@ -118,7 +118,7 @@ The notable differences to running {kiwi} locally include:
 
      <!-- OBS-Profiles: @BUILD_FLAVOR@ -->
 
-     <image schemaversion="7.2" name="openSUSE-Leap-15.1">
+     <image schemaversion="{schema_version}" name="openSUSE-Leap-15.1">
        <!-- image description with the profiles foo_profile and bar_profile
      </image>
 
@@ -210,7 +210,7 @@ your dependent packages. These repositories can be provided in two ways:
    .. code:: xml
 
       <project name="Virtualization:Appliances:Images:openSUSE-Tumbleweed">
-        <title>JeOS for Tumbleweed </title>
+        <title>Tumbleweed JeOS images</title>
         <description>Host JeOS images for Tumbleweed</description>
         <repository name="images">
           <path project="Virtualization:Appliances:Builder" repository="Factory"/>
@@ -225,7 +225,7 @@ your dependent packages. These repositories can be provided in two ways:
    .. code:: xml
 
       <project name="Virtualization:Appliances:Images:openSUSE-Tumbleweed">
-        <title>JeOS for Tumbleweed </title>
+        <title>Tumbleweed JeOS images</title>
         <description>Host JeOS images for Tumbleweed</description>
         <repository name="images">
           <path project="Virtualization:Appliances:Builder" repository="Factory"/>

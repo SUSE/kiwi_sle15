@@ -73,6 +73,7 @@ class CliTask:
         self.checks_before_command_args = {
             'check_minimal_required_preferences': [],
             'check_efi_mode_for_disk_overlay_correctly_setup': [],
+            'check_initrd_selection_required': [],
             'check_boot_description_exists': [],
             'check_consistent_kernel_in_boot_and_system_image': [],
             'check_container_tool_chain_installed': [],
@@ -88,7 +89,8 @@ class CliTask:
             'check_dracut_module_for_oem_install_in_package_list': [],
             'check_architecture_supports_iso_firmware_setup': [],
             'check_appx_naming_conventions_valid': [],
-            'check_syslinux_installed_if_isolinux_is_used': []
+            'check_syslinux_installed_if_isolinux_is_used': [],
+            'check_image_type_unique': []
         }
         self.checks_after_command_args = {
             'check_repositories_configured': [],

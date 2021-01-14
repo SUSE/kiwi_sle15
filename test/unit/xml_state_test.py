@@ -56,13 +56,13 @@ class TestXMLState:
         assert description.author == 'Marcus'
         assert description.contact == 'ms@suse.com'
         assert description.specification == \
-            'openSUSE 13.2 JeOS, is a small text based image'
+            'Testing various configuration states'
 
     def test_build_type_primary_selected(self):
         assert self.state.get_build_type_name() == 'oem'
 
     def test_build_type_first_selected(self):
-        self.state.xml_data.get_preferences()[1].get_type()[0].set_primary(
+        self.state.xml_data.get_preferences()[2].get_type()[0].set_primary(
             False
         )
         assert self.state.get_build_type_name() == 'oem'
@@ -266,8 +266,8 @@ class TestXMLState:
 
     def test_build_type_explicitly_selected(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['vmxFlavour'], 'vmx')
-        assert state.get_build_type_name() == 'vmx'
+        state = XMLState(xml_data, ['vmxFlavour'], 'oem')
+        assert state.get_build_type_name() == 'oem'
 
     def test_build_type_not_found(self):
         xml_data = self.description.load()
@@ -289,7 +289,36 @@ class TestXMLState:
         xml_data = self.description.load()
         xml_state = XMLState(xml_data, ['composedProfile'])
         assert xml_state.profiles == [
-            'composedProfile', 'vmxFlavour', 'xenFlavour'
+            'composedProfile', 'vmxSimpleFlavour', 'xenDomUFlavour'
+        ]
+
+    def test_get_volumes_custom_root_volume_name(self):
+        description = XMLDescription(
+            '../data/example_lvm_custom_rootvol_config.xml'
+        )
+        xml_data = description.load()
+        state = XMLState(xml_data)
+        volume_type = namedtuple(
+            'volume_type', [
+                'name',
+                'size',
+                'realpath',
+                'mountpoint',
+                'fullsize',
+                'label',
+                'attributes',
+                'is_root_volume'
+            ]
+        )
+        assert state.get_volumes() == [
+            volume_type(
+                name='myroot', size='freespace:500',
+                realpath='/',
+                mountpoint=None, fullsize=False,
+                label=None,
+                attributes=[],
+                is_root_volume=True
+            )
         ]
 
     def test_get_volumes(self):
@@ -304,44 +333,51 @@ class TestXMLState:
                 'mountpoint',
                 'fullsize',
                 'label',
-                'attributes'
+                'attributes',
+                'is_root_volume'
             ]
         )
         assert state.get_volumes() == [
             volume_type(
                 name='usr_lib', size='size:1024',
                 realpath='usr/lib',
-                mountpoint='usr/lib', fullsize=False,
+                mountpoint='usr/lib',
+                fullsize=False,
                 label='library',
-                attributes=[]
+                attributes=[],
+                is_root_volume=False
             ),
             volume_type(
                 name='LVRoot', size='freespace:500',
                 realpath='/',
                 mountpoint=None, fullsize=False,
                 label=None,
-                attributes=[]
+                attributes=[],
+                is_root_volume=True
             ),
             volume_type(
                 name='etc_volume', size='freespace:30',
                 realpath='etc',
                 mountpoint='etc', fullsize=False,
                 label=None,
-                attributes=['no-copy-on-write']
+                attributes=['no-copy-on-write'],
+                is_root_volume=False
             ),
             volume_type(
                 name='bin_volume', size=None,
                 realpath='/usr/bin',
                 mountpoint='/usr/bin', fullsize=True,
                 label=None,
-                attributes=[]
+                attributes=[],
+                is_root_volume=False
             ),
             volume_type(
                 name='LVSwap', size='size:128',
                 realpath='swap',
                 mountpoint=None, fullsize=False,
                 label='SWAP',
-                attributes=[]
+                attributes=[],
+                is_root_volume=False
             )
         ]
 
@@ -357,7 +393,8 @@ class TestXMLState:
                 'mountpoint',
                 'fullsize',
                 'label',
-                'attributes'
+                'attributes',
+                'is_root_volume'
             ]
         )
         assert state.get_volumes() == [
@@ -365,14 +402,16 @@ class TestXMLState:
                 name='LVRoot', size=None, realpath='/',
                 mountpoint=None, fullsize=True,
                 label=None,
-                attributes=[]
+                attributes=[],
+                is_root_volume=True
             ),
             volume_type(
                 name='LVSwap', size='size:128',
                 realpath='swap',
                 mountpoint=None, fullsize=False,
                 label='SWAP',
-                attributes=[]
+                attributes=[],
+                is_root_volume=False
             )
         ]
 
@@ -390,7 +429,8 @@ class TestXMLState:
                 'mountpoint',
                 'fullsize',
                 'label',
-                'attributes'
+                'attributes',
+                'is_root_volume'
             ]
         )
         assert state.get_volumes() == [
@@ -398,20 +438,23 @@ class TestXMLState:
                 name='usr', size=None, realpath='usr',
                 mountpoint='usr', fullsize=True,
                 label=None,
-                attributes=[]
+                attributes=[],
+                is_root_volume=False
             ),
             volume_type(
                 name='LVRoot', size='freespace:30', realpath='/',
                 mountpoint=None, fullsize=False,
                 label=None,
-                attributes=[]
+                attributes=[],
+                is_root_volume=True
             ),
             volume_type(
                 name='LVSwap', size='size:128',
                 realpath='swap',
                 mountpoint=None, fullsize=False,
                 label='SWAP',
-                attributes=[]
+                attributes=[],
+                is_root_volume=False
             )
         ]
 
@@ -431,7 +474,7 @@ class TestXMLState:
 
     def test_get_build_type_machine_section(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, None, 'vmx')
+        state = XMLState(xml_data, ['vmxSimpleFlavour'], 'oem')
         assert state.get_build_type_machine_section().get_guestOS() == 'suse'
 
     def test_get_drivers_list(self):
@@ -444,9 +487,31 @@ class TestXMLState:
         assert state.get_build_type_oemconfig_section().get_oem_swap()[0] is \
             True
 
+    def test_get_oemconfig_oem_resize(self):
+        xml_data = self.description.load()
+        state = XMLState(xml_data, ['vmxFlavour'], 'oem')
+        assert state.get_oemconfig_oem_resize() is True
+        description = XMLDescription(
+            '../data/example_multiple_users_config.xml'
+        )
+        xml_data = description.load()
+        state = XMLState(xml_data)
+        assert state.get_oemconfig_oem_resize() is False
+
+    def test_get_oemconfig_oem_multipath_scan(self):
+        xml_data = self.description.load()
+        state = XMLState(xml_data, ['vmxFlavour'], 'oem')
+        assert state.get_oemconfig_oem_multipath_scan() is False
+        description = XMLDescription(
+            '../data/example_disk_config.xml'
+        )
+        xml_data = description.load()
+        state = XMLState(xml_data)
+        assert state.get_oemconfig_oem_multipath_scan() is False
+
     def test_get_oemconfig_swap_mbytes(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['xenFlavour'], 'docker')
+        state = XMLState(xml_data, ['containerFlavour'], 'docker')
         assert state.get_oemconfig_swap_mbytes() is None
         state = XMLState(xml_data, ['vmxFlavour'], 'oem')
         assert state.get_oemconfig_swap_mbytes() == 42
@@ -591,7 +656,7 @@ class TestXMLState:
         assert result.additive
 
     def test_build_type_size_with_unpartitioned(self):
-        state = XMLState(self.description.load(), ['vmxFlavour'], 'vmx')
+        state = XMLState(self.description.load(), ['vmxSimpleFlavour'], 'oem')
         result = state.get_build_type_size()
         assert result.mbytes == 3072
         assert not result.additive
@@ -601,11 +666,11 @@ class TestXMLState:
 
     def test_get_build_type_unpartitioned_bytes(self):
         assert self.state.get_build_type_unpartitioned_bytes() == 0
-        state = XMLState(self.description.load(), ['vmxFlavour'], 'vmx')
+        state = XMLState(self.description.load(), ['vmxSimpleFlavour'], 'oem')
         assert state.get_build_type_unpartitioned_bytes() == 1073741824
         state = XMLState(self.description.load(), ['vmxFlavour'], 'oem')
         assert state.get_build_type_unpartitioned_bytes() == 0
-        state = XMLState(self.description.load(), ['ec2Flavour'], 'vmx')
+        state = XMLState(self.description.load(), ['ec2Flavour'], 'oem')
         assert state.get_build_type_unpartitioned_bytes() == 0
 
     def test_get_volume_group_name(self):
@@ -649,9 +714,9 @@ class TestXMLState:
     def test_get_build_type_vmconfig_entries(self):
         assert self.state.get_build_type_vmconfig_entries() == []
 
-    def test_get_build_type_vmconfig_entries_for_vmx_type(self):
+    def test_get_build_type_vmconfig_entries_for_simple_disk(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['vmxFlavour'], 'vmx')
+        state = XMLState(xml_data, ['vmxSimpleFlavour'], 'oem')
         assert state.get_build_type_vmconfig_entries() == [
             'numvcpus = "4"', 'cpuid.coresPerSocket = "2"'
         ]
@@ -664,7 +729,7 @@ class TestXMLState:
 
     def test_get_build_type_docker_containerconfig_section(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['vmxFlavour'], 'docker')
+        state = XMLState(xml_data, ['containerFlavour'], 'docker')
         containerconfig = state.get_build_type_containerconfig_section()
         assert containerconfig.get_name() == \
             'container_name'
@@ -675,14 +740,14 @@ class TestXMLState:
 
     def test_set_container_tag(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['vmxFlavour'], 'docker')
+        state = XMLState(xml_data, ['containerFlavour'], 'docker')
         state.set_container_config_tag('new_tag')
         config = state.get_container_config()
         assert config['container_tag'] == 'new_tag'
 
     def test_add_container_label(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['vmxFlavour'], 'docker')
+        state = XMLState(xml_data, ['containerFlavour'], 'docker')
         state.add_container_config_label('somelabel', 'overwrittenvalue')
         state.add_container_config_label('new_label', 'new value')
         config = state.get_container_config()
@@ -694,7 +759,7 @@ class TestXMLState:
 
     def test_add_container_label_without_contianerconfig(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['xenFlavour'], 'docker')
+        state = XMLState(xml_data, ['xenDom0Flavour'], 'docker')
         state.add_container_config_label('somelabel', 'newlabelvalue')
         config = state.get_container_config()
         assert config['labels'] == {
@@ -703,11 +768,14 @@ class TestXMLState:
 
     def test_add_container_label_no_container_image_type(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['vmxFlavour'], 'vmx')
+        state = XMLState(xml_data, ['vmxFlavour'], 'oem')
         state.add_container_config_label('somelabel', 'newlabelvalue')
         with self._caplog.at_level(logging.WARNING):
             config = state.get_container_config()
-            assert not config
+            assert config == {
+                'history': {'author': 'Marcus <ms@suse.com>'},
+                'maintainer': 'Marcus <ms@suse.com>'
+            }
 
     def test_set_container_tag_not_applied(self):
         with self._caplog.at_level(logging.WARNING):
@@ -743,7 +811,7 @@ class TestXMLState:
             }
         }
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['vmxFlavour'], 'docker')
+        state = XMLState(xml_data, ['containerFlavour'], 'docker')
         assert state.get_container_config() == expected_config
 
     def test_get_container_config_clear_commands(self):
@@ -755,6 +823,7 @@ class TestXMLState:
             'workingdir': '/root',
             'user': 'root',
             'entry_command': [],
+            'history': {'author': 'Marcus <ms@suse.com>'}
         }
         xml_data = self.description.load()
         state = XMLState(xml_data, ['derivedContainer'], 'docker')
@@ -801,26 +870,26 @@ class TestXMLState:
     def test_is_xen_guest_by_firmware_setup(self, mock_platform_machine):
         mock_platform_machine.return_value = 'x86_64'
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['ec2Flavour'], 'vmx')
+        state = XMLState(xml_data, ['ec2Flavour'], 'oem')
         assert state.is_xen_guest() is True
 
     @patch('platform.machine')
     def test_is_xen_guest_by_architecture(self, mock_platform_machine):
         mock_platform_machine.return_value = 'unsupported'
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['ec2Flavour'], 'vmx')
+        state = XMLState(xml_data, ['ec2Flavour'], 'oem')
         assert state.is_xen_guest() is False
 
     def test_get_initrd_system(self):
         xml_data = self.description.load()
-        state = XMLState(xml_data, ['vmxFlavour'], 'vmx')
+        state = XMLState(xml_data, ['vmxFlavour'], 'oem')
         assert state.get_initrd_system() == 'dracut'
-        state = XMLState(xml_data, ['vmxFlavour'], 'iso')
+        state = XMLState(xml_data, ['vmxSimpleFlavour'], 'iso')
         assert state.get_initrd_system() == 'dracut'
-        state = XMLState(xml_data, ['vmxFlavour'], 'docker')
+        state = XMLState(xml_data, ['containerFlavour'], 'docker')
         assert state.get_initrd_system() is None
         state = XMLState(xml_data, [], 'oem')
-        assert state.get_initrd_system() == 'kiwi'
+        assert state.get_initrd_system() == 'dracut'
 
     def test_get_rpm_locale_filtering(self):
         assert self.state.get_rpm_locale_filtering() is True

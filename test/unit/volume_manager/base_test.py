@@ -19,7 +19,8 @@ class TestVolumeManagerBase:
                 'realpath',
                 'mountpoint',
                 'fullsize',
-                'attributes'
+                'attributes',
+                'is_root_volume'
             ]
         )
         mock_path.return_value = True
@@ -38,11 +39,13 @@ class TestVolumeManagerBase:
         self.volume_manager.volumes = [
             self.volume_type(
                 name='LVetc', size='freespace:200', realpath='/etc',
-                mountpoint='/etc', fullsize=False, attributes=[]
+                mountpoint='/etc', fullsize=False, attributes=[],
+                is_root_volume=False
             ),
             self.volume_type(
                 name='LVRoot', size='size:500', realpath='/',
-                mountpoint='/', fullsize=True, attributes=[]
+                mountpoint='/', fullsize=True, attributes=[],
+                is_root_volume=True
             )
         ]
 
@@ -129,7 +132,7 @@ class TestVolumeManagerBase:
         mock_size.return_value = size
         assert self.volume_manager.get_volume_mbsize(
             self.volume_manager.volumes[0], self.volume_manager.volumes,
-            'ext3', 'oem'
+            'ext3', True
         ) == 72
 
     @patch('kiwi.volume_manager.base.SystemSize')
@@ -146,11 +149,13 @@ class TestVolumeManagerBase:
         self.volume_manager.volumes = [
             self.volume_type(
                 name='LVusr', size='freespace:200', realpath='/usr',
-                mountpoint='/usr', fullsize=False, attributes=[]
+                mountpoint='/usr', fullsize=False, attributes=[],
+                is_root_volume=False
             ),
             self.volume_type(
                 name='LVusr_lib', size='freespace:100', realpath='/usr/lib',
-                mountpoint='/usr/lib', fullsize=False, attributes=[]
+                mountpoint='/usr/lib', fullsize=False, attributes=[],
+                is_root_volume=False
             )
         ]
         assert self.volume_manager.get_volume_mbsize(
@@ -175,20 +180,23 @@ class TestVolumeManagerBase:
         self.volume_manager.volumes = [
             self.volume_type(
                 name='LVusr', size='freespace:200', realpath='/usr',
-                mountpoint='/usr', fullsize=False, attributes=[]
+                mountpoint='/usr', fullsize=False, attributes=[],
+                is_root_volume=False
             ),
             self.volume_type(
                 name='LVusr_lib', size='freespace:100', realpath='/usr/lib',
-                mountpoint='/usr/lib', fullsize=False, attributes=[]
+                mountpoint='/usr/lib', fullsize=False, attributes=[],
+                is_root_volume=False
             ),
             self.volume_type(
                 name='LVRoot', size='size:500', realpath='/',
-                mountpoint='/', fullsize=True, attributes=[]
+                mountpoint='/', fullsize=True, attributes=[],
+                is_root_volume=True
             )
         ]
         assert self.volume_manager.get_volume_mbsize(
             self.volume_manager.volumes[2], self.volume_manager.volumes,
-            'ext3', 'oem'
+            'ext3', True
         ) == 72
         size.accumulate_mbyte_file_sizes.assert_called_once_with(
             ['root_dir/usr', 'root_dir/usr/lib']
@@ -244,7 +252,8 @@ class TestVolumeManagerBase:
             'toplevel', self.volume_type(
                 name='LVetc', size='freespace:200', realpath='/etc',
                 mountpoint='/etc', fullsize=False,
-                attributes=['no-copy-on-write']
+                attributes=['no-copy-on-write'],
+                is_root_volume=False
             )
         )
         mock_command.assert_called_once_with(
