@@ -7,6 +7,8 @@ from mock import (
     Mock, MagicMock
 )
 
+import kiwi
+
 from kiwi.exceptions import KiwiFormatSetupError
 from kiwi.storage.subformat.vagrant_base import DiskFormatVagrantBase
 
@@ -31,6 +33,11 @@ class TestDiskFormatVagrantBase:
         )
         self.vagrantconfig.get_virtualsize = Mock(
             return_value=42
+        )
+        self.runtime_config = Mock()
+        self.runtime_config.get_bundle_compression.return_value = False
+        kiwi.storage.subformat.base.RuntimeConfig = Mock(
+            return_value=self.runtime_config
         )
         self.disk_format = DiskFormatVagrantBase(
             self.xml_state, 'root_dir', 'target_dir',
@@ -139,8 +146,10 @@ class TestDiskFormatVagrantBase:
             )
 
     def test_get_additional_vagrant_config_settings(self):
-        assert self.disk_format.get_additional_vagrant_config_settings() \
-            is None
+        assert self.disk_format.get_additional_vagrant_config_settings() == ''
+
+    def test_get_additional_metadata(self):
+        assert self.disk_format.get_additional_metadata() == {}
 
     def test_store_to_result(self):
         # select an example provider

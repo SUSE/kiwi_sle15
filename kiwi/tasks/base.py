@@ -54,9 +54,6 @@ class CliTask:
         # initialize runtime checker
         self.runtime_checker = None
 
-        # initialize runtime configuration
-        self.runtime_config = RuntimeConfig()
-
         # help requested
         self.cli.show_and_exit_on_help_request()
 
@@ -69,9 +66,12 @@ class CliTask:
         # get global args
         self.global_args = self.cli.get_global_args()
 
+        # initialize runtime configuration
+        self.runtime_config = RuntimeConfig()
+
         # initialize generic runtime check dicts
         self.checks_before_command_args = {
-            'check_minimal_required_preferences': [],
+            'check_image_version_provided': [],
             'check_efi_mode_for_disk_overlay_correctly_setup': [],
             'check_initrd_selection_required': [],
             'check_boot_description_exists': [],
@@ -81,6 +81,7 @@ class CliTask:
             'check_volume_setup_defines_multiple_fullsize_volumes': [],
             'check_volume_setup_has_no_root_definition': [],
             'check_volume_label_used_with_lvm': [],
+            'check_swap_name_used_with_lvm': [],
             'check_xen_uniquely_setup_as_server_or_guest': [],
             'check_mediacheck_installed': [],
             'check_dracut_module_for_live_iso_in_package_list': [],
@@ -177,15 +178,13 @@ class CliTask:
         Make sure to provide a common result for option values which
         separates the information in a comma separated list of values
 
+        :param str option: comma separated option string
+
         :return: common option value representation
-        :rtype: str
+
+        :rtype: list
         """
-        tokens = option.split(',', 3)
-        return [
-            self._pop_token(tokens) if len(tokens) else None for _ in range(
-                0, 4
-            )
-        ]
+        return self._ntuple_token(option, 4)
 
     def sextuple_token(self, option):
         """
@@ -194,15 +193,13 @@ class CliTask:
         Make sure to provide a common result for option values which
         separates the information in a comma separated list of values
 
+        :param str option: comma separated option string
+
         :return: common option value representation
-        :rtype: str
+
+        :rtype: list
         """
-        tokens = option.split(',', 5)
-        return [
-            self._pop_token(tokens) if len(tokens) else None for _ in range(
-                0, 6
-            )
-        ]
+        return self._ntuple_token(option, 6)
 
     def run_checks(self, checks):
         """
@@ -228,3 +225,24 @@ class CliTask:
             return False
         else:
             return token
+
+    def _ntuple_token(self, option, tuple_count):
+        """
+        Helper method for commandline options of the form --option a,b,c,d,e,f
+
+        Make sure to provide a common result for option values which
+        separates the information in a comma separated list of values
+
+        :param str option: comma separated option string
+        :param int tuple_count: divide into tuple_count tuples
+
+        :return: common option value representation
+
+        :rtype: list
+        """
+        tokens = option.split(',', tuple_count - 1)
+        return [
+            self._pop_token(tokens) if len(tokens) else None for _ in range(
+                0, tuple_count
+            )
+        ]

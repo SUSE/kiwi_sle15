@@ -22,6 +22,7 @@ from tempfile import NamedTemporaryFile
 
 # project
 from kiwi.defaults import Defaults
+from kiwi.command import Command
 from kiwi.repository.base import RepositoryBase
 from kiwi.path import Path
 from kiwi.utils.rpm_database import RpmDataBase
@@ -80,7 +81,8 @@ class RepositoryDnf(RepositoryBase):
         self.shared_dnf_dir = {
             'reposd-dir': manager_base + '/repos',
             'cache-dir': manager_base + '/cache',
-            'pluginconf-dir': manager_base + '/pluginconf'
+            'pluginconf-dir': manager_base + '/pluginconf',
+            'vars-dir': manager_base + '/vars'
         }
 
         self.runtime_dnf_config_file = NamedTemporaryFile(
@@ -88,7 +90,7 @@ class RepositoryDnf(RepositoryBase):
         )
 
         self.dnf_args = [
-            '-c', self.runtime_dnf_config_file.name, '-y'
+            '--config', self.runtime_dnf_config_file.name, '-y'
         ] + self.custom_args
 
         self.command_env = self._create_dnf_runtime_environment()
@@ -120,6 +122,32 @@ class RepositoryDnf(RepositoryBase):
             rpmdb.link_database_to_host_path()
         else:
             rpmdb.set_database_to_host_path()
+        # SUSE compat code:
+        #
+        # Manually adding the compat link /var/lib/rpm that points to the
+        # rpmdb location as it is configured in the host rpm setup. DNF makes
+        # use of the host setup to bootstrap or to read the signing keys
+        # from the rpm database setup provisioned by rpm itself (macro level).
+        # It assumes the host setup is the default for the system being built.
+        #
+        # For SUSE this is causing a mismatch as the host setup is not the RPM
+        # default (/var/lib/rpm) and SUSE distros proactively relocate the rpm
+        # database from the default location to a custom one when the
+        # rpm package and related macros are installed for the first time.
+        rpmdb.init_database()
+        image_rpm_compat_link = '/var/lib/rpm'
+        host_rpm_dbpath = rpmdb.rpmdb_host.expand_query('%_dbpath')
+        if host_rpm_dbpath != image_rpm_compat_link:
+            Path.create(
+                self.root_dir + os.path.dirname(image_rpm_compat_link)
+            )
+            Command.run(
+                [
+                    'ln', '-s', '--no-target-directory',
+                    ''.join(['../..', host_rpm_dbpath]),
+                    self.root_dir + image_rpm_compat_link
+                ], raise_on_error=False
+            )
 
     def use_default_location(self):
         """
@@ -132,6 +160,8 @@ class RepositoryDnf(RepositoryBase):
             self.root_dir + '/var/cache/dnf'
         self.shared_dnf_dir['pluginconf-dir'] = \
             self.root_dir + '/etc/dnf/plugins'
+        self.shared_dnf_dir['vars-dir'] = \
+            self.root_dir + '/etc/dnf/vars'
         self._create_runtime_config_parser()
         self._create_runtime_plugin_config_parser()
         self._write_runtime_config()
@@ -154,7 +184,7 @@ class RepositoryDnf(RepositoryBase):
         prio=None, dist=None, components=None,
         user=None, secret=None, credentials_file=None,
         repo_gpgcheck=None, pkg_gpgcheck=None,
-        sourcetype=None
+        sourcetype=None, use_for_bootstrap=False
     ):
         """
         Add dnf repository
@@ -172,6 +202,7 @@ class RepositoryDnf(RepositoryBase):
         :param bool pkg_gpgcheck: enable package signature validation
         :param str sourcetype:
             source type, one of 'baseurl', 'metalink' or 'mirrorlist'
+        :param bool use_for_bootstrap: unused
         """
         repo_file = self.shared_dnf_dir['reposd-dir'] + '/' + name + '.repo'
         self.repo_names.append(name + '.repo')
@@ -285,6 +316,9 @@ class RepositoryDnf(RepositoryBase):
             'main', 'reposdir', self.shared_dnf_dir['reposd-dir']
         )
         self.runtime_dnf_config.set(
+            'main', 'varsdir', self.shared_dnf_dir['vars-dir']
+        )
+        self.runtime_dnf_config.set(
             'main', 'pluginconfpath', self.shared_dnf_dir['pluginconf-dir']
         )
         self.runtime_dnf_config.set(
@@ -321,7 +355,8 @@ class RepositoryDnf(RepositoryBase):
     def _write_runtime_config(self):
         with open(self.runtime_dnf_config_file.name, 'w') as config:
             self.runtime_dnf_config.write(config)
-        dnf_plugin_config_file = \
-            self.shared_dnf_dir['pluginconf-dir'] + '/priorities.conf'
-        with open(dnf_plugin_config_file, 'w') as pluginconfig:
-            self.runtime_dnf_plugin_config.write(pluginconfig)
+        if os.path.exists(self.shared_dnf_dir['pluginconf-dir']):
+            dnf_plugin_config_file = \
+                self.shared_dnf_dir['pluginconf-dir'] + '/priorities.conf'
+            with open(dnf_plugin_config_file, 'w') as pluginconfig:
+                self.runtime_dnf_plugin_config.write(pluginconfig)

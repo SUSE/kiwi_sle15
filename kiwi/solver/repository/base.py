@@ -15,6 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
+import platform
 from base64 import b64encode
 from urllib.request import urlopen
 from urllib.request import Request
@@ -137,10 +138,71 @@ class SolverRepositoryBase:
             location = urlopen(request)
         except Exception as e:
             raise KiwiUriOpenError(
-                '{0}: {1} {2}'.format(type(e).__name__, format(e), download_link)
+                f'{type(e).__name__}: {e} {download_link}'
             )
         with open(target, 'wb') as target_file:
             target_file.write(location.read())
+
+    def get_repo_type(self):
+        try:
+            if self._get_repomd_xml():
+                return 'rpm-md'
+        except KiwiUriOpenError:
+            pass
+        try:
+            if self._get_deb_packages():
+                return 'apt-deb'
+        except KiwiUriOpenError:
+            pass
+        try:
+            repo_listing = self._get_pacman_packages()
+            if '.db.sig\"' in repo_listing:
+                return 'pacman'
+        except KiwiUriOpenError:
+            pass
+        return None
+
+    def _get_pacman_packages(self):
+        """
+        Download Arch repository listing for the current architecture
+
+        :return: html directory listing
+
+        :rtype: str
+        """
+        dir_listing_download = NamedTemporaryFile()
+        self.download_from_repository(
+            platform.machine(), dir_listing_download.name
+        )
+        if os.path.isfile(dir_listing_download.name):
+            with open(dir_listing_download.name) as listing:
+                return listing.read()
+
+    def _get_deb_packages(self, download_dir=None):
+        """
+        Download Packages.gz file from an apt repository and
+        return its contents. If download_dir is set, download
+        the file and return the file path name
+
+        :param str download_dir: Download directory
+
+        :return: Contents of Packages file or file path name
+
+        :rtype: str
+        """
+        repo_source = 'Packages.gz'
+        if not download_dir:
+            packages_download = NamedTemporaryFile()
+            self.download_from_repository(repo_source, packages_download.name)
+            if os.path.isfile(packages_download.name):
+                with open(packages_download.name) as packages:
+                    return packages.read()
+        else:
+            packages_download = os.sep.join(
+                [download_dir, repo_source.replace(os.sep, '_')]
+            )
+            self.download_from_repository(repo_source, packages_download)
+            return packages_download
 
     def _get_repomd_xml(self, lookup_path='repodata'):
         """
@@ -212,6 +274,9 @@ class SolverRepositoryBase:
         * rpms2solv
           solvable from rpm header files
 
+        * deb2solv
+          solvable from deb header files
+
         :param str metadata_dir: path name
         :param str tool: one of the above tools
         """
@@ -228,9 +293,13 @@ class SolverRepositoryBase:
         else:
             # each file in the metadata_dir is considered a valid
             # solvable for the selected solv tool
+            tool_options = []
+            if tool == 'deb2solv':
+                tool_options.append('-r')
             for source in glob.iglob('/'.join([metadata_dir, '*'])):
                 bash_command = [
-                    'gzip', '-cd', '--force', source, '|', tool,
+                    'gzip', '-cd', '--force', source, '|', tool
+                ] + tool_options + [
                     '>', self._get_random_solvable_name()
                 ]
                 Command.run(['bash', '-c', ' '.join(bash_command)])

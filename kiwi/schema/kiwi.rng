@@ -1114,6 +1114,28 @@ partition in MB</a:documentation>
   </div>
   <!--
     ==========================================
+    common element <oem-swapname>
+    
+  -->
+  <div>
+    <define name="k.oem-swapname.attlist">
+      <empty/>
+    </define>
+    <define name="k.oem-swapname">
+      <element name="oem-swapname">
+        <a:documentation>For oem images: Set the name of the swap space
+The name of the swap space is used only if the
+image is configured to use the LVM volume manager.
+In this case swap is a volume and the volume takes
+a name. In any other case the given name will have
+no effect.</a:documentation>
+        <ref name="k.oem-swapname.attlist"/>
+        <text/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
     common element <oem-systemsize>
     
   -->
@@ -1250,6 +1272,7 @@ the device is looked up in /dev/disk/by-* and /dev/mapper/*</a:documentation>
         <value>zypper</value>
         <value>yum</value>
         <value>dnf</value>
+        <value>microdnf</value>
         <value>pacman</value>
       </choice>
     </define>
@@ -1397,6 +1420,11 @@ definition can be composed by other existing profiles.</a:documentation>
     
   -->
   <div>
+    <sch:pattern abstract="true" id="repo_type">
+      <sch:rule context="repository[@$attr]">
+        <sch:assert test="contains('$types', @type)">$attr attribute is only available for the following repository types: $types</sch:assert>
+      </sch:rule>
+    </sch:pattern>
     <define name="k.repository.profiles.attribute">
       <ref name="k.profiles.attribute"/>
     </define>
@@ -1501,6 +1529,24 @@ be a simple repository url</a:documentation>
         </choice>
       </attribute>
     </define>
+    <define name="k.repository.use_for_bootstrap.attribute">
+      <attribute name="use_for_bootstrap">
+        <a:documentation>Specify whether this repository should be the one used for
+bootstrapping or not. False by default. Only a single repository
+is allowed to be used for bootstrapping. If none is set the
+last one is picked.</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="use_for_bootstrap" is-a="repo_type">
+        <sch:param name="attr" value="use_for_bootstrap"/>
+        <sch:param name="types" value="apt-deb"/>
+      </sch:pattern>
+      <sch:pattern id="single_deboostrap_repo">
+        <sch:rule context="image">
+          <sch:assert test="count(repository[@use_for_bootstrap='true'])&lt;=1">There can only be a single repository set for bootstrap ('use_for_bootstrap' attribute)</sch:assert>
+        </sch:rule>
+      </sch:pattern>
+    </define>
     <define name="k.repository.attlist">
       <interleave>
         <optional>
@@ -1541,6 +1587,9 @@ be a simple repository url</a:documentation>
         </optional>
         <optional>
           <ref name="k.repository.username.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.repository.use_for_bootstrap.attribute"/>
         </optional>
       </interleave>
     </define>
@@ -2795,6 +2844,9 @@ default.</a:documentation>
           <zeroOrMore>
             <ref name="k.vagrantconfig"/>
           </zeroOrMore>
+          <optional>
+            <ref name="k.installmedia"/>
+          </optional>
         </interleave>
       </element>
     </define>
@@ -3955,6 +4007,9 @@ and setup the system disk.</a:documentation>
             <ref name="k.oem-swapsize"/>
           </optional>
           <optional>
+            <ref name="k.oem-swapname"/>
+          </optional>
+          <optional>
             <ref name="k.oem-systemsize"/>
           </optional>
           <optional>
@@ -4040,6 +4095,88 @@ If not specified the image name is used</a:documentation>
         <a:documentation>The vagrantconfig element specifies the Vagrant meta
 configuration options which are used inside a vagrant box</a:documentation>
         <ref name="k.vagrantconfig.attlist"/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    main block: <installmedia>
+    
+  -->
+  <div>
+    <sch:pattern id="installation_media">
+      <sch:rule context="installmedia">
+        <sch:assert test="../@installiso='true' or ../@installpxe='true'">installmedia is only available for the oem type with 'installiso' or 'installpxe' set to 'true'</sch:assert>
+      </sch:rule>
+    </sch:pattern>
+    <define name="k.installmedia.attlist">
+      <empty/>
+    </define>
+    <define name="k.installmedia">
+      <element name="installmedia">
+        <a:documentation>The installmedia element defined the configuration parameters
+for the installation media of OEM images.</a:documentation>
+        <interleave>
+          <ref name="k.installmedia.attlist"/>
+          <zeroOrMore>
+            <ref name="k.initrd"/>
+          </zeroOrMore>
+        </interleave>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    main block: <initrd>
+    
+  -->
+  <div>
+    <define name="k.initrd.action.attribute">
+      <attribute name="action">
+        <a:documentation>Sets weather the dracut modules list are meant to be appended,
+omitted or they define the static list of modules for the
+installation initrd.</a:documentation>
+        <choice>
+          <value>omit</value>
+          <value>add</value>
+          <value>set</value>
+        </choice>
+      </attribute>
+    </define>
+    <define name="k.initrd.attlist">
+      <ref name="k.initrd.action.attribute"/>
+    </define>
+    <define name="k.initrd">
+      <element name="initrd">
+        <a:documentation>The initrd element defines the dracut modules configuration
+for the installation media.</a:documentation>
+        <interleave>
+          <ref name="k.initrd.attlist"/>
+          <zeroOrMore>
+            <ref name="k.dracut"/>
+          </zeroOrMore>
+        </interleave>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    main block: <dracut>
+    
+  -->
+  <div>
+    <define name="k.dracut.module.attribute">
+      <attribute name="module">
+        <a:documentation>A module name</a:documentation>
+      </attribute>
+    </define>
+    <define name="k.dracut.attlist">
+      <ref name="k.dracut.module.attribute"/>
+    </define>
+    <define name="k.dracut">
+      <element name="dracut">
+        <a:documentation>A dracut module</a:documentation>
+        <ref name="k.dracut.attlist"/>
       </element>
     </define>
   </div>
@@ -4281,10 +4418,18 @@ or plusRecommended</a:documentation>
     <define name="k.preferences.profiles.attribute">
       <ref name="k.profiles.attribute"/>
     </define>
+    <define name="k.preferences.arch.attribute">
+      <ref name="k.arch.attribute"/>
+    </define>
     <define name="k.preferences.attlist">
-      <optional>
-        <ref name="k.preferences.profiles.attribute"/>
-      </optional>
+      <interleave>
+        <optional>
+          <ref name="k.preferences.profiles.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.preferences.arch.attribute"/>
+        </optional>
+      </interleave>
     </define>
     <define name="k.preferences">
       <element name="preferences">

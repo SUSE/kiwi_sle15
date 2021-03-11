@@ -4,15 +4,16 @@ from builtins import bytes
 from lxml import etree
 from pytest import raises
 from collections import namedtuple
+from tempfile import NamedTemporaryFile
 
 from kiwi.xml_description import XMLDescription
 
 from kiwi.exceptions import (
+    KiwiCommandError,
     KiwiSchemaImportError,
     KiwiValidationError,
     KiwiDescriptionInvalid,
     KiwiDataStructureError,
-    KiwiDescriptionConflict,
     KiwiCommandNotFound,
     KiwiExtensionError
 )
@@ -117,20 +118,31 @@ class TestSchema:
         self.description_from_file = XMLDescription(
             description='../data/example_config.xml'
         )
-        self.description_from_data = XMLDescription(xml_content=test_xml)
+        test_xml_file = NamedTemporaryFile()
+        with open(test_xml_file.name, 'wb') as description:
+            description.write(test_xml)
+        self.description_from_data = XMLDescription(test_xml_file.name)
+
+        test_xml_extension_file = NamedTemporaryFile()
+        with open(test_xml_extension_file.name, 'wb') as description:
+            description.write(test_xml_extension)
         self.extension_description_from_data = XMLDescription(
-            xml_content=test_xml_extension
-        )
-        self.extension_multiple_toplevel_description_from_data = XMLDescription(
-            xml_content=test_xml_extension_not_unique
-        )
-        self.extension_invalid_description_from_data = XMLDescription(
-            xml_content=test_xml_extension_invalid
+            test_xml_extension_file.name
         )
 
-    def test_constructor_conflict(self):
-        with raises(KiwiDescriptionConflict):
-            XMLDescription(description='description', xml_content='content')
+        test_xml_extension_not_unique_file = NamedTemporaryFile()
+        with open(test_xml_extension_not_unique_file.name, 'wb') as description:
+            description.write(test_xml_extension_not_unique)
+        self.extension_multiple_toplevel_description_from_data = XMLDescription(
+            test_xml_extension_not_unique_file.name
+        )
+
+        test_xml_extension_invalid_file = NamedTemporaryFile()
+        with open(test_xml_extension_invalid_file.name, 'wb') as description:
+            description.write(test_xml_extension_invalid)
+        self.extension_invalid_description_from_data = XMLDescription(
+            test_xml_extension_invalid_file.name
+        )
 
     def test_load_schema_from_xml_content(self):
         schema = etree.parse('../../kiwi/schema/kiwi.rng')
@@ -203,14 +215,7 @@ class TestSchema:
 
         mock_relax.return_value = mock_rng_validate
         mock_schematron.return_value = mock_sch_validate
-        command_run = namedtuple(
-            'command', ['output', 'error', 'returncode']
-        )
-        mock_command.return_value = command_run(
-            output='jing output\n',
-            error='',
-            returncode=1
-        )
+        mock_command.side_effect = KiwiCommandError('jing output')
         with raises(KiwiDescriptionInvalid):
             self.description_from_file.load()
 

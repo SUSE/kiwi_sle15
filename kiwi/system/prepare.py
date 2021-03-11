@@ -17,14 +17,19 @@
 #
 import os
 import logging
+from typing import (
+    List, Any
+)
 from textwrap import dedent
 
 # project
+from kiwi.xml_state import XMLState
 from kiwi.system.root_init import RootInit
 from kiwi.system.root_import import RootImport
 from kiwi.system.root_bind import RootBind
 from kiwi.repository import Repository
 from kiwi.package_manager import PackageManager
+from kiwi.package_manager.base import PackageManagerBase
 from kiwi.command_process import CommandProcess
 from kiwi.system.uri import Uri
 from kiwi.archive.tar import ArchiveTar
@@ -38,7 +43,7 @@ from kiwi.exceptions import (
     KiwiPackagesDeletePhaseFailed
 )
 
-log = logging.getLogger('kiwi')
+log: Any = logging.getLogger('kiwi')
 
 
 class SystemPrepare:
@@ -46,12 +51,11 @@ class SystemPrepare:
     Implements preparation and installation of a new root system
 
     :param object xml_state: instance of :class:`XMLState`
-    :param list profiles: list of configured profiles
-    :param object root_bind: instance of :class:`RootBind`
-    :param list uri_list: a list of Uri references
+    :param str root_dir: Path to new root directory
+    :param bool allow_existing: Allow using an existing root_dir
     """
     def __init__(
-        self, xml_state, root_dir, allow_existing=False
+        self, xml_state: XMLState, root_dir: str, allow_existing: bool = False
     ):
         """
         Setup and host bind new root system at given root_dir directory
@@ -94,18 +98,21 @@ class SystemPrepare:
         # in order to delay the Uri destructors until the System instance
         # dies. This is needed to keep bind mounted Uri locations alive
         # for System operations
-        self.uri_list = []
+        self.uri_list: List[Uri] = []
 
-    def setup_repositories(self, clear_cache=False, signing_keys=None):
+    def setup_repositories(
+        self, clear_cache: bool = False, signing_keys: List[str] = None
+    ) -> PackageManagerBase:
         """
         Set up repositories for software installation and return a
         package manager for performing software installation tasks
 
-        :param bool clear_cache: flag the clear cache before configure
-            anything
-        :param list signing_keys: keys imported to the package manager
+        :param bool clear_cache:
+            Flag the clear cache before configure anything
+        :param list signing_keys:
+            Keys imported to the package manager
 
-        :return: instance of :class:`PackageManager`
+        :return: instance of :class:`PackageManager` subclass
 
         :rtype: PackageManager
         """
@@ -122,7 +129,7 @@ class SystemPrepare:
             repository_options.append(
                 '_install_langs%{0}'.format(':'.join(rpm_locale_list))
             )
-        repo = Repository(
+        repo = Repository.new(
             self.root_bind, package_manager, repository_options
         )
         repo.setup_package_database_configuration()
@@ -140,6 +147,8 @@ class SystemPrepare:
             repo_repository_gpgcheck = xml_repo.get_repository_gpgcheck()
             repo_package_gpgcheck = xml_repo.get_package_gpgcheck()
             repo_sourcetype = xml_repo.get_sourcetype()
+            repo_use_for_bootstrap = \
+                True if xml_repo.get_use_for_bootstrap() else False
             log.info('Setting up repository %s', repo_source)
             log.info('--> Type: {0}'.format(repo_type))
             if repo_sourcetype:
@@ -171,17 +180,19 @@ class SystemPrepare:
                 repo_type, repo_priority, repo_dist, repo_components,
                 repo_user, repo_secret, uri.credentials_file_name(),
                 repo_repository_gpgcheck, repo_package_gpgcheck,
-                repo_sourcetype
+                repo_sourcetype, repo_use_for_bootstrap
             )
             if clear_cache:
                 repo.delete_repo_cache(repo_alias)
             self.uri_list.append(uri)
         repo.cleanup_unused_repos()
-        return PackageManager(
+        return PackageManager.new(
             repo, package_manager
         )
 
-    def install_bootstrap(self, manager, plus_packages=None):
+    def install_bootstrap(
+        self, manager: PackageManagerBase, plus_packages: List = None
+    ) -> None:
         """
         Install system software using the package manager
         from the host, also known as bootstrapping
@@ -189,8 +200,9 @@ class SystemPrepare:
         :param object manager: instance of a :class:`PackageManager` subclass
         :param list plus_packages: list of additional packages
 
-        :raises KiwiBootStrapPhaseFailed: if the bootstrapping process fails
-            either installing packages or including bootstrap archives
+        :raises KiwiBootStrapPhaseFailed:
+            if the bootstrapping process fails either installing
+            packages or including bootstrap archives
         """
         if not self.xml_state.get_bootstrap_packages_sections() \
            and not plus_packages:
@@ -250,7 +262,7 @@ class SystemPrepare:
                     )
                 )
 
-    def install_system(self, manager):
+    def install_system(self, manager: PackageManagerBase) -> None:
         """
         Install system software using the package manager inside
         of the new root directory. This is done via a chroot operation
@@ -259,8 +271,9 @@ class SystemPrepare:
 
         :param object manager: instance of a :class:`PackageManager` subclass
 
-        :raises KiwiInstallPhaseFailed: if the install process fails
-            either installing packages or including any archive
+        :raises KiwiInstallPhaseFailed:
+            if the install process fails either installing
+            packages or including any archive
         """
         log.info(
             'Installing system (chroot) for build type: %s',
@@ -316,18 +329,20 @@ class SystemPrepare:
                     )
                 )
 
-    def pinch_system(self, manager=None, force=False):
+    def pinch_system(
+        self, manager: PackageManagerBase = None, force: bool = False
+    ) -> None:
         """
         Delete packages marked for deletion in the XML description. If force
         param is set to False uninstalls packages marked with
         `type="uninstall"` if any; if force is set to True deletes packages
         marked with `type="delete"` if any.
 
-        :param object manager: instance of :class:`PackageManager`
+        :param object manager: instance of :class:`PackageManager` subclass
         :param bool force: Forced deletion True|False
 
-        :raises KiwiPackagesDeletePhaseFailed: if the deletion packages
-            process fails
+        :raises KiwiPackagesDeletePhaseFailed:
+            if the deletion packages process fails
         """
         to_become_deleted_packages = \
             self.xml_state.get_to_become_deleted_packages(force)
@@ -340,8 +355,8 @@ class SystemPrepare:
             try:
                 if manager is None:
                     package_manager = self.xml_state.get_package_manager()
-                    manager = PackageManager(
-                        Repository(self.root_bind, package_manager),
+                    manager = PackageManager.new(
+                        Repository.new(self.root_bind, package_manager),
                         package_manager
                     )
                 self.delete_packages(
@@ -355,7 +370,9 @@ class SystemPrepare:
                     )
                 )
 
-    def install_packages(self, manager, packages):
+    def install_packages(
+        self, manager: PackageManagerBase, packages: List
+    ) -> None:
         """
         Install one or more packages using the package manager inside
         of the new root directory
@@ -388,7 +405,9 @@ class SystemPrepare:
                     )
                 )
 
-    def delete_packages(self, manager, packages, force=False):
+    def delete_packages(
+        self, manager: PackageManagerBase, packages: List, force: bool = False
+    ) -> None:
         """
         Delete one or more packages using the package manager inside
         of the new root directory. If the removal is set with `force` flag
@@ -429,7 +448,7 @@ class SystemPrepare:
                     )
                 )
 
-    def update_system(self, manager):
+    def update_system(self, manager: PackageManagerBase) -> None:
         """
         Install package updates from the used repositories.
         the process uses the package manager from inside of the
@@ -453,14 +472,14 @@ class SystemPrepare:
                 )
             )
 
-    def clean_package_manager_leftovers(self):
+    def clean_package_manager_leftovers(self) -> None:
         """
         This methods cleans some package manager artifacts created
         at run time such as macros
         """
         package_manager = self.xml_state.get_package_manager()
-        manager = PackageManager(
-            Repository(self.root_bind, package_manager),
+        manager = PackageManager.new(
+            Repository.new(self.root_bind, package_manager),
             package_manager
         )
         manager.clean_leftovers()

@@ -30,6 +30,7 @@ install() {
 
     inst_hook cmdline 30 "${moddir}/parse-kiwi-install.sh"
     inst_hook pre-mount 30 "${moddir}/kiwi-dump-image.sh"
+    inst_hook mount 30 "${moddir}/kiwi-mount-ramdisk.sh" 
 
     inst_script "${moddir}/kiwi-ramdisk-deployment-generator.sh" \
         "${systemdutildir}/system-generators/dracut-kiwi-ramdisk-generator"

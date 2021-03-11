@@ -2,17 +2,22 @@
 
 for project in \
     Virtualization:Appliances:SelfContained:fedora \
-    Virtualization:Appliances:SelfContained:suse \
+    Virtualization:Appliances:SelfContained:tumbleweed \
+    Virtualization:Appliances:SelfContained:leap \
     Virtualization:Appliances:SelfContained:ubuntu \
-    Virtualization:Appliances:Images:Testing_x86:suse \
+    Virtualization:Appliances:SelfContained:universal \
+    Virtualization:Appliances:Images:Testing_x86:tumbleweed \
+    Virtualization:Appliances:Images:Testing_x86:rawhide \
+    Virtualization:Appliances:Images:Testing_x86:leap \
     Virtualization:Appliances:Images:Testing_x86:centos \
     Virtualization:Appliances:Images:Testing_x86:fedora \
     Virtualization:Appliances:Images:Testing_x86:ubuntu \
-    Virtualization:Appliances:Images:Testing_s390:suse \
+    Virtualization:Appliances:Images:Testing_x86:debian \
+    Virtualization:Appliances:Images:Testing_s390:tumbleweed \
     Virtualization:Appliances:Images:Testing_s390:sle15 \
-    Virtualization:Appliances:Images:Testing_arm:suse \
+    Virtualization:Appliances:Images:Testing_arm:tumbleweed \
     Virtualization:Appliances:Images:Testing_arm:fedora \
-    Virtualization:Appliances:Images:Testing_ppc:suse \
+    Virtualization:Appliances:Images:Testing_ppc:tumbleweed \
     Virtualization:Appliances:Images:Testing_ppc:sle15 \
     Virtualization:Appliances:Images:Testing_ppc:fedora \
     Virtualization:Appliances:Images:Testing_x86:archlinux

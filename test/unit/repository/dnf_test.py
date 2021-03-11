@@ -1,6 +1,6 @@
 from pytest import fixture
 from mock import (
-    patch, call
+    patch, call, mock_open
 )
 import mock
 
@@ -33,6 +33,7 @@ class TestRepositoryDnf:
         assert runtime_dnf_config.set.call_args_list == [
             call('main', 'cachedir', '/shared-dir/dnf/cache'),
             call('main', 'reposdir', '/shared-dir/dnf/repos'),
+            call('main', 'varsdir', '/shared-dir/dnf/vars'),
             call('main', 'pluginconfpath', '/shared-dir/dnf/pluginconf'),
             call('main', 'keepcache', '1'),
             call('main', 'debuglevel', '2'),
@@ -53,9 +54,18 @@ class TestRepositoryDnf:
 
     @patch('kiwi.repository.dnf.NamedTemporaryFile')
     @patch('kiwi.repository.dnf.Path.create')
-    def test_post_init_with_custom_args(self, mock_path, mock_temp):
-        with patch('builtins.open', create=True):
+    @patch('os.path.exists')
+    def test_post_init_with_custom_args(
+        self, mock_exists, mock_path, mock_temp
+    ):
+        mock_exists.return_value = True
+        m_open = mock_open()
+        with patch('builtins.open', m_open, create=True):
             self.repo.post_init(['check_signatures'])
+            assert m_open.call_args_list == [
+                call(mock_temp.return_value.name, 'w'),
+                call('/shared-dir/dnf/pluginconf/priorities.conf', 'w')
+            ]
         assert self.repo.custom_args == []
         assert self.repo.gpg_check == '1'
 
@@ -70,6 +80,7 @@ class TestRepositoryDnf:
         assert runtime_dnf_config.set.call_args_list == [
             call('main', 'cachedir', '../data/var/cache/dnf'),
             call('main', 'reposdir', '../data/etc/yum.repos.d'),
+            call('main', 'varsdir', '../data/etc/dnf/vars'),
             call('main', 'pluginconfpath', '../data/etc/dnf/plugins'),
             call('main', 'keepcache', '1'),
             call('main', 'debuglevel', '2'),
@@ -129,7 +140,9 @@ class TestRepositoryDnf:
     @patch('kiwi.repository.dnf.ConfigParser')
     @patch('kiwi.repository.dnf.Defaults.is_buildservice_worker')
     @patch('os.path.exists')
-    def test_add_repo_inside_buildservice(self, mock_exists, mock_buildservice, mock_config):
+    def test_add_repo_inside_buildservice(
+        self, mock_exists, mock_buildservice, mock_config
+    ):
         repo_config = mock.Mock()
         mock_buildservice.return_value = True
         mock_config.return_value = repo_config
@@ -150,9 +163,14 @@ class TestRepositoryDnf:
             )
 
     @patch('kiwi.repository.dnf.RpmDataBase')
-    def test_setup_package_database_configuration(self, mock_RpmDataBase):
+    @patch('kiwi.command.Command.run')
+    @patch('kiwi.repository.dnf.Path.create')
+    def test_setup_package_database_configuration(
+        self, mock_Path_create, mock_Command_run, mock_RpmDataBase
+    ):
         rpmdb = mock.Mock()
         rpmdb.has_rpm.return_value = False
+        rpmdb.rpmdb_host.expand_query.return_value = '/usr/lib/sysimage/rpm'
         mock_RpmDataBase.return_value = rpmdb
         self.repo.setup_package_database_configuration()
         assert mock_RpmDataBase.call_args_list == [
@@ -164,13 +182,23 @@ class TestRepositoryDnf:
         )
         rpmdb.write_config.assert_called_once_with()
         rpmdb.set_database_to_host_path.assert_called_once_with()
+        mock_Path_create.assert_called_once_with('../data/var/lib')
+        mock_Command_run.assert_called_once_with(
+            [
+                'ln', '-s', '--no-target-directory',
+                '../../usr/lib/sysimage/rpm', '../data/var/lib/rpm'
+            ], raise_on_error=False
+        )
 
     @patch('kiwi.repository.dnf.RpmDataBase')
+    @patch('kiwi.command.Command.run')
+    @patch('kiwi.repository.dnf.Path.create')
     def test_setup_package_database_configuration_bootstrapped_system(
-        self, mock_RpmDataBase
+        self, mock_Path_create, mock_Command_run, mock_RpmDataBase
     ):
         rpmdb = mock.Mock()
         rpmdb.has_rpm.return_value = True
+        rpmdb.rpmdb_host.expand_query.return_value = '/usr/lib/sysimage/rpm'
         mock_RpmDataBase.return_value = rpmdb
         self.repo.setup_package_database_configuration()
         assert mock_RpmDataBase.call_args_list == [
@@ -182,11 +210,20 @@ class TestRepositoryDnf:
         )
         rpmdb.write_config.assert_called_once_with()
         rpmdb.link_database_to_host_path.assert_called_once_with()
+        mock_Path_create.assert_called_once_with('../data/var/lib')
+        mock_Command_run.assert_called_once_with(
+            [
+                'ln', '-s', '--no-target-directory',
+                '../../usr/lib/sysimage/rpm', '../data/var/lib/rpm'
+            ], raise_on_error=False
+        )
 
     @patch('kiwi.repository.dnf.ConfigParser')
     @patch('kiwi.repository.dnf.Defaults.is_buildservice_worker')
     @patch('os.path.exists')
-    def test_add_repo_with_gpgchecks(self, mock_exists, mock_buildservice, mock_config):
+    def test_add_repo_with_gpgchecks(
+        self, mock_exists, mock_buildservice, mock_config
+    ):
         repo_config = mock.Mock()
         mock_buildservice.return_value = False
         mock_config.return_value = repo_config

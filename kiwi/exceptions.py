@@ -161,7 +161,7 @@ class KiwiCommandError(KiwiError):
     """
 
 
-class KiwiCommandNotFound(KiwiCommandError):
+class KiwiCommandNotFound(KiwiError):
     """
     Exception raised if any executable command cannot be found in
     the evironment PATH variable.
@@ -195,6 +195,12 @@ class KiwiConfigFileNotFound(KiwiError):
     """
 
 
+class KiwiConfigFileFormatNotSupported(KiwiError):
+    """
+    Exception raised if kiwi description file format is not supported.
+    """
+
+
 class KiwiContainerSetupError(KiwiError):
     """
     Exception raised if an error in the creation of the
@@ -220,13 +226,6 @@ class KiwiDebootstrapError(KiwiError):
     """
     Exception raised if not enough user data to call debootstrap
     were provided or the debootstrap has failed.
-    """
-
-
-class KiwiDescriptionConflict(KiwiError):
-    """
-    Exception raised if both, a description file and xml_content
-    is provided
     """
 
 
@@ -568,6 +567,13 @@ class KiwiRootInitCreationError(KiwiError):
 class KiwiRpmDirNotRemoteError(KiwiError):
     """
     Exception raised if the provided rpm-dir repository is not local
+    """
+
+
+class KiwiRuntimeConfigFileError(KiwiError):
+    """
+    Exception raised if the provided custom runtime config
+    file could not be found
     """
 
 

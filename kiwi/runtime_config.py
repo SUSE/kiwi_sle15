@@ -20,40 +20,59 @@ import logging
 import yaml
 
 # project
+import kiwi.defaults as defaults
+
 from kiwi.defaults import Defaults
 from kiwi.utils.size import StringToSize
 from kiwi.exceptions import (
-    KiwiRuntimeConfigFormatError
+    KiwiRuntimeConfigFormatError,
+    KiwiRuntimeConfigFileError
 )
 
 log = logging.getLogger('kiwi')
+
+RUNTIME_CONFIG = None
 
 
 class RuntimeConfig:
     """
     **Implements reading of runtime configuration file:**
 
-    1. ~/.config/kiwi/config.yml
-    2. /etc/kiwi.yml
+    1. Check for --config provided from the CLI
+    2. ~/.config/kiwi/config.yml
+    3. /etc/kiwi.yml
 
     The KIWI runtime configuration file is a yaml formatted file
     containing information to control the behavior of the tools
     used by KIWI.
-    """
-    def __init__(self):
-        self.config_data = None
 
-        config_file = None
-        if self._home_path():
-            config_file = os.sep.join(
-                [self._home_path(), '.config', 'kiwi', 'config.yml']
-            )
-        if not config_file or not os.path.exists(config_file):
-            config_file = '/etc/kiwi.yml'
-        if os.path.exists(config_file):
-            log.info('Reading runtime config file: {0}'.format(config_file))
-            with open(config_file, 'r') as config:
-                self.config_data = yaml.safe_load(config)
+    :param bool reread: reread runtime config
+    """
+    def __init__(self, reread=False):
+        global RUNTIME_CONFIG
+
+        if RUNTIME_CONFIG is None or reread:
+            config_file = None
+            custom_config_file = defaults.CUSTOM_RUNTIME_CONFIG_FILE
+
+            if custom_config_file:
+                config_file = custom_config_file
+                if not os.path.isfile(config_file):
+                    raise KiwiRuntimeConfigFileError(
+                        f'Custom config file {config_file!r} not found'
+                    )
+            elif self._home_path():
+                config_file = os.sep.join(
+                    [self._home_path(), '.config', 'kiwi', 'config.yml']
+                )
+            if not config_file or not os.path.exists(config_file):
+                config_file = '/etc/kiwi.yml'
+            if os.path.exists(config_file):
+                log.info(
+                    f'Reading runtime config file: {config_file!r}'
+                )
+                with open(config_file, 'r') as config:
+                    RUNTIME_CONFIG = yaml.safe_load(config) or {}
 
     def get_obs_download_server_url(self):
         """
@@ -74,6 +93,42 @@ class RuntimeConfig:
         )
         return obs_download_server_url if obs_download_server_url else \
             Defaults.get_obs_download_server_url()
+
+    def get_obs_api_server_url(self):
+        """
+        Return URL of buildservice API server in:
+
+        obs:
+          - api_url: ...
+
+        if no configuration exists the API server from
+        the Defaults class is returned
+
+        :return: URL type data
+
+        :rtype: str
+        """
+        obs_api_server_url = self._get_attribute(
+            element='obs', attribute='api_url'
+        )
+        return obs_api_server_url if obs_api_server_url else \
+            Defaults.get_obs_api_server_url()
+
+    def get_obs_api_credentials(self):
+        """
+        Return OBS API credentials if configured:
+
+        obs:
+          - user:
+              - user_name: user_credentials
+
+        :return: List of Dicts with credentials per user
+
+        :rtype: list
+        """
+        obs_users = self._get_attribute(element='obs', attribute='user') or []
+        if obs_users:
+            return obs_users
 
     def is_obs_public(self):
         """
@@ -291,17 +346,15 @@ class RuntimeConfig:
         return disabled_checks or ''
 
     def _get_attribute(self, element, attribute):
-        if self.config_data:
+        if RUNTIME_CONFIG:
             try:
-                if element in self.config_data:
-                    for attribute_dict in self.config_data[element]:
+                if element in RUNTIME_CONFIG:
+                    for attribute_dict in RUNTIME_CONFIG[element]:
                         if attribute in attribute_dict:
                             return attribute_dict[attribute]
-            except Exception as e:
+            except Exception as issue:
                 raise KiwiRuntimeConfigFormatError(
-                    '{error_type}: {error_text}'.format(
-                        error_type=type(e).__name__, error_text=format(e)
-                    )
+                    f'{type(issue).__name__}: {issue}'
                 )
 
     def _home_path(self):

@@ -954,6 +954,24 @@ class TestSystemSetup:
             options=['-a']
         )
 
+    @patch('kiwi.defaults.Defaults.get_default_packager_tool')
+    def test_export_package_list_unknown_packager(
+        self, mock_get_default_packager_tool
+    ):
+        assert self.setup.export_package_list('target_dir') is None
+
+    @patch('kiwi.defaults.Defaults.get_default_packager_tool')
+    def test_export_package_changes_unknown_packager(
+        self, mock_get_default_packager_tool
+    ):
+        assert self.setup.export_package_changes('target_dir') is None
+
+    @patch('kiwi.defaults.Defaults.get_default_packager_tool')
+    def test_export_package_verification_unknown_packager(
+        self, mock_get_default_packager_tool
+    ):
+        assert self.setup.export_package_verification('target_dir') is None
+
     @patch('kiwi.system.setup.Command.run')
     @patch('kiwi.system.setup.RpmDataBase')
     @patch('kiwi.system.setup.MountManager')
@@ -1231,7 +1249,7 @@ class TestSystemSetup:
             ]
         )
 
-    @patch('kiwi.system.setup.Repository')
+    @patch('kiwi.system.setup.Repository.new')
     @patch('kiwi.system.setup.Uri')
     def test_import_repositories_marked_as_imageinclude(
         self, mock_uri, mock_repo

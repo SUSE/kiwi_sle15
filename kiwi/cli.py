@@ -22,9 +22,11 @@ usage: kiwi-ng -h | --help
                [--logfile=<filename>]
                [--debug]
                [--color-output]
+               [--config=<configfile>]
            image <command> [<args>...]
        kiwi-ng [--debug]
                [--color-output]
+               [--config=<configfile>]
            result <command> [<args>...]
        kiwi-ng [--profile=<name>...]
                [--shared-cache-dir=<directory>]
@@ -32,6 +34,7 @@ usage: kiwi-ng -h | --help
                [--logfile=<filename>]
                [--debug]
                [--color-output]
+               [--config=<configfile>]
            system <command> [<args>...]
        kiwi-ng compat <legacy_args>...
        kiwi-ng --compat <legacy_args>...
@@ -41,6 +44,10 @@ usage: kiwi-ng -h | --help
 global options:
     --color-output
         use colors for warning and error messages
+    --config=<configfile>
+        use specified runtime configuration file. If
+        not specified the runtime configuration is looked
+        up at ~/.config/kiwi/config.yml or /etc/kiwi.yml
     --debug
         print debug information
     -v --version
@@ -60,7 +67,7 @@ global options for services: image, system
         specify an alternative shared cache directory. The directory
         is shared via bind mount between the build host and image
         root system and contains information about package repositories
-        and their cache and meta data. [default: /var/cache/kiwi]
+        and their cache and meta data.
     --type=<build_type>
         image build type. If not set the default XML specified
         build type will be used
@@ -81,6 +88,7 @@ from kiwi.exceptions import (
 from kiwi.path import Path
 from kiwi.version import __version__
 from kiwi.help import Help
+from kiwi.defaults import Defaults
 
 log = logging.getLogger('kiwi')
 
@@ -206,6 +214,12 @@ class Cli:
                         'vmx type is now a subset of oem, --type set to oem'
                     )
                     value = 'oem'
+                if arg == '--shared-cache-dir' and not value:
+                    value = os.sep + Defaults.get_shared_cache_location()
+                if arg == '--shared-cache-dir' and value:
+                    Defaults.set_shared_cache_location(value)
+                if arg == '--config' and value:
+                    Defaults.set_custom_runtime_config_file(value)
                 result[arg] = value
         return result
 

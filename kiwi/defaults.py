@@ -38,6 +38,8 @@ EDIT_BOOT_CONFIG_SCRIPT = 'edit_boot_config.sh'
 EDIT_BOOT_INSTALL_SCRIPT = 'edit_boot_install.sh'
 IMAGE_METADATA_DIR = 'image'
 ROOT_VOLUME_NAME = 'LVRoot'
+SHARED_CACHE_DIR = '/var/cache/kiwi'
+CUSTOM_RUNTIME_CONFIG_FILE = None
 
 
 class Defaults:
@@ -169,6 +171,18 @@ class Defaults:
         return 'http://download.opensuse.org/repositories'
 
     @staticmethod
+    def get_obs_api_server_url():
+        """
+        Provides the default API server url to access the
+        public open buildservice API
+
+        :return: url path
+
+        :rtype: str
+        """
+        return 'https://api.opensuse.org'
+
+    @staticmethod
     def get_solvable_location():
         """
         Provides the directory to store SAT solvables for repositories.
@@ -180,6 +194,26 @@ class Defaults:
         :rtype: str
         """
         return '/var/tmp/kiwi/satsolver'
+
+    @staticmethod
+    def set_shared_cache_location(location):
+        """
+        Sets the shared cache location once
+
+        :param str location: a location path
+        """
+        global SHARED_CACHE_DIR
+        SHARED_CACHE_DIR = location
+
+    @staticmethod
+    def set_custom_runtime_config_file(filename):
+        """
+        Sets the runtime config file once
+
+        :param str filename: a file path name
+        """
+        global CUSTOM_RUNTIME_CONFIG_FILE
+        CUSTOM_RUNTIME_CONFIG_FILE = filename
 
     @staticmethod
     def get_shared_cache_location():
@@ -196,9 +230,8 @@ class Defaults:
 
         :rtype: str
         """
-        from .cli import Cli
         return os.path.abspath(os.path.normpath(
-            Cli().get_global_args().get('--shared-cache-dir')
+            SHARED_CACHE_DIR
         )).lstrip(os.sep)
 
     @staticmethod
@@ -548,8 +581,8 @@ class Defaults:
         lookup_list = []
         for grub_name in ['grub2', 'grub']:
             for install_dir in install_dirs:
-                grub_path = os.sep.join(
-                    [root_path, install_dir, grub_name, filename]
+                grub_path = os.path.join(
+                    root_path, install_dir, grub_name, filename
                 )
                 if os.path.exists(grub_path):
                     return grub_path
@@ -1526,6 +1559,18 @@ class Defaults:
         return 'macros.kiwi-image-config'
 
     @staticmethod
+    def get_default_package_manager() -> str:
+        """
+        Returns the default package manager name if none
+        is configured in the image description
+
+        :return: package manager name
+
+        :rtype: str
+        """
+        return 'dnf'
+
+    @staticmethod
     def get_default_packager_tool(package_manager):
         """
         Provides the packager tool according to the package manager
@@ -1536,7 +1581,7 @@ class Defaults:
 
         :rtype: str
         """
-        rpm_based = ['zypper', 'yum', 'dnf']
+        rpm_based = ['zypper', 'yum', 'dnf', 'microdnf']
         deb_based = ['apt-get']
         if package_manager in rpm_based:
             return 'rpm'

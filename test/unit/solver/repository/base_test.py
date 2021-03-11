@@ -1,5 +1,6 @@
+import io
 from mock import (
-    patch, call, mock_open
+    patch, call, mock_open, MagicMock
 )
 from pytest import raises
 import os
@@ -18,6 +19,42 @@ class TestSolverRepositoryBase:
 
         self.solver = SolverRepositoryBase(self.uri)
 
+    @patch.object(SolverRepositoryBase, '_get_repomd_xml')
+    @patch.object(SolverRepositoryBase, '_get_deb_packages')
+    @patch.object(SolverRepositoryBase, '_get_pacman_packages')
+    def test_get_repo_type_not_detected(
+        self, mock_get_pacman_packages, mock_get_deb_packages,
+        mock_get_repomd_xml
+    ):
+        mock_get_repomd_xml.side_effect = KiwiUriOpenError('error')
+        mock_get_pacman_packages.side_effect = KiwiUriOpenError('error')
+        mock_get_deb_packages.side_effect = KiwiUriOpenError('error')
+        assert self.solver.get_repo_type() is None
+
+    @patch.object(SolverRepositoryBase, '_get_repomd_xml')
+    def test_get_repo_type_rpm_md(self, mock_get_repomd_xml):
+        assert self.solver.get_repo_type() == 'rpm-md'
+
+    @patch.object(SolverRepositoryBase, '_get_repomd_xml')
+    @patch.object(SolverRepositoryBase, '_get_deb_packages')
+    def test_get_repo_type_deb(
+        self, mock_get_deb_packages, mock_get_repomd_xml
+    ):
+        mock_get_repomd_xml.side_effect = KiwiUriOpenError('error')
+        assert self.solver.get_repo_type() == 'apt-deb'
+
+    @patch.object(SolverRepositoryBase, '_get_repomd_xml')
+    @patch.object(SolverRepositoryBase, '_get_deb_packages')
+    @patch.object(SolverRepositoryBase, '_get_pacman_packages')
+    def test_get_repo_type_pacman(
+        self, mock_get_pacman_packages, mock_get_deb_packages,
+        mock_get_repomd_xml
+    ):
+        mock_get_repomd_xml.side_effect = KiwiUriOpenError('error')
+        mock_get_deb_packages.side_effect = KiwiUriOpenError('error')
+        mock_get_pacman_packages.return_value = '"some_repo.db.sig"'
+        assert self.solver.get_repo_type() == 'pacman'
+
     def test__setup_repository_metadata(self):
         with raises(NotImplementedError):
             self.solver._setup_repository_metadata()
@@ -27,6 +64,52 @@ class TestSolverRepositoryBase:
         assert self.solver._get_repomd_xpath(
             xml_data, 'repo:data[@type="primary"]/repo:location'
         )[0].get('href') == 'repodata/55f95a93-primary.xml.gz'
+
+    @patch('kiwi.solver.repository.base.NamedTemporaryFile')
+    @patch.object(SolverRepositoryBase, 'download_from_repository')
+    @patch('platform.machine')
+    @patch('os.path.isfile')
+    def test__get_pacman_packages(
+        self, mock_os_isfile, mock_machine, mock_download, mock_tmpfile
+    ):
+        mock_os_isfile.return_value = True
+        mock_machine.return_value = 'x86_64'
+        tmpfile = mock.Mock()
+        tmpfile.name = 'tmpfile'
+        mock_tmpfile.return_value = tmpfile
+        with patch('builtins.open', create=True) as mock_open:
+            mock_open.return_value = MagicMock(spec=io.IOBase)
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.return_value = 'data'
+            assert self.solver._get_pacman_packages() == 'data'
+            mock_download.assert_called_once_with(
+                'x86_64', 'tmpfile'
+            )
+
+    @patch('kiwi.solver.repository.base.NamedTemporaryFile')
+    @patch.object(SolverRepositoryBase, 'download_from_repository')
+    @patch('os.path.isfile')
+    def test__get_deb_packages(
+        self, mock_os_isfile, mock_download, mock_tmpfile
+    ):
+        mock_os_isfile.return_value = True
+        tmpfile = mock.Mock()
+        tmpfile.name = 'tmpfile'
+        mock_tmpfile.return_value = tmpfile
+        with patch('builtins.open', create=True) as mock_open:
+            mock_open.return_value = MagicMock(spec=io.IOBase)
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.return_value = 'data'
+            assert self.solver._get_deb_packages() == 'data'
+            mock_download.assert_called_once_with(
+                'Packages.gz', 'tmpfile'
+            )
+        mock_download.reset_mock()
+        assert self.solver._get_deb_packages('download_dir') == \
+            'download_dir/Packages.gz'
+        mock_download.assert_called_once_with(
+            'Packages.gz', 'download_dir/Packages.gz'
+        )
 
     @patch('kiwi.solver.repository.base.NamedTemporaryFile')
     @patch.object(SolverRepositoryBase, 'download_from_repository')
@@ -217,6 +300,30 @@ class TestSolverRepositoryBase:
                     'gzip -cd --force some-solv-data-file',
                     '|',
                     'rpmmd2solv > solv_dir.XX/solvable-fefefefe'
+                ])
+            ]
+        )
+
+    @patch('kiwi.solver.repository.base.mkdtemp')
+    @patch('kiwi.solver.repository.base.random.randrange')
+    @patch('kiwi.solver.repository.base.Command.run')
+    @patch('kiwi.solver.repository.base.glob.iglob')
+    def test__create_solvables_deb2_solv(
+        self, mock_glob, mock_command, mock_rand, mock_mkdtemp
+    ):
+        mock_glob.return_value = ['some-solv-data-file']
+        mock_rand.return_value = 0xfe
+        self.solver.repository_metadata_dirs = ['metadata_dir.XXXX']
+        mock_mkdtemp.return_value = 'solv_dir.XX'
+        self.solver._create_solvables('meta_dir.XX', 'deb2solv')
+        mock_glob.assert_called_once_with('meta_dir.XX/*')
+        mock_command.assert_called_once_with(
+            [
+                'bash', '-c',
+                ' '.join([
+                    'gzip -cd --force some-solv-data-file',
+                    '|',
+                    'deb2solv -r > solv_dir.XX/solvable-fefefefe'
                 ])
             ]
         )
