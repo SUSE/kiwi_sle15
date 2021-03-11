@@ -15,11 +15,13 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
+from typing import (
+    List, Optional, Any, Dict, NamedTuple
+)
 import re
 import logging
 import copy
 import platform
-from collections import namedtuple
 from textwrap import dedent
 
 # project
@@ -38,6 +40,41 @@ from kiwi.exceptions import (
 
 log = logging.getLogger('kiwi')
 
+description_type = NamedTuple(
+    'description_type', [
+        ('author', str),
+        ('contact', str),
+        ('specification', str)
+    ]
+)
+
+package_type = NamedTuple(
+    'package_type', [
+        ('packages_section', xml_parse.packages),
+        ('package_section', xml_parse.package)
+    ]
+)
+
+size_type = NamedTuple(
+    'size_type', [
+        ('mbytes', int),
+        ('additive', str)
+    ]
+)
+
+volume_type = NamedTuple(
+    'volume_type', [
+        ('name', str),
+        ('size', str),
+        ('realpath', str),
+        ('mountpoint', Optional[str]),
+        ('fullsize', bool),
+        ('label', Optional[str]),
+        ('attributes', list),
+        ('is_root_volume', bool)
+    ]
+)
+
 
 class XMLState:
     """
@@ -47,9 +84,12 @@ class XMLState:
     :param list profiles: list of used profiles
     :param object build_type: build <type> section reference
     """
-    def __init__(self, xml_data, profiles=None, build_type=None):
-        self.root_partition_uuid = None
-        self.root_filesystem_uuid = None
+    def __init__(
+        self, xml_data: Any, profiles: List = None,
+        build_type: Any = None
+    ):
+        self.root_partition_uuid: Optional[str] = None
+        self.root_filesystem_uuid: Optional[str] = None
         self.host_architecture = platform.machine()
         self.xml_data = xml_data
         self.profiles = self._used_profiles(profiles)
@@ -57,30 +97,31 @@ class XMLState:
             build_type
         )
 
-    def get_preferences_sections(self):
+    def get_preferences_sections(self) -> List:
         """
-        All preferences sections for the selected profiles
+        All preferences sections for the selected profiles that match the
+        host architecture
 
         :return: list of <preferences> section reference(s)
 
         :rtype: list
         """
-        return self._profiled(
-            self.xml_data.get_preferences()
-        )
+        preferences_list = []
+        for preferences in self._profiled(self.xml_data.get_preferences()):
+            if self.preferences_matches_host_architecture(preferences):
+                preferences_list.append(preferences)
+        return preferences_list
 
-    def get_description_section(self):
+    def get_description_section(self) -> description_type:
         """
         The description section
 
-        :return: description_type tuple providing the elements
+        :return:
+            description_type tuple providing the elements
             author contact and specification
 
         :rtype: tuple
         """
-        description_type = namedtuple(
-            'description_type', ['author', 'contact', 'specification']
-        )
         description = self.xml_data.get_description()[0]
         return description_type(
             author=description.get_author()[0],
@@ -88,7 +129,7 @@ class XMLState:
             specification=description.get_specification()[0].strip()
         )
 
-    def get_users_sections(self):
+    def get_users_sections(self) -> List:
         """
         All users sections for the selected profiles
 
@@ -100,7 +141,7 @@ class XMLState:
             self.xml_data.get_users()
         )
 
-    def get_build_type_name(self):
+    def get_build_type_name(self) -> str:
         """
         Default build type name
 
@@ -110,7 +151,7 @@ class XMLState:
         """
         return self.build_type.get_image()
 
-    def get_image_version(self):
+    def get_image_version(self) -> str:
         """
         Image version from preferences section.
 
@@ -126,8 +167,9 @@ class XMLState:
             version = preferences.get_version()
             if version:
                 return version[0]
+        return ''
 
-    def get_initrd_system(self):
+    def get_initrd_system(self) -> str:
         """
         Name of initrd system to use
 
@@ -152,7 +194,7 @@ class XMLState:
             initrd_system = self.build_type.get_initrd_system()
         return initrd_system
 
-    def get_locale(self):
+    def get_locale(self) -> Optional[List]:
         """
         Gets list of locale names if configured. Takes
         the first locale setup from the existing preferences
@@ -166,8 +208,9 @@ class XMLState:
             locale_section = preferences.get_locale()
             if locale_section:
                 return locale_section[0].split(',')
+        return None
 
-    def get_rpm_locale(self):
+    def get_rpm_locale(self) -> Optional[List]:
         """
         Gets list of locale names to filter out by rpm
         if rpm-locale-filtering is switched on the
@@ -186,8 +229,9 @@ class XMLState:
                 for locale in configured_locale:
                     rpm_locale.append(locale)
             return rpm_locale
+        return None
 
-    def get_rpm_locale_filtering(self):
+    def get_rpm_locale_filtering(self) -> bool:
         """
         Gets the rpm-locale-filtering configuration flag. Returns
         False if not present.
@@ -202,7 +246,7 @@ class XMLState:
                 return locale_filtering[0]
         return False
 
-    def get_rpm_excludedocs(self):
+    def get_rpm_excludedocs(self) -> bool:
         """
         Gets the rpm-excludedocs configuration flag. Returns
         False if not present.
@@ -217,7 +261,7 @@ class XMLState:
                 return exclude_docs[0]
         return False
 
-    def get_rpm_check_signatures(self):
+    def get_rpm_check_signatures(self) -> bool:
         """
         Gets the rpm-check-signatures configuration flag. Returns
         False if not present.
@@ -232,7 +276,7 @@ class XMLState:
                 return check_signatures[0]
         return False
 
-    def get_package_manager(self):
+    def get_package_manager(self) -> str:
         """
         Get configured package manager from selected preferences section
 
@@ -244,8 +288,9 @@ class XMLState:
             package_manager = preferences.get_packagemanager()
             if package_manager:
                 return package_manager[0]
+        return Defaults.get_default_package_manager()
 
-    def get_packages_sections(self, section_types):
+    def get_packages_sections(self, section_types: List) -> List:
         """
         List of packages sections matching given section type(s)
 
@@ -265,7 +310,7 @@ class XMLState:
                 result.append(packages)
         return result
 
-    def package_matches_host_architecture(self, package):
+    def package_matches_host_architecture(self, package: Any) -> bool:
         """
         Tests if the given package section is applicable for the current host
         architecture. If no architecture is specified within the section
@@ -281,7 +326,7 @@ class XMLState:
         """
         return self._section_matches_host_architecture(package)
 
-    def profile_matches_host_architecture(self, profile):
+    def profile_matches_host_architecture(self, profile: Any) -> bool:
         """
         Tests if the given profile section is applicable for the current host
         architecture. If no architecture is specified within the section
@@ -297,7 +342,25 @@ class XMLState:
         """
         return self._section_matches_host_architecture(profile)
 
-    def get_package_sections(self, packages_sections):
+    def preferences_matches_host_architecture(self, preferences: Any) -> bool:
+        """
+        Tests if the given preferences section is applicable for the
+        current host architecture. If no architecture is specified within
+        the section it is considered as a match returning True.
+
+        Note: The XML section pointer must provide an arch attribute
+
+        :param section: XML section object
+
+        :return: True or False
+
+        :rtype: bool
+        """
+        return self._section_matches_host_architecture(preferences)
+
+    def get_package_sections(
+        self, packages_sections: List
+    ) -> List[package_type]:
         """
         List of package sections from the given packages sections.
         Each list element contains a tuple with the <package> section
@@ -317,9 +380,6 @@ class XMLState:
 
         :rtype: list
         """
-        package_type = namedtuple(
-            'package_type', ['packages_section', 'package_section']
-        )
         result = []
         if packages_sections:
             for packages_section in packages_sections:
@@ -335,7 +395,7 @@ class XMLState:
                             )
         return result
 
-    def get_to_become_deleted_packages(self, force=True):
+    def get_to_become_deleted_packages(self, force: bool = True) -> List:
         """
         List of package names from the type="delete" or type="uninstall"
         packages section(s)
@@ -359,7 +419,7 @@ class XMLState:
                 result.append(package.package_section.get_name())
         return sorted(list(set(result)))
 
-    def get_bootstrap_packages_sections(self):
+    def get_bootstrap_packages_sections(self) -> List:
         """
         List of packages sections matching type="bootstrap"
 
@@ -369,7 +429,7 @@ class XMLState:
         """
         return self.get_packages_sections(['bootstrap'])
 
-    def get_image_packages_sections(self):
+    def get_image_packages_sections(self) -> List:
         """
         List of packages sections matching type="image"
 
@@ -379,7 +439,7 @@ class XMLState:
         """
         return self.get_packages_sections(['image'])
 
-    def get_bootstrap_packages(self, plus_packages=None):
+    def get_bootstrap_packages(self, plus_packages: List = None) -> List:
         """
         List of package names from the type="bootstrap" packages section(s)
 
@@ -407,7 +467,7 @@ class XMLState:
             result += plus_packages
         return sorted(list(set(result)))
 
-    def get_system_packages(self):
+    def get_system_packages(self) -> List:
         """
         List of package names from the packages sections matching
         type="image" and type=build_type
@@ -428,7 +488,7 @@ class XMLState:
                 result.append(package.package_section.get_name().strip())
         return sorted(list(set(result)))
 
-    def get_bootstrap_archives(self):
+    def get_bootstrap_archives(self) -> List:
         """
         List of archive names from the type="bootstrap" packages section(s)
 
@@ -446,7 +506,7 @@ class XMLState:
                         result.append(archive.get_name().strip())
         return sorted(result)
 
-    def get_system_archives(self):
+    def get_system_archives(self) -> List:
         """
         List of archive names from the packages sections matching
         type="image" and type=build_type
@@ -464,7 +524,7 @@ class XMLState:
                 result.append(archive.get_name().strip())
         return sorted(result)
 
-    def get_system_ignore_packages(self):
+    def get_system_ignore_packages(self) -> List:
         """
         List of ignore package names from the packages sections matching
         type="image" and type=build_type
@@ -483,7 +543,7 @@ class XMLState:
                     result.append(package.get_name().strip())
         return sorted(result)
 
-    def get_collection_type(self, section_type='image'):
+    def get_collection_type(self, section_type: str = 'image') -> str:
         """
         Collection type from packages sections matching given section
         type.
@@ -491,7 +551,7 @@ class XMLState:
         If no collection type is specified the default collection
         type is set to: onlyRequired
 
-        :param string section_type: type name from packages section
+        :param str section_type: type name from packages section
 
         :return: collection type name
 
@@ -508,7 +568,7 @@ class XMLState:
                 break
         return collection_type
 
-    def get_bootstrap_collection_type(self):
+    def get_bootstrap_collection_type(self) -> str:
         """
         Collection type for packages sections matching type="bootstrap"
 
@@ -518,7 +578,7 @@ class XMLState:
         """
         return self.get_collection_type('bootstrap')
 
-    def get_system_collection_type(self):
+    def get_system_collection_type(self) -> str:
         """
         Collection type for packages sections matching type="image"
 
@@ -528,7 +588,7 @@ class XMLState:
         """
         return self.get_collection_type('image')
 
-    def get_collections(self, section_type='image'):
+    def get_collections(self, section_type: str = 'image') -> List:
         """
         List of collection names from the packages sections matching
         type=section_type and type=build_type
@@ -546,7 +606,7 @@ class XMLState:
                 result.append(collection.get_name())
         return list(set(result))
 
-    def get_bootstrap_collections(self):
+    def get_bootstrap_collections(self) -> List:
         """
         List of collection names from the packages sections
         matching type="bootstrap"
@@ -557,7 +617,7 @@ class XMLState:
         """
         return self.get_collections('bootstrap')
 
-    def get_system_collections(self):
+    def get_system_collections(self) -> List:
         """
         List of collection names from the packages sections
         matching type="image"
@@ -568,12 +628,12 @@ class XMLState:
         """
         return self.get_collections('image')
 
-    def get_products(self, section_type='image'):
+    def get_products(self, section_type: str = 'image') -> List:
         """
         List of product names from the packages sections matching
         type=section_type and type=build_type
 
-        :param string section_type: type name from packages section
+        :param str section_type: type name from packages section
 
         :return: product names
 
@@ -588,7 +648,7 @@ class XMLState:
                 result.append(product.get_name())
         return list(set(result))
 
-    def get_bootstrap_products(self):
+    def get_bootstrap_products(self) -> List:
         """
         List of product names from the packages sections
         matching type="bootstrap"
@@ -599,7 +659,7 @@ class XMLState:
         """
         return self.get_products('bootstrap')
 
-    def get_system_products(self):
+    def get_system_products(self) -> List:
         """
         List of product names from the packages sections
         matching type="image"
@@ -610,7 +670,7 @@ class XMLState:
         """
         return self.get_products('image')
 
-    def is_xen_server(self):
+    def is_xen_server(self) -> bool:
         """
         Check if build type domain setup specifies a Xen Server (dom0)
 
@@ -620,7 +680,7 @@ class XMLState:
         """
         return self.build_type.get_xen_server()
 
-    def is_xen_guest(self):
+    def is_xen_guest(self) -> bool:
         """
         Check if build type setup specifies a Xen Guest (domX)
         The check is based on the architecture, the firmware and
@@ -651,7 +711,7 @@ class XMLState:
             return True
         return False
 
-    def get_build_type_system_disk_section(self):
+    def get_build_type_system_disk_section(self) -> Any:
         """
         First system disk section from the build type section
 
@@ -662,8 +722,9 @@ class XMLState:
         systemdisk_sections = self.build_type.get_systemdisk()
         if systemdisk_sections:
             return systemdisk_sections[0]
+        return None
 
-    def get_build_type_machine_section(self):
+    def get_build_type_machine_section(self) -> Any:
         """
         First machine section from the build type section
 
@@ -674,8 +735,9 @@ class XMLState:
         machine_sections = self.build_type.get_machine()
         if machine_sections:
             return machine_sections[0]
+        return None
 
-    def get_build_type_vagrant_config_section(self):
+    def get_build_type_vagrant_config_section(self) -> Any:
         """
         First vagrantconfig section from the build type section
 
@@ -686,13 +748,14 @@ class XMLState:
         vagrant_config_sections = self.build_type.get_vagrantconfig()
         if vagrant_config_sections:
             return vagrant_config_sections[0]
+        return None
 
-    def get_vagrant_config_virtualbox_guest_additions(self):
+    def get_vagrant_config_virtualbox_guest_additions(self) -> bool:
         """
         Attribute virtualbox_guest_additions_present from the first
         vagrantconfig section.
 
-        :return: ``<vagrantconfig virtualbox_guest_additions_present=>`` value
+        :return: True|False
 
         :rtype: bool
         """
@@ -702,7 +765,7 @@ class XMLState:
         else:
             return vagrant_config_sections.virtualbox_guest_additions_present
 
-    def get_build_type_vmdisk_section(self):
+    def get_build_type_vmdisk_section(self) -> Any:
         """
         First vmdisk section from the first machine section in the
         build type section
@@ -716,8 +779,9 @@ class XMLState:
             vmdisk_sections = machine_section.get_vmdisk()
             if vmdisk_sections:
                 return vmdisk_sections[0]
+        return None
 
-    def get_build_type_vmnic_entries(self):
+    def get_build_type_vmnic_entries(self) -> List:
         """
         vmnic section(s) from the first machine section in the
         build type section
@@ -732,7 +796,7 @@ class XMLState:
         else:
             return []
 
-    def get_build_type_vmdvd_section(self):
+    def get_build_type_vmdvd_section(self) -> Any:
         """
         First vmdvd section from the first machine section in the
         build type section
@@ -746,8 +810,9 @@ class XMLState:
             vmdvd_sections = machine_section.get_vmdvd()
             if vmdvd_sections:
                 return vmdvd_sections[0]
+        return None
 
-    def get_build_type_vmconfig_entries(self):
+    def get_build_type_vmconfig_entries(self) -> List:
         """
         List of vmconfig-entry section values from the first
         machine section in the build type section
@@ -764,7 +829,7 @@ class XMLState:
 
         return []
 
-    def get_build_type_bootloader_section(self):
+    def get_build_type_bootloader_section(self) -> Any:
         """
         First bootloader section from the build type section
 
@@ -775,69 +840,74 @@ class XMLState:
         bootloader_sections = self.build_type.get_bootloader()
         if bootloader_sections:
             return bootloader_sections[0]
+        return None
 
-    def get_build_type_bootloader_name(self):
+    def get_build_type_bootloader_name(self) -> str:
         """
         Return bootloader name for selected build type
 
         :return: bootloader name
 
-        :rtype: string
+        :rtype: str
         """
         bootloader = self.get_build_type_bootloader_section()
         return bootloader.get_name() if bootloader else \
             Defaults.get_default_bootloader()
 
-    def get_build_type_bootloader_console(self):
+    def get_build_type_bootloader_console(self) -> Optional[str]:
         """
         Return bootloader console setting for selected build type
 
         :return: console string
 
-        :rtype: string
+        :rtype: str
         """
         bootloader = self.get_build_type_bootloader_section()
         if bootloader:
             return bootloader.get_console()
+        return None
 
-    def get_build_type_bootloader_serial_line_setup(self):
+    def get_build_type_bootloader_serial_line_setup(self) -> Optional[str]:
         """
         Return bootloader serial line setup parameters for the
         selected build type
 
         :return: serial line setup
 
-        :rtype: string
+        :rtype: str
         """
         bootloader = self.get_build_type_bootloader_section()
         if bootloader:
             return bootloader.get_serial_line()
+        return None
 
-    def get_build_type_bootloader_timeout(self):
+    def get_build_type_bootloader_timeout(self) -> Optional[str]:
         """
         Return bootloader timeout setting for selected build type
 
         :return: timeout string
 
-        :rtype: string
+        :rtype: str
         """
         bootloader = self.get_build_type_bootloader_section()
         if bootloader:
             return bootloader.get_timeout()
+        return None
 
-    def get_build_type_bootloader_timeout_style(self):
+    def get_build_type_bootloader_timeout_style(self) -> Optional[str]:
         """
         Return bootloader timeout style setting for selected build type
 
         :return: timeout_style string
 
-        :rtype: string
+        :rtype: str
         """
         bootloader = self.get_build_type_bootloader_section()
         if bootloader:
             return bootloader.get_timeout_style()
+        return None
 
-    def get_build_type_bootloader_targettype(self):
+    def get_build_type_bootloader_targettype(self) -> Optional[str]:
         """
         Return bootloader target type setting. Only relevant for
         the zipl bootloader because zipl is installed differently
@@ -845,13 +915,14 @@ class XMLState:
 
         :return: target type string
 
-        :rtype: string
+        :rtype: str
         """
         bootloader = self.get_build_type_bootloader_section()
         if bootloader:
             return bootloader.get_targettype()
+        return None
 
-    def get_build_type_oemconfig_section(self):
+    def get_build_type_oemconfig_section(self) -> Any:
         """
         First oemconfig section from the build type section
 
@@ -862,8 +933,9 @@ class XMLState:
         oemconfig_sections = self.build_type.get_oemconfig()
         if oemconfig_sections:
             return oemconfig_sections[0]
+        return None
 
-    def get_oemconfig_oem_resize(self):
+    def get_oemconfig_oem_resize(self) -> bool:
         """
         State value to activate/deactivate disk resize. Returns a
         boolean value if specified or True to set resize on by default
@@ -878,7 +950,7 @@ class XMLState:
         else:
             return True
 
-    def get_oemconfig_oem_multipath_scan(self):
+    def get_oemconfig_oem_multipath_scan(self) -> bool:
         """
         State value to activate multipath maps. Returns a boolean
         value if specified or False
@@ -892,7 +964,7 @@ class XMLState:
             return oemconfig.get_oem_multipath_scan()[0]
         return False
 
-    def get_oemconfig_swap_mbytes(self):
+    def get_oemconfig_swap_mbytes(self) -> Optional[int]:
         """
         Return swapsize in MB if requested or None
 
@@ -912,8 +984,31 @@ class XMLState:
                     return swapsize[0]
                 else:
                     return Defaults.get_swapsize_mbytes()
+        return None
 
-    def get_build_type_containerconfig_section(self):
+    def get_oemconfig_swap_name(self) -> str:
+        """
+        Return the swap space name
+
+        Operates on the value of oem-swapname and if set
+        returns the configured name or the default name: LVSwap
+
+        The name of the swap space is used only if the
+        image is configured to use the LVM volume manager.
+        In this case swap is a volume and the volume takes
+        a name. In any other case the given name will have
+        no effect.
+
+        :return: Content of <oem-swapname> section value or default
+
+        :rtype: str
+        """
+        oemconfig = self.get_build_type_oemconfig_section()
+        if oemconfig and oemconfig.get_oem_swapname():
+            return oemconfig.get_oem_swapname()[0]
+        return 'LVSwap'
+
+    def get_build_type_containerconfig_section(self) -> Any:
         """
         First containerconfig section from the build type section
 
@@ -924,8 +1019,30 @@ class XMLState:
         container_config_sections = self.build_type.get_containerconfig()
         if container_config_sections:
             return container_config_sections[0]
+        return None
 
-    def get_build_type_size(self, include_unpartitioned=False):
+    def get_installmedia_initrd_modules(self, action: str) -> List[str]:
+        """
+        Gets the list of modules to append in installation initrds
+
+        :return: a list of dracut module names
+
+        :rtype: list
+        """
+        modules: List[str] = []
+        installmedia = self.build_type.get_installmedia()
+        if not installmedia:
+            return modules
+        initrd_sections = installmedia[0].get_initrd()
+        for initrd_section in initrd_sections:
+            if initrd_section.get_action() == action:
+                for module in initrd_section.get_dracut():
+                    modules.append(module.get_module())
+        return modules
+
+    def get_build_type_size(
+        self, include_unpartitioned: bool = False
+    ) -> Optional[size_type]:
         """
         Size information from the build type section.
         If no unit is set the value is treated as mbytes
@@ -947,14 +1064,12 @@ class XMLState:
                 value -= unpartitioned
             if unit == 'G':
                 value *= 1024
-            size_type = namedtuple(
-                'size_type', ['mbytes', 'additive']
-            )
             return size_type(
                 mbytes=value, additive=additive
             )
+        return None
 
-    def get_build_type_unpartitioned_bytes(self):
+    def get_build_type_unpartitioned_bytes(self) -> int:
         """
         Size of the unpartitioned area for image in megabytes
 
@@ -969,7 +1084,7 @@ class XMLState:
             return StringToSize.to_bytes('{0}{1}'.format(unpartitioned, unit))
         return 0
 
-    def get_disk_start_sector(self):
+    def get_disk_start_sector(self) -> int:
         """
         First disk sector number to be used by the first disk partition.
 
@@ -982,7 +1097,7 @@ class XMLState:
             disk_start_sector = Defaults.get_default_disk_start_sector()
         return disk_start_sector
 
-    def get_build_type_spare_part_size(self):
+    def get_build_type_spare_part_size(self) -> Optional[int]:
         """
         Size information for the spare_part size from the build
         type. If no unit is set the value is treated as mbytes
@@ -994,8 +1109,9 @@ class XMLState:
         spare_part_size = self.build_type.get_spare_part()
         if spare_part_size:
             return self._to_mega_byte(spare_part_size)
+        return None
 
-    def get_build_type_spare_part_fs_attributes(self):
+    def get_build_type_spare_part_fs_attributes(self) -> Optional[List]:
         """
         Build type specific list of filesystem attributes applied to
         the spare partition.
@@ -1007,8 +1123,9 @@ class XMLState:
         spare_part_attributes = self.build_type.get_spare_part_fs_attributes()
         if spare_part_attributes:
             return spare_part_attributes.strip().split(',')
+        return None
 
-    def get_build_type_format_options(self):
+    def get_build_type_format_options(self) -> Dict:
         """
         Disk format options returned as a dictionary
 
@@ -1027,7 +1144,7 @@ class XMLState:
                     result[key_value_list[0]] = None
         return result
 
-    def get_volume_group_name(self):
+    def get_volume_group_name(self) -> str:
         """
         Volume group name from selected <systemdisk> section
 
@@ -1043,7 +1160,7 @@ class XMLState:
             volume_group_name = Defaults.get_default_volume_group_name()
         return volume_group_name
 
-    def get_users(self):
+    def get_users(self) -> List:
         """
         List of configured users.
 
@@ -1063,7 +1180,7 @@ class XMLState:
 
         return users_list
 
-    def get_user_groups(self, user_name):
+    def get_user_groups(self, user_name) -> List:
         """
         List of group names matching specified user
 
@@ -1093,7 +1210,7 @@ class XMLState:
 
         return result_group_list
 
-    def get_container_config(self):
+    def get_container_config(self) -> Dict:
         """
         Dictionary of containerconfig information
 
@@ -1134,14 +1251,14 @@ class XMLState:
 
         return container_config
 
-    def set_container_config_tag(self, tag):
+    def set_container_config_tag(self, tag: str) -> None:
         """
         Set new tag name in containerconfig section
 
         In order to set a new tag value an existing containerconfig and
         tag setup is required
 
-        :param string tag: tag name
+        :param str tag: tag name
         """
         container_config_section = self.get_build_type_containerconfig_section()
         if container_config_section and container_config_section.get_tag():
@@ -1156,7 +1273,7 @@ class XMLState:
             ''')
             log.warning(message.format(tag))
 
-    def add_container_config_label(self, label_name, value):
+    def add_container_config_label(self, label_name: str, value: str) -> None:
         """
         Adds a new label in the containerconfig section, if a label with the
         same name is already defined in containerconfig it gets overwritten by
@@ -1199,7 +1316,7 @@ class XMLState:
 
         container_config_section.set_labels(labels)
 
-    def get_volumes(self):  # noqa C901
+    def get_volumes(self) -> List[volume_type]:
         """
         List of configured systemdisk volumes.
 
@@ -1233,25 +1350,12 @@ class XMLState:
 
         :rtype: list
         """
-        volume_type_list = []
+        volume_type_list: List[volume_type] = []
         systemdisk_section = self.get_build_type_system_disk_section()
         swap_mbytes = self.get_oemconfig_swap_mbytes()
+        swap_name = self.get_oemconfig_swap_name()
         if not systemdisk_section:
             return volume_type_list
-
-        volume_type = namedtuple(
-            'volume_type', [
-                'name',
-                'size',
-                'realpath',
-                'mountpoint',
-                'fullsize',
-                'label',
-                'attributes',
-                'is_root_volume'
-            ]
-        )
-
         volumes = systemdisk_section.get_volume()
         have_root_volume_setup = False
         have_full_size_volume = False
@@ -1358,7 +1462,7 @@ class XMLState:
         if swap_mbytes and self.get_volume_management() == 'lvm':
             volume_type_list.append(
                 volume_type(
-                    name='LVSwap',
+                    name=swap_name,
                     size='size:{0}'.format(swap_mbytes),
                     fullsize=False,
                     mountpoint=None,
@@ -1371,7 +1475,7 @@ class XMLState:
 
         return volume_type_list
 
-    def get_volume_management(self):
+    def get_volume_management(self) -> Optional[str]:
         """
         Provides information which volume management system is used
 
@@ -1396,7 +1500,7 @@ class XMLState:
             volume_management = 'lvm'
         return volume_management
 
-    def get_drivers_list(self):
+    def get_drivers_list(self) -> List:
         """
         List of driver names from all drivers sections matching
         configured profiles
@@ -1415,12 +1519,12 @@ class XMLState:
                     result.append(file_section.get_name())
         return result
 
-    def get_strip_list(self, section_type):
+    def get_strip_list(self, section_type: str) -> List:
         """
         List of strip names matching the given section type
         and profiles
 
-        :param string section_type: type name from packages section
+        :param str section_type: type name from packages section
 
         :return: strip names
 
@@ -1437,7 +1541,7 @@ class XMLState:
                         result.append(file_section.get_name())
         return result
 
-    def get_strip_files_to_delete(self):
+    def get_strip_files_to_delete(self) -> List:
         """
         Items to delete from strip section
 
@@ -1447,7 +1551,7 @@ class XMLState:
         """
         return self.get_strip_list('delete')
 
-    def get_strip_tools_to_keep(self):
+    def get_strip_tools_to_keep(self) -> List:
         """
         Tools to keep from strip section
 
@@ -1457,7 +1561,7 @@ class XMLState:
         """
         return self.get_strip_list('tools')
 
-    def get_strip_libraries_to_keep(self):
+    def get_strip_libraries_to_keep(self) -> List:
         """
         Libraries to keep from strip section
 
@@ -1467,7 +1571,7 @@ class XMLState:
         """
         return self.get_strip_list('libs')
 
-    def get_repository_sections(self):
+    def get_repository_sections(self) -> List:
         """
         List of all repository sections matching configured profiles
 
@@ -1479,7 +1583,7 @@ class XMLState:
             self.xml_data.get_repository()
         )
 
-    def get_repository_sections_used_for_build(self):
+    def get_repository_sections_used_for_build(self) -> List:
         """
         List of all repositorys sections used to build the image and
         matching configured profiles.
@@ -1493,7 +1597,7 @@ class XMLState:
             repo for repo in repos if not repo.get_imageonly()
         )
 
-    def get_repository_sections_used_in_image(self):
+    def get_repository_sections_used_in_image(self) -> List:
         """
         List of all repositorys sections to be configured in the resulting
         image matching configured profiles.
@@ -1508,36 +1612,39 @@ class XMLState:
             if repo.get_imageinclude() or repo.get_imageonly()
         )
 
-    def delete_repository_sections(self):
+    def delete_repository_sections(self) -> None:
         """
         Delete all repository sections matching configured profiles
         """
         self.xml_data.set_repository([])
 
-    def delete_repository_sections_used_for_build(self):
+    def delete_repository_sections_used_for_build(self) -> None:
         """
         Delete all repository sections used to build the image matching
         configured profiles
         """
         used_for_build = self.get_repository_sections_used_for_build()
         all_repos = self.get_repository_sections()
-        self.xml_data.set_repository([
-            repo for repo in all_repos if repo not in used_for_build
-        ])
+        self.xml_data.set_repository(
+            [
+                repo for repo in all_repos if repo not in used_for_build
+            ]
+        )
 
     def set_repository(
-        self, repo_source, repo_type, repo_alias, repo_prio,
-        repo_imageinclude=False, repo_package_gpgcheck=None
-    ):
+        self, repo_source: str, repo_type: str, repo_alias: str,
+        repo_prio: str, repo_imageinclude: bool = False,
+        repo_package_gpgcheck: Optional[bool] = None
+    ) -> None:
         """
         Overwrite repository data of the first repository
 
-        :param string repo_source: repository URI
-        :param string repo_type: type name defined by schema
-        :param string repo_alias: alias name
-        :param string repo_prio: priority number, package manager specific
-        :param boolean repo_imageinclude: setup repository inside of the image
-        :param boolean repo_package_gpgcheck: enable/disable package gpg checks
+        :param str repo_source: repository URI
+        :param str repo_type: type name defined by schema
+        :param str repo_alias: alias name
+        :param str repo_prio: priority number, package manager specific
+        :param bool repo_imageinclude: setup repository inside of the image
+        :param bool repo_package_gpgcheck: enable/disable package gpg checks
         """
         repository_sections = self.get_repository_sections()
         if repository_sections:
@@ -1556,35 +1663,38 @@ class XMLState:
                 repository.set_package_gpgcheck(repo_package_gpgcheck)
 
     def add_repository(
-        self, repo_source, repo_type, repo_alias, repo_prio,
-        repo_imageinclude=False, repo_package_gpgcheck=None
-    ):
+        self, repo_source: str, repo_type: str, repo_alias: str = None,
+        repo_prio: str = '', repo_imageinclude: bool = False,
+        repo_package_gpgcheck: Optional[bool] = None
+    ) -> None:
         """
         Add a new repository section at the end of the list
 
-        :param string repo_source: repository URI
-        :param string repo_type: type name defined by schema
-        :param string repo_alias: alias name
-        :param string repo_prio: priority number, package manager specific
-        :param boolean repo_imageinclude: setup repository inside of the image
-        :param boolean repo_package_gpgcheck: enable/disable package gpg checks
+        :param str repo_source: repository URI
+        :param str repo_type: type name defined by schema
+        :param str repo_alias: alias name
+        :param str repo_prio: priority number, package manager specific
+        :param bool repo_imageinclude: setup repository inside of the image
+        :param bool repo_package_gpgcheck: enable/disable package gpg checks
         """
+        priority_number: Optional[int] = None
         try:
-            repo_prio = int(repo_prio)
+            priority_number = int(repo_prio)
         except Exception:
-            repo_prio = None
+            pass
+
         self.xml_data.add_repository(
             xml_parse.repository(
                 type_=repo_type,
                 alias=repo_alias,
-                priority=repo_prio,
+                priority=priority_number,
                 source=xml_parse.source(path=repo_source),
                 imageinclude=repo_imageinclude,
                 package_gpgcheck=repo_package_gpgcheck
             )
         )
 
-    def copy_displayname(self, target_state):
+    def copy_displayname(self, target_state: Any) -> None:
         """
         Copy image displayname from this xml state to the target xml state
 
@@ -1594,7 +1704,7 @@ class XMLState:
         if displayname:
             target_state.xml_data.set_displayname(displayname)
 
-    def copy_name(self, target_state):
+    def copy_name(self, target_state: Any) -> None:
         """
         Copy image name from this xml state to the target xml state
 
@@ -1604,7 +1714,7 @@ class XMLState:
             self.xml_data.get_name()
         )
 
-    def copy_drivers_sections(self, target_state):
+    def copy_drivers_sections(self, target_state: Any) -> None:
         """
         Copy drivers sections from this xml state to the target xml state
 
@@ -1617,7 +1727,7 @@ class XMLState:
             for drivers_section in drivers_sections:
                 target_state.xml_data.add_drivers(drivers_section)
 
-    def copy_systemdisk_section(self, target_state):
+    def copy_systemdisk_section(self, target_state: Any) -> None:
         """
         Copy systemdisk sections from this xml state to the target xml state
 
@@ -1629,7 +1739,7 @@ class XMLState:
                 [systemdisk_section]
             )
 
-    def copy_strip_sections(self, target_state):
+    def copy_strip_sections(self, target_state: Any) -> None:
         """
         Copy strip sections from this xml state to the target xml state
 
@@ -1642,7 +1752,7 @@ class XMLState:
             for strip_section in strip_sections:
                 target_state.xml_data.add_strip(strip_section)
 
-    def copy_machine_section(self, target_state):
+    def copy_machine_section(self, target_state: Any) -> None:
         """
         Copy machine sections from this xml state to the target xml state
 
@@ -1654,7 +1764,7 @@ class XMLState:
                 [machine_section]
             )
 
-    def copy_bootloader_section(self, target_state):
+    def copy_bootloader_section(self, target_state: Any) -> None:
         """
         Copy bootloader section from this xml state to the target xml state
 
@@ -1666,7 +1776,7 @@ class XMLState:
                 [bootloader_section]
             )
 
-    def copy_oemconfig_section(self, target_state):
+    def copy_oemconfig_section(self, target_state: Any) -> None:
         """
         Copy oemconfig sections from this xml state to the target xml state
 
@@ -1678,7 +1788,9 @@ class XMLState:
                 [oemconfig_section]
             )
 
-    def copy_repository_sections(self, target_state, wipe=False):
+    def copy_repository_sections(
+        self, target_state: Any, wipe: bool = False
+    ) -> None:
         """
         Copy repository sections from this xml state to the target xml state
 
@@ -1698,7 +1810,9 @@ class XMLState:
                 repository_copy.set_profiles(None)
                 target_state.xml_data.add_repository(repository_copy)
 
-    def copy_preferences_subsections(self, section_names, target_state):
+    def copy_preferences_subsections(
+        self, section_names: List, target_state: Any
+    ) -> None:
         """
         Copy subsections of the preferences sections, matching given
         section names, from this xml state to the target xml state
@@ -1721,7 +1835,9 @@ class XMLState:
                         )
                         set_section_method(section)
 
-    def copy_build_type_attributes(self, attribute_names, target_state):
+    def copy_build_type_attributes(
+        self, attribute_names: List, target_state: Any
+    ) -> None:
         """
         Copy specified attributes from this build type section to the
         target xml state build type section
@@ -1740,7 +1856,7 @@ class XMLState:
                 )
                 set_type_method(attribute_value)
 
-    def copy_bootincluded_packages(self, target_state):
+    def copy_bootincluded_packages(self, target_state: Any) -> None:
         """
         Copy packages marked as bootinclude to the packages type=image
         (or type=bootstrap if no type=image was found) section in the
@@ -1791,7 +1907,7 @@ class XMLState:
                             package.package_section
                         )
 
-    def copy_bootincluded_archives(self, target_state):
+    def copy_bootincluded_archives(self, target_state: Any) -> None:
         """
         Copy archives marked as bootinclude to the packages type=bootstrap
         section in the target xml state
@@ -1817,7 +1933,7 @@ class XMLState:
                                 )
                             )
 
-    def copy_bootdelete_packages(self, target_state):
+    def copy_bootdelete_packages(self, target_state: Any) -> None:
         """
         Copy packages marked as bootdelete to the packages type=delete
         section in the target xml state
@@ -1852,7 +1968,7 @@ class XMLState:
                         )
                     )
 
-    def get_distribution_name_from_boot_attribute(self):
+    def get_distribution_name_from_boot_attribute(self) -> str:
         """
         Extract the distribution name from the boot attribute of the
         build type section.
@@ -1881,7 +1997,7 @@ class XMLState:
             )
         return boot_attribute_expression.group(1).lower()
 
-    def get_fs_mount_option_list(self):
+    def get_fs_mount_option_list(self) -> List:
         """
         List of root filesystem mount options
 
@@ -1900,7 +2016,7 @@ class XMLState:
 
         return option_list
 
-    def get_fs_create_option_list(self):
+    def get_fs_create_option_list(self) -> List:
         """
         List of root filesystem creation options
 
@@ -1919,7 +2035,7 @@ class XMLState:
 
         return option_list
 
-    def get_derived_from_image_uri(self):
+    def get_derived_from_image_uri(self) -> Optional[Uri]:
         """
         Uri object of derived image if configured
 
@@ -1934,15 +2050,16 @@ class XMLState:
         derived_image = self.build_type.get_derived_from()
         if derived_image:
             return Uri(derived_image, repo_type='container')
+        return None
 
-    def set_derived_from_image_uri(self, uri):
+    def set_derived_from_image_uri(self, uri: str) -> None:
         """
         Set derived_from attribute to a new value
 
         In order to set a new value the derived_from attribute
         must be already present in the image configuration
 
-        :param string uri: URI
+        :param str uri: URI
         """
         if self.build_type.get_derived_from():
             self.build_type.set_derived_from(uri)
@@ -1956,29 +2073,29 @@ class XMLState:
             ''')
             log.warning(message.format(uri))
 
-    def set_root_partition_uuid(self, uuid):
+    def set_root_partition_uuid(self, uuid: str) -> None:
         """
         Store PARTUUID provided in uuid as state information
 
-        :param string uuid: PARTUUID
+        :param str uuid: PARTUUID
         """
         self.root_partition_uuid = uuid
 
-    def get_root_partition_uuid(self):
+    def get_root_partition_uuid(self) -> Optional[str]:
         """
         Return preserved PARTUUID
         """
         return self.root_partition_uuid
 
-    def set_root_filesystem_uuid(self, uuid):
+    def set_root_filesystem_uuid(self, uuid: str) -> None:
         """
         Store UUID provided in uuid as state information
 
-        :param string uuid: UUID
+        :param str uuid: UUID
         """
         self.root_filesystem_uuid = uuid
 
-    def get_root_filesystem_uuid(self):
+    def get_root_filesystem_uuid(self) -> Optional[str]:
         """
         Return preserved UUID
         """

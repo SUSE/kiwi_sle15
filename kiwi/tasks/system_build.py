@@ -113,7 +113,7 @@ class SystemBuildTask(CliTask):
     * :attr:`manual`
         Instance of Help
     """
-    def process(self):                                      # noqa: C901
+    def process(self):
         """
         Build a system image from the specified description. The
         build command combines the prepare and create commands
@@ -263,6 +263,12 @@ class SystemBuildTask(CliTask):
         del setup
 
         log.info('Creating system image')
+        self.run_checks(
+            {
+                'check_dracut_module_versions_compatible_to_kiwi':
+                    [image_root]
+            }
+        )
         image_builder = ImageBuilder.new(
             self.xml_state,
             abs_target_dir_path,

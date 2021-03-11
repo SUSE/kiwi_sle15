@@ -726,6 +726,24 @@ div {
 }
 
 #==========================================
+# common element <oem-swapname>
+#
+div {
+    k.oem-swapname.attlist = empty
+    k.oem-swapname =
+        ## For oem images: Set the name of the swap space
+        ## The name of the swap space is used only if the
+        ## image is configured to use the LVM volume manager.
+        ## In this case swap is a volume and the volume takes
+        ## a name. In any other case the given name will have
+        ## no effect.
+        element oem-swapname {
+            k.oem-swapname.attlist,
+            text
+        }
+}
+
+#==========================================
 # common element <oem-systemsize>
 #
 div {
@@ -812,7 +830,7 @@ div {
 #
 div {
     k.packagemanager.content = 
-        "apt-get" | "zypper" | "yum" | "dnf" | "pacman"
+        "apt-get" | "zypper" | "yum" | "dnf" | "microdnf" | "pacman"
     k.packagemanager.attlist = empty
     k.packagemanager =
         ## Name of the Package Manager
@@ -906,6 +924,18 @@ div {
 # common element <repository>
 #
 div {
+    sch:pattern [
+        abstract = "true"
+        id = "repo_type"
+        sch:rule [
+            context = "repository[@$attr]"
+            sch:assert [
+                test = "contains('$types', @type)"
+                "$attr attribute is only available for the following "
+                "repository types: $types"
+            ]
+        ]
+    ]
     k.repository.profiles.attribute = k.profiles.attribute
     k.repository.type.attribute =
         ## Type of repository
@@ -970,6 +1000,25 @@ div {
         attribute sourcetype {
             "baseurl" | "metalink" | "mirrorlist"
         }
+    k.repository.use_for_bootstrap.attribute =
+        ## Specify whether this repository should be the one used for
+        ## bootstrapping or not. False by default. Only a single repository
+        ## is allowed to be used for bootstrapping. If none is set the
+        ## last one is picked.
+        attribute use_for_bootstrap { xsd:boolean }
+        >> sch:pattern [ id = "use_for_bootstrap" is-a = "repo_type"
+            sch:param [ name = "attr" value = "use_for_bootstrap" ]
+            sch:param [ name = "types" value = "apt-deb" ]
+        ]
+        >> sch:pattern [ id = "single_deboostrap_repo"
+            sch:rule [ context = "image"
+                sch:assert [ 
+                    test = "count(repository[@use_for_bootstrap='true'])<=1"
+                    "There can only be a single repository set for "
+                    "bootstrap ('use_for_bootstrap' attribute)"
+                ] 
+            ]
+        ]
     k.repository.attlist =
         k.repository.type.attribute? &
         k.repository.profiles.attribute? &
@@ -985,7 +1034,8 @@ div {
         k.repository.package_gpgcheck.attribute? &
         k.repository.priority.attribute? &
         k.repository.password.attribute? &
-        k.repository.username.attribute?
+        k.repository.username.attribute? &
+        k.repository.use_for_bootstrap.attribute?
     k.repository =
         ## The Name of the Repository
         element repository {
@@ -1832,7 +1882,8 @@ div {
             k.oemconfig? &
             k.size? &
             k.systemdisk? &
-            k.vagrantconfig*
+            k.vagrantconfig* &
+            k.installmedia?
         }
 }
 
@@ -2582,6 +2633,7 @@ div {
             k.oem-skip-verify? &
             k.oem-swap? &
             k.oem-swapsize? &
+            k.oem-swapname? &
             k.oem-systemsize? &
             k.oem-unattended? &
             k.oem-unattended-id?
@@ -2641,6 +2693,67 @@ div {
         ## configuration options which are used inside a vagrant box
         element vagrantconfig {
             k.vagrantconfig.attlist
+        }
+}
+
+#==========================================
+# main block: <installmedia>
+#
+div {
+    sch:pattern [
+        id = "installation_media"
+        sch:rule [
+            context = "installmedia"
+            sch:assert [
+                test = "../@installiso='true' or ../@installpxe='true'"
+                "installmedia is only available for the oem type "~
+                "with 'installiso' or 'installpxe' set to 'true'"
+            ]
+        ]
+    ]
+    k.installmedia.attlist = empty
+    k.installmedia =
+        ## The installmedia element defined the configuration parameters
+        ## for the installation media of OEM images.
+        element installmedia {
+            k.installmedia.attlist &
+            k.initrd*
+        }
+}
+
+#==========================================
+# main block: <initrd>
+#
+div {
+    k.initrd.action.attribute =
+        ## Sets weather the dracut modules list are meant to be appended,
+        ## omitted or they define the static list of modules for the
+        ## installation initrd.
+        attribute action { "omit" | "add" | "set" }
+    k.initrd.attlist =
+        k.initrd.action.attribute
+    k.initrd =
+        ## The initrd element defines the dracut modules configuration
+        ## for the installation media.
+        element initrd {
+            k.initrd.attlist &
+            k.dracut*
+        }
+}
+
+#==========================================
+# main block: <dracut>
+#
+div {
+    k.dracut.module.attribute = 
+        ## A module name
+        attribute module { text }
+    k.dracut.attlist =
+        k.dracut.module.attribute
+    k.dracut =
+        ## A dracut module
+        element dracut {
+            k.dracut.attlist
         }
 }
 
@@ -2760,8 +2873,10 @@ div {
 #
 div {
     k.preferences.profiles.attribute = k.profiles.attribute
+    k.preferences.arch.attribute = k.arch.attribute
     k.preferences.attlist =
-        k.preferences.profiles.attribute?
+        k.preferences.profiles.attribute? &
+        k.preferences.arch.attribute?
     k.preferences =  
         ## Configuration Information Needed for Logical Extend
         ## All elements are optional since the combination of appropriate

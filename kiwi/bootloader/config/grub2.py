@@ -242,6 +242,20 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
                 config_file.replace(self.root_mount.mountpoint, '')
             ]
         )
+        if boot_options.get('root_device') != boot_options.get('boot_device'):
+            # Create a boot -> . link on the boot partition.
+            # The link is useful if the grub mkconfig command
+            # references all boot files from /boot/... even if
+            # an extra boot partition should cause it to read the
+            # data from the toplevel
+            bash_command = [
+                'cd', os.sep.join([self.root_mount.mountpoint, 'boot']), '&&',
+                'rm', '-f', 'boot', '&&',
+                'ln', '-s', '.', 'boot'
+            ]
+            Command.run(
+                ['bash', '-c', ' '.join(bash_command)]
+            )
 
         # Patch the written grub config file to actually work:
         # Unfortunately the grub tooling has several bugs and issues
@@ -579,7 +593,7 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
                 log.debug(zipl_config)
                 zipl_config_file.write(zipl_config)
 
-    def _setup_default_grub(self):  # noqa: C901
+    def _setup_default_grub(self):
         """
         Create or update etc/default/grub by parameters required
         according to the root filesystem setup
@@ -602,15 +616,18 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
             'GRUB_GFXMODE': self.gfxmode,
             'GRUB_TERMINAL': '"{0}"'.format(self.terminal)
         }
+        grub_final_cmdline = re.sub(
+            r'root=.* |root=.*$', '', self.cmdline
+        ).strip()
         if self.displayname:
             grub_default_entries['GRUB_DISTRIBUTOR'] = '"{0}"'.format(
                 self.displayname
             )
         if self.timeout_style:
             grub_default_entries['GRUB_TIMEOUT_STYLE'] = self.timeout_style
-        if self.cmdline:
+        if grub_final_cmdline:
             grub_default_entries['GRUB_CMDLINE_LINUX_DEFAULT'] = '"{0}"'.format(
-                re.sub(r'root=.* |root=.*$', '', self.cmdline).strip()
+                grub_final_cmdline
             )
         if self.terminal and 'serial' in self.terminal and \
            self.serial_line_setup:
@@ -798,20 +815,53 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
             self._create_early_boot_script_for_mbrid_search(
                 early_boot_script, mbrid
             )
+        root_efi_path = '/boot/efi/EFI/BOOT/'
+        root_efi_image = root_efi_path + Defaults.get_efi_image_name(self.arch)
+
+        Path.create(self.root_dir + root_efi_path)
+
         module_list = Defaults.get_grub_efi_modules(multiboot=self.xen_guest)
-        module_path = self._get_efi_modules_path(lookup_path)
+        module_path = self._get_efi_modules_path(self.root_dir)
         if os.path.exists(module_path + '/linuxefi.mod'):
             module_list.append('linuxefi')
-        Command.run(
+
+        early_boot_script_on_media = \
+            self.root_dir + root_efi_path + 'earlyboot.cfg'
+        if early_boot_script != early_boot_script_on_media:
+            log.debug(
+                f'Copy earlyboot to media path: {early_boot_script_on_media}'
+            )
+            shutil.copy(
+                early_boot_script, early_boot_script_on_media
+            )
+        mkimage_call = Command.run(
             [
-                self._get_grub2_mkimage_tool() or 'grub2-mkimage',
+                'chroot', self.root_dir,
+                os.path.basename(
+                    self._get_grub2_mkimage_tool()
+                ) or 'grub2-mkimage',
                 '-O', Defaults.get_efi_module_directory_name(self.arch),
-                '-o', self._get_efi_image_name(),
-                '-c', early_boot_script,
+                '-o', root_efi_image,
+                '-c', root_efi_path + 'earlyboot.cfg',
                 '-p', self.get_boot_path() + '/' + self.boot_directory_name,
-                '-d', module_path
+                '-d', module_path.replace(self.root_dir, '')
             ] + module_list
         )
+        log.debug(mkimage_call.output)
+
+        # Copy generated EFI image to the media directory if this
+        # is different from the system root directory, e.g the case
+        # for live image builds or when using a custom kiwi initrd
+        efi_image_root_file = self.root_dir + root_efi_image
+        efi_image_media_file = os.sep.join(
+            [self.efi_boot_path, os.path.basename(efi_image_root_file)]
+        )
+        if (efi_image_root_file != efi_image_media_file):
+            log.debug(
+                f'Copy grub image to media path: {efi_image_media_file}'
+            )
+            Path.create(os.path.dirname(efi_image_media_file))
+            shutil.copy(efi_image_root_file, efi_image_media_file)
 
     def _create_efi_config_search(self, uuid=None, mbrid=None):
         efi_boot_config = self.efi_boot_path + '/grub.cfg'
@@ -832,16 +882,49 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         self._create_early_boot_script_for_mbrid_search(
             early_boot_script, mbrid
         )
-        Command.run(
+        early_boot_script_on_media = os.sep.join(
+            [self.root_dir, 'boot', self.boot_directory_name, 'earlyboot.cfg']
+        )
+        if early_boot_script != early_boot_script_on_media:
+            log.debug(
+                f'Copy earlyboot to media path: {early_boot_script_on_media}'
+            )
+            Path.create(
+                os.path.dirname(early_boot_script_on_media)
+            )
+            shutil.copy(
+                early_boot_script, early_boot_script_on_media
+            )
+        mkimage_call = Command.run(
             [
-                self._get_grub2_mkimage_tool() or 'grub2-mkimage',
+                'chroot', self.root_dir,
+                os.path.basename(
+                    self._get_grub2_mkimage_tool()
+                ) or 'grub2-mkimage',
                 '-O', Defaults.get_bios_module_directory_name(),
-                '-o', self._get_bios_image_name(lookup_path),
-                '-c', early_boot_script,
-                '-p', self.get_boot_path() + '/' + self.boot_directory_name,
-                '-d', self._get_bios_modules_path(lookup_path)
+                '-o', self._get_bios_image_name(os.sep),
+                '-c', early_boot_script.replace(self.boot_dir, ''),
+                '-p', os.sep.join(
+                    [self.get_boot_path(), self.boot_directory_name]
+                ),
+                '-d', self._get_bios_modules_path(os.sep)
             ] + Defaults.get_grub_bios_modules(multiboot=self.xen_guest)
         )
+        log.debug(mkimage_call.output)
+
+        # Copy generated EFI image to the media directory if this
+        # is different from the system root directory, e.g the case
+        # for live image builds or when using a custom kiwi initrd
+        bios_image_root_file = self._get_bios_image_name(self.root_dir)
+        bios_image_media_file = bios_image_root_file.replace(
+            self.root_dir, lookup_path
+        )
+        if (bios_image_root_file != bios_image_media_file):
+            log.debug(
+                f'Copy grub image to media path: {bios_image_media_file}'
+            )
+            Path.create(os.path.dirname(bios_image_media_file))
+            shutil.copy(bios_image_root_file, bios_image_media_file)
 
     def _create_early_boot_script_for_uuid_search(self, filename, uuid):
         with open(filename, 'w') as early_boot:
@@ -902,8 +985,11 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
 
     def _get_grub2_mkimage_tool(self):
         for grub_mkimage_tool in ['grub2-mkimage', 'grub-mkimage']:
-            if Path.which(grub_mkimage_tool):
-                return grub_mkimage_tool
+            grub_mkimage_file_path = Path.which(
+                grub_mkimage_tool, root_dir=self.root_dir
+            )
+            if grub_mkimage_file_path:
+                return grub_mkimage_file_path
 
     def _get_grub2_mkconfig_tool(self):
         for grub_mkconfig_tool in ['grub2-mkconfig', 'grub-mkconfig']:

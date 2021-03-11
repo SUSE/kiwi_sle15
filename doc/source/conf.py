@@ -61,7 +61,7 @@ def setup(app):
     app.add_config_value('prolog_replacements', {}, True)
     app.connect('source-read', prologReplace)
     app.connect("autodoc-process-docstring", remove_module_docstring)
-    app.add_stylesheet('css/custom.css')
+    app.add_css_file('css/custom.css')
 
 
 prolog_replacements = {
@@ -128,7 +128,7 @@ author = 'Marcus Schäfer'
 # built documents.
 #
 # The short X.Y version.
-version = '9.21.23'
+version = '9.23.20'
 # The full version, including alpha/beta/rc tags.
 release = version
 

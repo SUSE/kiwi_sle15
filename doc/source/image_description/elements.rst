@@ -75,7 +75,7 @@ Setup image type and layout.
 
 .. code:: xml
 
-   <preferences>
+   <preferences arch="arch">
      <version>1.2.3</version>
      <packagemanager name="zypper"/>
      <type image="tbz"/>
@@ -83,7 +83,10 @@ Setup image type and layout.
 
 The mandatory preferences section contains information about the
 supported image type(s), the used package manager, the version of this
-image, and further optional elements.
+image, and further optional elements. The preferences section can
+be configured to apply only for a certain architecture. In this
+case specify the `arch` attribute with a value as it is reported
+by :command:`uname -m`
 
 <preferences><version>
 ~~~~~~~~~~~~~~~~~~~~~~
@@ -669,6 +672,12 @@ Used to customize the virtual machine configuration which describes
 the components of an emulated hardware.
 For details see: :ref:`disk-the-machine-element`
 
+<preferences><type><installmedia>
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Used to customize the installation media images created for oem images
+deployment.
+For details see: :ref:`installmedia_customize`
+
 .. _sec.repository:
 
 <repository>
@@ -768,6 +777,13 @@ sourcetype="baseurl|metalink|mirrorlist"
   list, the configured package manager needs to be setup appropriately.
   By default the source is expected to be a simple repository baseurl.
 
+use_for_bootstrap="true|false"
+  Used for Debian (apt) based repositories only. It specifies whether
+  this repository should be the one used for bootstrapping or not.
+  It is set to 'false' by default. Only a single repository is allowed
+  to be used for bootstrapping, if no repository is set for the bootstrap
+  the last one in the description XML is used.
+  
 <repository><source>
 ~~~~~~~~~~~~~~~~~~~~
 The location of a repository is specified by the path attribute of the
@@ -985,24 +1001,6 @@ modified. The following attributes are mandatory:
 name="name":
   the UNIX username
 
-home="path":
-  The path to the user's home directory
-
-Additionally, the following optional attributes can be specified:
-
-groups="group_a,group_b":
-  A comma separated list of UNIX groups. The first element of the
-  list is used as the user's primary group. The remaining elements are
-  appended to the user's supplementary groups. When no groups are assigned
-  then the system's default primary group will be used.
-
-id="number":
-  The numeric user id of this account.
-
-pwdformat="plain|encrypted":
-  The format in which `password` is provided. The default if not
-  specified is `encrypted`.
-
 password="string"
   The password for this user account. It can be provided either
   in cleartext form or encrypted. An encrypted password can be created
@@ -1027,6 +1025,24 @@ password="string"
   with the groups attribute or belong to the default group as configured
   in the system. If specified the first entry in the groups list is used
   as the login group.
+
+Additionally, the following optional attributes can be specified:
+
+home="path":
+  The path to the user's home directory
+
+groups="group_a,group_b":
+  A comma separated list of UNIX groups. The first element of the
+  list is used as the user's primary group. The remaining elements are
+  appended to the user's supplementary groups. When no groups are assigned
+  then the system's default primary group will be used.
+
+id="number":
+  The numeric user id of this account.
+
+pwdformat="plain|encrypted":
+  The format in which `password` is provided. The default if not
+  specified is `encrypted`.
 
 .. _sec.profiles:
 

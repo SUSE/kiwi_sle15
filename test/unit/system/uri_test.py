@@ -1,6 +1,8 @@
 import logging
 import os
-from mock import patch
+from mock import (
+    patch, Mock
+)
 from pytest import (
     raises, fixture
 )
@@ -8,6 +10,8 @@ import hashlib
 import mock
 
 from kiwi.system.uri import Uri
+
+import kiwi
 
 from kiwi.exceptions import (
     KiwiUriStyleUnknown,
@@ -24,9 +28,12 @@ class TestUri:
     def setup(self):
         self.mock_mkdtemp = mock.Mock()
         self.mock_manager = mock.Mock()
-        self.runtime_config = mock.Mock()
+        self.runtime_config = Mock()
         self.runtime_config.get_obs_download_server_url = mock.Mock(
             return_value='obs_server'
+        )
+        kiwi.system.uri.RuntimeConfig = Mock(
+            return_value=self.runtime_config
         )
 
     def test_is_remote_raises_style_error(self):
@@ -59,12 +66,21 @@ class TestUri:
             uri.translate()
 
     @patch('kiwi.system.uri.requests.get')
-    def test_translate_obs_uri_not_found(mock_request_get, self):
-        mock_request_get.side_effect = Exception
+    @patch('kiwi.system.uri.Defaults.is_buildservice_worker')
+    def test_translate_obs_uri_not_found(
+        mock_buildservice, mock_request_get, self
+    ):
+        mock_buildservice.return_value = False
+        mock_request_get.side_effect = Exception('error')
         uri = Uri('obs://openSUSE:Leap:42.2/standard', 'yast2')
+        self.runtime_config.get_obs_download_server_url = mock.Mock(
+            return_value='http://obs_server'
+        )
         uri.runtime_config = self.runtime_config
-        with raises(KiwiUriOpenError):
-            uri.translate()
+        with raises(KiwiUriOpenError) as exception_info:
+            uri.translate(check_build_environment=False)
+        assert f'{exception_info.value}' == \
+            'http://obs_server/openSUSE:/Leap:/42.2/standard: error'
 
     @patch('kiwi.system.uri.Defaults.is_buildservice_worker')
     def test_translate_obs_uri_inside_buildservice(
@@ -101,15 +117,24 @@ class TestUri:
 
     @patch('kiwi.system.uri.requests')
     def test_is_public(self, mock_request):
+        # unknown uri schema is considered not public
         uri = Uri('xxx', 'rpm-md')
         assert uri.is_public() is False
+
+        # https is public
         uri = Uri('https://example.com', 'rpm-md')
         assert uri.is_public() is True
+
+        # obs is private with obs_public set to false in config
         uri = Uri('obs://openSUSE:Leap:42.2/standard', 'yast2')
         self.runtime_config.is_obs_public = mock.Mock(
             return_value=False
         )
         uri.runtime_config = self.runtime_config
+        assert uri.is_public() is False
+
+        # unknown uri type considered not public
+        uri = Uri('httpx://example.com', 'rpm-md')
         assert uri.is_public() is False
 
     def test_alias(self):
@@ -179,23 +204,6 @@ class TestUri:
         uri = Uri('ftp://example.com/foo', 'rpm-md')
         assert uri.translate() == 'ftp://example.com/foo'
 
-    @patch('kiwi.system.uri.MountManager')
-    @patch('kiwi.system.uri.mkdtemp')
-    def test_translate_iso_path(self, mock_mkdtemp, mock_manager):
-        mock_mkdtemp.return_value = 'tmpdir'
-        manager = mock.Mock()
-        manager.mountpoint = mock_mkdtemp.return_value
-        mock_manager.return_value = manager
-        uri = Uri('iso:///image/CDs/openSUSE-13.2-DVD-x86_64.iso', 'yast2')
-        result = uri.translate()
-        mock_manager.assert_called_once_with(
-            device='/image/CDs/openSUSE-13.2-DVD-x86_64.iso',
-            mountpoint='tmpdir'
-        )
-        manager.mount.assert_called_once_with()
-        assert result == 'tmpdir'
-        uri.mount_stack = []
-
     @patch('kiwi.system.uri.Defaults.is_buildservice_worker')
     def test_translate_buildservice_path(self, mock_buildservice):
         mock_buildservice.return_value = True
@@ -235,20 +243,3 @@ class TestUri:
         mock_buildservice.return_value = True
         uri = Uri('obsrepositories:/')
         assert uri.translate() == '/usr/src/packages/SOURCES/repos'
-
-    @patch('kiwi.system.uri.MountManager')
-    @patch('kiwi.system.uri.mkdtemp')
-    @patch('kiwi.system.uri.Path.wipe')
-    def test_destructor(self, mock_wipe, mock_mkdtemp, mock_manager):
-        mock_mkdtemp.return_value = 'tmpdir'
-        manager = mock.Mock()
-        manager.mountpoint = mock_mkdtemp.return_value
-        manager.is_mounted = mock.Mock(
-            return_value=True
-        )
-        mock_manager.return_value = manager
-        uri = Uri('iso:///image/CDs/openSUSE-13.2-DVD-x86_64.iso', 'yast2')
-        uri.translate()
-        uri.__del__()
-        manager.umount.assert_called_once_with()
-        mock_wipe.assert_called_once_with(manager.mountpoint)

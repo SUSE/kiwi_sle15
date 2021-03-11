@@ -65,6 +65,10 @@ LaTeX documentation build environment
   A full LaTeX installation is required to build the PDF documentation
   [#f1]_.
 
+Host Requirements To Build Images
+  A full set of tools needed to build images and provided by
+  the `kiwi-systemdeps` package
+
 The above mentioned system packages will be installed by calling the
 `install_devel_packages.sh` helper script from the checked out Git
 repository as follows:
@@ -199,10 +203,8 @@ Make and commit your changes.
 
     $ git commit -S -a
 
-Run the tests and code style checks. All of these are also performed by the
-`Travis CI <https://travis-ci.com/OSInside/kiwi>`_ and `GitLab CI
-<https://gitlab.com/schaefi/kiwi-ci/pipelines>`_ integration test systems
-when a pull request is created.
+Run the tests and code style checks. All of these are also performed by
+`GitLab CI <https://gitlab.com/kiwi3>`_ when a pull request is created.
 
 .. code:: shell-session
 

@@ -121,11 +121,18 @@ class TestSystemBuildTask:
         self.runtime_checker.\
             check_volume_label_used_with_lvm.assert_called_once_with()
         self.runtime_checker.\
+            check_swap_name_used_with_lvm.assert_called_once_with()
+        self.runtime_checker.\
             check_xen_uniquely_setup_as_server_or_guest.\
             assert_called_once_with()
         self.runtime_checker.\
             check_target_directory_not_in_shared_cache.\
             assert_called_once_with(self.abs_target_dir)
+        self.runtime_checker.\
+            check_dracut_module_versions_compatible_to_kiwi.\
+            assert_called_once_with(
+                self.abs_target_dir + '/build/image-root'
+            )
         self.runtime_checker.\
             check_mediacheck_installed.assert_called_once_with()
         self.runtime_checker.\

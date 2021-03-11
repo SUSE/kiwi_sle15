@@ -15,6 +15,9 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
+from typing import (
+    Dict, Any
+)
 import os
 import logging
 from xml.dom import minidom
@@ -31,11 +34,11 @@ from kiwi import xml_parse
 from kiwi.command import Command
 
 from kiwi.exceptions import (
+    KiwiCommandError,
     KiwiSchemaImportError,
     KiwiValidationError,
     KiwiDescriptionInvalid,
     KiwiDataStructureError,
-    KiwiDescriptionConflict,
     KiwiExtensionError,
     KiwiCommandNotFound
 )
@@ -57,22 +60,19 @@ class XMLDescription:
 
     Attributes
 
-    :param string description: path to description file
-    :param string derived_from: path to base description file
-    :param string xml_content: XML description data as content string
+    :param str description: path to description file
+    :param str derived_from: path to base description file
     """
-    def __init__(self, description=None, derived_from=None, xml_content=None):
-        if description and xml_content:
-            raise KiwiDescriptionConflict(
-                'description and xml_content are mutually exclusive'
-            )
-        self.markup = Markup(description or xml_content)
+    def __init__(
+        self, description: str = '', derived_from: str = None
+    ):
+        self.markup = Markup.new(description)
         self.description = self.markup.get_xml_description()
         self.derived_from = derived_from
         self.description_origin = description
-        self.extension_data = {}
+        self.extension_data: Dict = {}
 
-    def load(self): # noqa C901
+    def load(self) -> Any:
         """
         Read XML description, validate it against the schema
         and the schematron rules and pass it to the
@@ -97,12 +97,13 @@ class XMLDescription:
         except Exception as issue:
             raise KiwiValidationError(issue)
         if not validation_rng:
-            self._get_relaxng_validation_details(
+            XMLDescription._get_relaxng_validation_details(
                 Defaults.get_schema_file(),
-                self.description
+                self.description,
+                relaxng.error_log
             )
         if not validation_schematron:
-            self._get_schematron_validation_details(
+            XMLDescription._get_schematron_validation_details(
                 schematron.validation_report
             )
         if not validation_rng or not validation_schematron:
@@ -166,8 +167,10 @@ class XMLDescription:
                         extension_file = NamedTemporaryFile()
                         with open(extension_file.name, 'w') as xml_data:
                             xml_data.write(xml_data_domtree.toprettyxml())
-                        self._get_relaxng_validation_details(
-                            extension_schema, extension_file.name
+                        XMLDescription._get_relaxng_validation_details(
+                            extension_schema,
+                            extension_file.name,
+                            extension_relaxng.error_log
                         )
                         raise KiwiExtensionError(
                             'Schema validation for extension XML data failed'
@@ -175,43 +178,46 @@ class XMLDescription:
 
         return parse_result
 
-    def get_extension_xml_data(self, namespace_name):
+    def get_extension_xml_data(self, namespace_name: str) -> Any:
         """
         Return the xml etree parse result for the specified extension namespace
 
-        :param string namespace_name: name of the extension namespace
+        :param str namespace_name: name of the extension namespace
 
         :return: result of etree.parse
 
         :rtype: object
         """
-        if namespace_name in self.extension_data:
-            return self.extension_data[namespace_name]
+        return self.extension_data.get(namespace_name)
 
-    def _get_relaxng_validation_details(self, schema_file, description_file):
+    @staticmethod
+    def _get_relaxng_validation_details(
+        schema_file, description_file, error_log
+    ):
         """
         Run jing program to validate description against the schema
 
         Jing provides detailed error information in case of a schema
-        validation failure
+        validation failure. If jing is not present the standard
+        error_log as provided from the raw XML libraries is used
         """
         try:
-            cmd = Command.run(
-                ['jing', schema_file, description_file],
-                raise_on_error=False
+            Command.run(
+                ['jing', schema_file, description_file]
             )
+        except KiwiCommandError as issue:
+            log.info('RelaxNG validation failed. See jing report:')
+            log.info('--> {0}'.format(issue))
         except KiwiCommandNotFound as issue:
-            log.info(
-                'For detailed schema validation report, please install: jing'
+            log.warning(issue)
+            log.warning(
+                'For detailed schema validation report, install: jing'
             )
-            log.info(
-                '{0}: {1}: {2}'.format('jing', type(issue).__name__, issue)
-            )
-            return
-        log.info('RelaxNG validation failed. See jing report:')
-        log.info('--> %s', cmd.output)
+            log.info('Showing only raw library error log:')
+            log.info('--> {0}'.format(error_log))
 
-    def _get_schematron_validation_details(self, validation_report):
+    @staticmethod
+    def _get_schematron_validation_details(validation_report):
         """
         Extract error message form the schematron validation report
 

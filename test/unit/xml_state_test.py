@@ -58,6 +58,17 @@ class TestXMLState:
         assert description.specification == \
             'Testing various configuration states'
 
+    @patch('platform.machine')
+    def test_get_preferences_by_architecture(self, mock_machine):
+        mock_machine.return_value = 'aarch64'
+        state = XMLState(
+            self.description.load()
+        )
+        preferences = state.get_preferences_sections()
+        assert len(preferences) == 3
+        assert preferences[2].get_arch() == 'aarch64'
+        assert state.get_build_type_name() == 'iso'
+
     def test_build_type_primary_selected(self):
         assert self.state.get_build_type_name() == 'oem'
 
@@ -85,6 +96,11 @@ class TestXMLState:
 
     def test_get_package_manager(self):
         assert self.state.get_package_manager() == 'zypper'
+
+    @patch('kiwi.xml_state.XMLState.get_preferences_sections')
+    def test_get_default_package_manager(self, mock_preferences):
+        mock_preferences.return_value = []
+        assert self.state.get_package_manager() == 'dnf'
 
     def test_get_image_version(self):
         assert self.state.get_image_version() == '1.13.2'
@@ -215,6 +231,7 @@ class TestXMLState:
     def test_get_build_type_vagrant_config_section(self):
         vagrant_config = self.state.get_build_type_vagrant_config_section()
         assert vagrant_config.get_provider() == 'libvirt'
+        assert self.boot_state.get_build_type_vagrant_config_section() is None
 
     def test_virtualbox_guest_additions_vagrant_config_section(self):
         assert not self.state.get_vagrant_config_virtualbox_guest_additions()
@@ -231,6 +248,7 @@ class TestXMLState:
 
     def test_get_build_type_vmdisk_section(self):
         assert self.state.get_build_type_vmdisk_section().get_id() == 0
+        assert self.boot_state.get_build_type_vmdisk_section() is None
 
     def test_get_build_type_vmnic_entries(self):
         assert self.state.get_build_type_vmnic_entries()[0].get_interface() \
@@ -239,6 +257,7 @@ class TestXMLState:
 
     def test_get_build_type_vmdvd_section(self):
         assert self.state.get_build_type_vmdvd_section().get_id() == 0
+        assert self.boot_state.get_build_type_vmdvd_section() is None
 
     def test_get_volume_management(self):
         assert self.state.get_volume_management() == 'lvm'
@@ -515,6 +534,13 @@ class TestXMLState:
         assert state.get_oemconfig_swap_mbytes() is None
         state = XMLState(xml_data, ['vmxFlavour'], 'oem')
         assert state.get_oemconfig_swap_mbytes() == 42
+
+    def test_get_oemconfig_swap_name(self):
+        xml_data = self.description.load()
+        state = XMLState(xml_data, ['containerFlavour'], 'docker')
+        assert state.get_oemconfig_swap_name() == 'LVSwap'
+        state = XMLState(xml_data, ['vmxFlavour'], 'oem')
+        assert state.get_oemconfig_swap_name() == 'swap'
 
     def test_get_oemconfig_swap_mbytes_default(self):
         description = XMLDescription(
@@ -897,11 +923,13 @@ class TestXMLState:
 
     def test_get_locale(self):
         assert self.state.get_locale() == ['en_US', 'de_DE']
+        assert self.boot_state.get_locale() is None
 
     def test_get_rpm_locale(self):
         assert self.state.get_rpm_locale() == [
             'POSIX', 'C', 'C.UTF-8', 'en_US', 'de_DE'
         ]
+        assert self.boot_state.get_rpm_locale() is None
 
     def test_set_root_partition_uuid(self):
         assert self.state.get_root_partition_uuid() is None
@@ -931,6 +959,9 @@ class TestXMLState:
         mock_bootloader.return_value = [self.bootloader]
         assert self.state.get_build_type_bootloader_serial_line_setup() == \
             'some-serial'
+        mock_bootloader.return_value = [None]
+        assert self.state.get_build_type_bootloader_serial_line_setup() \
+            is None
 
     @patch('kiwi.xml_parse.type_.get_bootloader')
     def test_get_build_type_bootloader_timeout(self, mock_bootloader):
@@ -943,9 +974,20 @@ class TestXMLState:
         mock_bootloader.return_value = [self.bootloader]
         assert self.state.get_build_type_bootloader_timeout_style() == \
             'some-style'
+        mock_bootloader.return_value = [None]
+        assert self.state.get_build_type_bootloader_timeout_style() \
+            is None
 
     @patch('kiwi.xml_parse.type_.get_bootloader')
     def test_get_build_type_bootloader_targettype(self, mock_bootloader):
         mock_bootloader.return_value = [self.bootloader]
         assert self.state.get_build_type_bootloader_targettype() == \
             'some-target'
+
+    def test_get_installintrd_modules(self):
+        self.state.get_installmedia_initrd_modules('add') == ['network-legacy']
+        self.state.get_installmedia_initrd_modules('set') == []
+        self.state.get_installmedia_initrd_modules('omit') == []
+        xml_data = self.description.load()
+        state = XMLState(xml_data, ['vmxSimpleFlavour'], 'oem')
+        state.get_installmedia_initrd_modules('add') == []

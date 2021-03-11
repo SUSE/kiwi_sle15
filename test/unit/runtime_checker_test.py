@@ -1,9 +1,12 @@
 import sys
-from mock import patch
-import mock
+from mock import (
+    patch, Mock
+)
 from pytest import raises
 
 from .test_helper import argv_kiwi_tests
+
+import kiwi
 
 from kiwi.xml_state import XMLState
 from kiwi.xml_description import XMLDescription
@@ -19,9 +22,18 @@ class TestRuntimeChecker:
         self.xml_state = XMLState(
             self.description.load()
         )
+        self.runtime_config = Mock()
+        self.runtime_config.get_oci_archive_tool.return_value = 'umoci'
+        kiwi.runtime_checker.RuntimeConfig = Mock(
+            return_value=self.runtime_config
+        )
         self.runtime_checker = RuntimeChecker(self.xml_state)
 
-    def test_check_image_include_repos_publicly_resolvable(self):
+    @patch('kiwi.runtime_checker.Uri')
+    def test_check_image_include_repos_publicly_resolvable(self, mock_Uri):
+        uri = Mock()
+        uri.is_public.return_value = False
+        mock_Uri.return_value = uri
         with raises(KiwiRuntimeError):
             self.runtime_checker.check_image_include_repos_publicly_resolvable()
 
@@ -50,6 +62,56 @@ class TestRuntimeChecker:
             self.runtime_checker.check_target_directory_not_in_shared_cache(
                 '//var/cache//kiwi/foo'
             )
+
+    @patch('os.path.isdir')
+    def test_check_dracut_module_versions_compatible_to_kiwi_no_dracut(
+        self, mock_os_path_isdir
+    ):
+        mock_os_path_isdir.return_value = False
+        self.runtime_checker.\
+            check_dracut_module_versions_compatible_to_kiwi('root_dir')
+        # does not raise if no dracut is installed
+
+    @patch('os.listdir')
+    @patch('os.path.isdir')
+    @patch('kiwi.runtime_checker.Command.run')
+    def test_check_dracut_module_versions_compatible_to_kiwi(
+        self, mock_Command_run, mock_os_path_isdir, mock_os_listdir
+    ):
+        mock_os_path_isdir.return_value = True
+        command = Mock()
+        command.output = '1.2.3-1.2'
+        mock_Command_run.return_value = command
+        mock_os_listdir.return_value = ['90kiwi-dump']
+        package_manager = Mock()
+        package_manager.return_value = 'zypper'
+        self.xml_state.get_package_manager = package_manager
+        with raises(KiwiRuntimeError) as exception_data:
+            self.runtime_checker.\
+                check_dracut_module_versions_compatible_to_kiwi('root_dir')
+        assert "'dracut-kiwi-oem-dump': 'got:1.2.3, need:>=9.20.1'" in str(
+            exception_data.value
+        )
+        mock_Command_run.assert_called_once_with(
+            [
+                'rpm', '--root', 'root_dir', '-q',
+                '--qf', '%{VERSION}', 'dracut-kiwi-oem-dump'
+            ]
+        )
+        package_manager.return_value = 'apt-get'
+        mock_Command_run.reset_mock()
+        with raises(KiwiRuntimeError) as exception_data:
+            self.runtime_checker.\
+                check_dracut_module_versions_compatible_to_kiwi('root_dir')
+        assert "'dracut-kiwi-oem-dump': 'got:1.2.3, need:>=9.20.1'" in str(
+            exception_data.value
+        )
+        mock_Command_run.assert_called_once_with(
+            [
+                'dpkg-query', '--admindir', 'root_dir/var/lib/dpkg',
+                '-W', '-f', '${Version}', 'dracut-kiwi-oem-dump'
+            ]
+        )
 
     def test_valid_target_dir_1(self):
         assert self.runtime_checker.check_target_directory_not_in_shared_cache(
@@ -109,12 +171,11 @@ class TestRuntimeChecker:
         with raises(KiwiRuntimeError):
             runtime_checker.check_container_tool_chain_installed()
 
-    @patch('kiwi.runtime_checker.RuntimeConfig.get_oci_archive_tool')
     @patch('kiwi.runtime_checker.Path.which')
     def test_check_container_tool_chain_installed_unknown_tool(
-        self, mock_which, mock_oci_tool
+        self, mock_which
     ):
-        mock_oci_tool.return_value = 'budah'
+        self.runtime_config.get_oci_archive_tool.return_value = 'budah'
         mock_which.return_value = False
         xml_state = XMLState(
             self.description.load(), ['docker'], 'docker'
@@ -123,12 +184,11 @@ class TestRuntimeChecker:
         with raises(KiwiRuntimeError):
             runtime_checker.check_container_tool_chain_installed()
 
-    @patch('kiwi.runtime_checker.RuntimeConfig.get_oci_archive_tool')
     @patch('kiwi.runtime_checker.Path.which')
     def test_check_container_tool_chain_installed_buildah(
-        self, mock_which, mock_oci_tool
+        self, mock_which
     ):
-        mock_oci_tool.return_value = 'buildah'
+        self.runtime_config.get_oci_archive_tool.return_value = 'buildah'
         mock_which.return_value = False
         xml_state = XMLState(
             self.description.load(), ['docker'], 'docker'
@@ -209,26 +269,26 @@ class TestRuntimeChecker:
             runtime_checker.check_boot_description_exists()
 
     def test_check_xen_uniquely_setup_as_server_or_guest_for_ec2(self):
-        self.xml_state.build_type.get_firmware = mock.Mock(
+        self.xml_state.build_type.get_firmware = Mock(
             return_value='ec2'
         )
-        self.xml_state.is_xen_server = mock.Mock(
+        self.xml_state.is_xen_server = Mock(
             return_value=True
         )
-        self.xml_state.is_xen_guest = mock.Mock(
+        self.xml_state.is_xen_guest = Mock(
             return_value=True
         )
         with raises(KiwiRuntimeError):
             self.runtime_checker.check_xen_uniquely_setup_as_server_or_guest()
 
     def test_check_xen_uniquely_setup_as_server_or_guest_for_xen(self):
-        self.xml_state.build_type.get_firmware = mock.Mock(
+        self.xml_state.build_type.get_firmware = Mock(
             return_value=None
         )
-        self.xml_state.is_xen_server = mock.Mock(
+        self.xml_state.is_xen_server = Mock(
             return_value=True
         )
-        self.xml_state.is_xen_guest = mock.Mock(
+        self.xml_state.is_xen_guest = Mock(
             return_value=True
         )
         with raises(KiwiRuntimeError):
@@ -238,7 +298,7 @@ class TestRuntimeChecker:
         xml_state = XMLState(
             self.description.load(), ['vmxFlavour'], 'iso'
         )
-        xml_state.build_type.get_overlayroot = mock.Mock(
+        xml_state.build_type.get_overlayroot = Mock(
             return_value=True
         )
         runtime_checker = RuntimeChecker(xml_state)
@@ -247,10 +307,10 @@ class TestRuntimeChecker:
                 check_dracut_module_for_disk_overlay_in_package_list()
 
     def test_check_efi_mode_for_disk_overlay_correctly_setup(self):
-        self.xml_state.build_type.get_overlayroot = mock.Mock(
+        self.xml_state.build_type.get_overlayroot = Mock(
             return_value=True
         )
-        self.xml_state.build_type.get_firmware = mock.Mock(
+        self.xml_state.build_type.get_firmware = Mock(
             return_value='uefi'
         )
         with raises(KiwiRuntimeError):
@@ -296,21 +356,21 @@ class TestRuntimeChecker:
         with raises(KiwiRuntimeError):
             self.runtime_checker.check_volume_label_used_with_lvm()
 
+    def test_check_swap_name_used_with_lvm(self):
+        xml_state = XMLState(
+            self.description.load(), ['vmxFlavour'], 'oem'
+        )
+        runtime_checker = RuntimeChecker(xml_state)
+        with raises(KiwiRuntimeError):
+            runtime_checker.check_swap_name_used_with_lvm()
+
     def test_check_preferences_data_no_version(self):
         xml_state = XMLState(
             self.description.load(), ['docker'], 'docker'
         )
         runtime_checker = RuntimeChecker(xml_state)
         with raises(KiwiRuntimeError):
-            runtime_checker.check_minimal_required_preferences()
-
-    def test_check_preferences_data_no_packagemanager(self):
-        xml_state = XMLState(
-            self.description.load(), ['xenDom0Flavour'], 'oem'
-        )
-        runtime_checker = RuntimeChecker(xml_state)
-        with raises(KiwiRuntimeError):
-            runtime_checker.check_minimal_required_preferences()
+            runtime_checker.check_image_version_provided()
 
     @patch('platform.machine')
     def test_check_architecture_supports_iso_firmware_setup(

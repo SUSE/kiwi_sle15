@@ -1,4 +1,5 @@
 from builtins import bytes
+import encodings.ascii as encoding
 from mock import (
     patch, call, Mock, mock_open
 )
@@ -12,6 +13,7 @@ from kiwi.exceptions import KiwiFileNotFound
 class TestChecksum:
     @patch('os.path.exists')
     def setup(self, mock_exists):
+        self.ascii = encoding.getregentry().name
         read_results = [bytes(b''), bytes(b'data'), bytes(b''), bytes(b'data')]
 
         def side_effect(arg):
@@ -42,7 +44,9 @@ class TestChecksum:
         with patch('builtins.open', self.m_open, create=True):
             assert self.checksum.matches('sum', 'some-file') is True
 
-        self.m_open.assert_called_once_with('some-file')
+        self.m_open.assert_called_once_with(
+            'some-file', encoding=self.ascii
+        )
 
         with patch('builtins.open', self.m_open, create=True):
             assert self.checksum.matches('foo', 'some-file') is False
@@ -77,7 +81,7 @@ class TestChecksum:
         assert self.m_open.call_args_list == [
             call('some-file', 'rb'),
             call('some-file-uncompressed', 'rb'),
-            call('outfile', 'w')
+            call('outfile', encoding=self.ascii, mode='w')
         ]
         self.m_open.return_value.write.assert_called_once_with(
             'sum 163968 8192 163968 8192\n'
@@ -109,7 +113,7 @@ class TestChecksum:
 
         assert self.m_open.call_args_list == [
             call('some-file', 'rb'),
-            call('outfile', 'w')
+            call('outfile', encoding=self.ascii, mode='w')
         ]
         self.m_open.return_value.write.assert_called_once_with(
             'sum 163968 8192\n'
@@ -141,7 +145,7 @@ class TestChecksum:
 
         assert self.m_open.call_args_list == [
             call('some-file', 'rb'),
-            call('outfile', 'w')
+            call('outfile', encoding=self.ascii, mode='w')
         ]
         self.m_open.return_value.write.assert_called_once_with(
             'sum 163968 8192\n'

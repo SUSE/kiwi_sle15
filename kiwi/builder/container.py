@@ -113,7 +113,7 @@ class ContainerBuilder:
             log.info(
                 'Setting up %s container', self.requested_container_type
             )
-            container_setup = ContainerSetup(
+            container_setup = ContainerSetup.new(
                 self.requested_container_type, self.root_dir,
                 self.container_config
             )
@@ -130,13 +130,13 @@ class ContainerBuilder:
         log.info(
             '--> Creating container image'
         )
-        container_image = ContainerImage(
+        container_image = ContainerImage.new(
             self.requested_container_type, self.root_dir, self.container_config
         )
         self.filename = container_image.create(
             self.filename, self.base_image
         )
-        self.result.verify_image_size(
+        Result.verify_image_size(
             self.runtime_config.get_max_size_constraint(),
             self.filename
         )

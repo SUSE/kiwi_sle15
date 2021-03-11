@@ -179,7 +179,7 @@ function get_partition_node_name {
     local part
     udev_pending
     for partnode in $(
-        lsblk -p -r -o NAME,TYPE "${disk}" | grep -E "part|md$" | cut -f1 -d ' '
+        lsblk -p -l -o NAME,TYPE "${disk}" | grep -E "part|md$" | cut -f1 -d ' '
     );do
         if [ "${index}" = "${partid}" ];then
             echo "${partnode}"
@@ -255,7 +255,7 @@ function get_free_disk_bytes {
     local part_uuids
     udev_pending
     for part in $(
-        lsblk -p -r -o NAME,TYPE "${disk}" | grep -E "part|md$" | cut -f1 -d ' '
+        lsblk -p -l -o NAME,TYPE "${disk}" | grep -E "part|md$" | cut -f1 -d ' '
     );do
         current_part_uuid=$(get_partition_uuid "${part}")
         for part_uuid in ${part_uuids[*]};do
