@@ -296,8 +296,12 @@ Group:          %{sysgroup}
 Requires:       kiwi-systemdeps-core = %{version}-%{release}
 Requires:       kiwi-systemdeps-bootloaders = %{version}-%{release}
 %if 0%{?fedora} || 0%{?rhel} || 0%{?suse_version}
+%if 0%{?sle_version} >= 150000 && !0%{?is_opensuse} 
+Recommends:     kiwi-systemdeps-containers
+%else
 # None of the container build tools are available in Debian/Ubuntu
 Requires:       kiwi-systemdeps-containers = %{version}-%{release}
+%endif
 %endif
 Requires:       kiwi-systemdeps-filesystems = %{version}-%{release}
 Requires:       kiwi-systemdeps-disk-images = %{version}-%{release}
