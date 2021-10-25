@@ -17,6 +17,7 @@
 #
 import logging
 import os
+from typing import Dict
 
 # project
 from kiwi.filesystem import FileSystem
@@ -27,6 +28,7 @@ from kiwi.system.setup import SystemSetup
 from kiwi.defaults import Defaults
 from kiwi.system.result import Result
 from kiwi.runtime_config import RuntimeConfig
+from kiwi.xml_state import XMLState
 
 from kiwi.exceptions import (
     KiwiFileSystemSetupError
@@ -45,11 +47,15 @@ class FileSystemBuilder:
     :param dict custom_args: Custom processing arguments defined as hash keys:
         * None
     """
-    def __init__(self, xml_state, target_dir, root_dir, custom_args=None):
+    def __init__(
+        self, xml_state: XMLState, target_dir: str,
+        root_dir: str, custom_args: Dict = None
+    ):
         self.label = None
-        self.root_uuid = None
+        self.root_uuid = ''
         self.root_dir = root_dir
         self.target_dir = target_dir
+        self.bundle_format = xml_state.get_build_type_bundle_format()
         self.requested_image_type = xml_state.get_build_type_name()
         if self.requested_image_type in Defaults.get_kis_image_types():
             self.requested_filesystem = xml_state.build_type.get_filesystem()
@@ -88,7 +94,7 @@ class FileSystemBuilder:
         self.result = Result(xml_state)
         self.runtime_config = RuntimeConfig()
 
-    def create(self):
+    def create(self) -> Result:
         """
         Build a mountable filesystem image
 
@@ -120,6 +126,8 @@ class FileSystemBuilder:
             self.runtime_config.get_max_size_constraint(),
             self.filename
         )
+        if self.bundle_format:
+            self.result.add_bundle_format(self.bundle_format)
         self.result.add(
             key='filesystem_image',
             filename=self.filename,
@@ -158,7 +166,7 @@ class FileSystemBuilder:
         )
         return self.result
 
-    def _operate_on_loop(self):
+    def _operate_on_loop(self) -> None:
         filesystem = None
         loop_provider = LoopDevice(
             self.filename,
@@ -173,13 +181,15 @@ class FileSystemBuilder:
         filesystem.create_on_device(self.label)
         self.root_uuid = loop_provider.get_uuid(loop_provider.get_device())
         log.info(
-            '--> Syncing data to filesystem on %s', loop_provider.get_device()
+            f'--> Syncing data to filesystem on {loop_provider.get_device()}'
         )
         filesystem.sync_data(
-            Defaults.get_exclude_list_for_root_data_sync()
+            Defaults.
+            get_exclude_list_for_root_data_sync() + Defaults.
+            get_exclude_list_from_custom_exclude_files(self.root_dir)
         )
 
-    def _operate_on_file(self):
+    def _operate_on_file(self) -> None:
         default_provider = DeviceProvider()
         filesystem = FileSystem.new(
             self.requested_filesystem, default_provider,

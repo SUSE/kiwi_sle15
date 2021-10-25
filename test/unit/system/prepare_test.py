@@ -16,6 +16,7 @@ from kiwi.exceptions import (
     KiwiPackagesDeletePhaseFailed
 )
 
+from kiwi.defaults import Defaults
 from kiwi.system.prepare import SystemPrepare
 from kiwi.xml_description import XMLDescription
 from kiwi.xml_state import XMLState
@@ -30,6 +31,7 @@ class TestSystemPrepare:
     @patch('kiwi.system.prepare.RootBind')
     @patch('kiwi.logger.Logger.get_logfile')
     def setup(self, mock_get_logfile, mock_root_bind, mock_root_init):
+        Defaults.set_platform_name('x86_64')
         mock_get_logfile.return_value = None
         description = XMLDescription(
             description='../data/example_config.xml',
@@ -195,13 +197,15 @@ class TestSystemPrepare:
 
         self.system.setup_repositories(
             clear_cache=True,
-            signing_keys=['key-file-a.asc', 'key-file-b.asc']
+            signing_keys=['key-file-a.asc', 'key-file-b.asc'],
+            target_arch='x86_64'
         )
 
         mock_repo.assert_called_once_with(
             self.system.root_bind, 'package-manager-name', [
                 'check_signatures', 'exclude_docs',
-                '_install_langs%POSIX:C:C.UTF-8:en_US:de_DE'
+                '_install_langs%POSIX:C:C.UTF-8:en_US:de_DE',
+                '_target_arch%x86_64'
             ]
         )
         # mock local repos will be translated and bind mounted
@@ -218,12 +222,12 @@ class TestSystemPrepare:
             call(
                 'uri-alias', 'uri', None, 42,
                 None, None, None, None, 'credentials-file', None, None,
-                'baseurl', False
+                'baseurl', False, None
             ),
             call(
                 'uri-alias', 'uri', 'rpm-md', None,
                 None, None, None, None, 'credentials-file', None, None,
-                None, False
+                None, False, '../data/script'
             )
         ]
         assert repo.delete_repo_cache.call_args_list == [
@@ -299,6 +303,35 @@ class TestSystemPrepare:
         self.manager.post_process_install_requests_bootstrap.assert_called_once_with(
             self.system.root_bind
         )
+
+    @patch('kiwi.system.prepare.RootInit')
+    @patch('kiwi.system.prepare.RootBind')
+    @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
+    @patch('kiwi.system.prepare.ArchiveTar')
+    def test_install_bootstrap_archive_target_dir(
+        self, mock_tar, mock_poll, mock_root_bind, mock_root_init
+    ):
+        Defaults.set_platform_name('x86_64')
+        description = XMLDescription(
+            description='../data/example_config_target_dir.xml'
+        )
+        self.xml = description.load()
+        root_bind = MagicMock()
+        root_bind.root_dir = 'root_dir'
+        mock_root_bind.return_value = root_bind
+        self.state = XMLState(
+            self.xml
+        )
+        self.system = SystemPrepare(
+            xml_state=self.state, root_dir='root_dir',
+            allow_existing=True
+        )
+        tar = Mock()
+        mock_tar.return_value = tar
+
+        self.system.install_bootstrap(self.manager)
+
+        tar.extract.assert_called_once_with('root_dir/foo')
 
     @patch('kiwi.xml_state.XMLState.get_bootstrap_packages_sections')
     def test_install_bootstrap_skipped(self, mock_bootstrap_section):

@@ -15,9 +15,12 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
+import os
 import logging
 
 # project
+import kiwi.defaults as defaults
+
 from kiwi.volume_manager.base import VolumeManagerBase
 from kiwi.command import Command
 from kiwi.mount_manager import MountManager
@@ -239,14 +242,24 @@ class VolumeManagerLVM(VolumeManagerBase):
         """
         fstab_entries = []
         for volume_mount in self.mount_list:
-            if not self._is_root_volume(volume_mount.device):
-                mount_path = '/'.join(volume_mount.mountpoint.split('/')[3:])
-                if not mount_path.startswith('/'):
-                    mount_path = '/' + mount_path
+            volume_name = self._get_volume_name_from_volume_map(
+                volume_mount.device
+            )
+            if not self._is_root_volume(volume_name):
+                path_start_index = len(defaults.TEMP_DIR.split(os.sep)) + 1
+                mount_path = os.sep.join(
+                    volume_mount.mountpoint.split(os.sep)[path_start_index:]
+                )
+                fs_check = self._is_volume_enabled_for_fs_check(volume_name)
+                if not mount_path.startswith(os.sep):
+                    mount_path = os.sep + mount_path
                 fstab_entry = ' '.join(
                     [
                         volume_mount.device, mount_path, filesystem_name,
-                        self.mount_options, '1 2'
+                        self.mount_options,
+                        '0 {fs_passno}'.format(
+                            fs_passno='2' if fs_check else '0'
+                        )
                     ]
                 )
                 fstab_entries.append(fstab_entry)
@@ -262,8 +275,11 @@ class VolumeManagerLVM(VolumeManagerBase):
         :rtype: dict
         """
         volumes = {}
+        path_start_index = len(defaults.TEMP_DIR.split(os.sep)) + 1
         for volume_mount in self.mount_list:
-            mount_path = '/'.join(volume_mount.mountpoint.split('/')[3:])
+            mount_path = os.sep.join(
+                volume_mount.mountpoint.split(os.sep)[path_start_index:]
+            )
             if mount_path:
                 volumes[mount_path] = {
                     'volume_options': self.mount_options,
@@ -296,6 +312,13 @@ class VolumeManagerLVM(VolumeManagerBase):
                 if not volume_mount.umount():
                     all_volumes_umounted = False
         return all_volumes_umounted
+
+    def _is_volume_enabled_for_fs_check(self, volume_name):
+        for volume in self.volumes:
+            if volume_name == volume.name:
+                if 'enable-for-filesystem-check' in volume.attributes:
+                    return True
+        return False
 
     def _create_filesystem(self, volume_name, volume_label, filesystem_name):
         device_node = self.volume_map[volume_name]
@@ -338,6 +361,11 @@ class VolumeManagerLVM(VolumeManagerBase):
             ['/dev/', self.volume_group, '/', volume_name]
         )
 
+    def _get_volume_name_from_volume_map(self, device):
+        for volume_name, volume_path in self.volume_map.items():
+            if volume_path == device:
+                return volume_name
+
     def _volume_group_in_use_on_host_system(self, volume_group_name):
         vgs_call = Command.run(
             [
@@ -354,21 +382,20 @@ class VolumeManagerLVM(VolumeManagerBase):
             # group name, it is considered to be not used
             return False
 
-    def _is_root_volume(self, name):
+    def _is_root_volume(self, volume_name):
         for volume in self.volumes:
-            if name in volume.name and volume.is_root_volume:
+            if volume_name == volume.name and volume.is_root_volume:
                 return True
 
-    def _is_swap_volume(self, name):
+    def _is_swap_volume(self, volume_name):
         for volume in self.volumes:
-            if name in volume.name and volume.label == 'SWAP':
+            if volume_name == volume.name and volume.label == 'SWAP':
                 return True
 
     def __del__(self):
         if self.volume_group:
             log.info('Cleaning up %s instance', type(self).__name__)
             if self.umount_volumes():
-                Path.wipe(self.mountpoint)
                 try:
                     Command.run(
                         ['vgchange'] + self.lvm_tool_options + [
@@ -380,4 +407,3 @@ class VolumeManagerLVM(VolumeManagerBase):
                         'volume group %s still busy', self.volume_group
                     )
                     return
-        self._cleanup_tempdirs()

@@ -44,7 +44,7 @@
 
 Name:           python-kiwi
 Version:        %%VERSION
-Provides:       kiwi-schema = 7.3
+Provides:       kiwi-schema = 7.4
 Release:        0
 Url:            https://github.com/OSInside/kiwi
 Summary:        KIWI - Appliance Builder Next Generation
@@ -83,15 +83,19 @@ Obsoletes:      kiwi-image-tbz-requires < %{version}-%{release}
 %if "%{_vendor}" != "debbuild"
 Provides:       kiwi-image:tbz
 %endif
-# tools used by kiwi
+# tools conditionally used by kiwi
 %if 0%{?fedora} || 0%{?rhel} >= 8
 Recommends:     gnupg2
+Recommends:     debootstrap
+Recommends:     dpkg
 %endif
 %if 0%{?suse_version}
-# If it's available, let's pull it in
-Recommends:     dnf
 Recommends:     gpg2
+Recommends:     dnf
+Recommends:     debootstrap
+Recommends:     dpkg
 %endif
+# package managers required by distro
 %if 0%{?fedora} || 0%{?rhel} >= 8 || 0%{?suse_version} >= 1550
 Provides:       kiwi-packagemanager:microdnf
 Requires:       microdnf
@@ -107,12 +111,16 @@ Provides:       kiwi-packagemanager:zypper
 %endif
 %if 0%{?debian} || 0%{?ubuntu}
 Requires:       debootstrap
+Requires:       dpkg
 Requires:       gnupg
 %endif
+# tools required by kiwi
 Requires:       kiwi-tools
 Requires:       mtools
 Requires:       rsync
 Requires:       tar >= 1.2.7
+Requires:       lsof
+Requires:       openssl
 
 %description -n kiwi-systemdeps-core
 This metapackage installs the necessary system dependencies
@@ -227,16 +235,10 @@ Requires:       btrfs-progs
 %endif
 %endif
 %if 0%{?suse_version}
-Requires:       gptfdisk
 Requires:       squashfs
 %else
-Requires:       gdisk
 Requires:       squashfs-tools
 %endif
-Requires:       lvm2
-Requires:       parted
-Requires:       kpartx
-Requires:       cryptsetup
 %if "%{_vendor}" == "debbuild"
 Requires:       qemu-utils
 %else
@@ -266,6 +268,16 @@ Provides:       kiwi-image:vmx
 Requires:       kiwi-systemdeps-filesystems = %{version}-%{release}
 Requires:       kiwi-systemdeps-bootloaders = %{version}-%{release}
 Requires:       kiwi-systemdeps-iso-media = %{version}-%{release}
+%if 0%{?suse_version}
+Requires:       gptfdisk
+%else
+Requires:       gdisk
+%endif
+Requires:       lvm2
+Requires:       parted
+Requires:       kpartx
+Requires:       cryptsetup
+Requires:       mdadm
 
 %description -n kiwi-systemdeps-disk-images
 Host setup helper to pull in all packages required/useful on
@@ -321,12 +333,14 @@ Group:          %{pygroup}
 Obsoletes:      python2-kiwi
 Conflicts:      python2-kiwi
 Conflicts:      kiwi-man-pages < %{version}
+Requires:       screen
 Requires:       python%{python3_pkgversion} >= 3.6
 %if 0%{?ubuntu} || 0%{?debian}
 Requires:       python%{python3_pkgversion}-yaml
 %else
 Requires:       python%{python3_pkgversion}-PyYAML
 %endif
+Requires:       python%{python3_pkgversion}-simplejson
 Requires:       python%{python3_pkgversion}-docopt
 Requires:       python%{python3_pkgversion}-lxml
 Requires:       python%{python3_pkgversion}-requests
@@ -423,6 +437,10 @@ Requires:       lvm2
 Requires:       mdadm
 Requires:       parted
 Requires:       util-linux
+# lsblk is part of util-linux-systemd on openSUSE
+%if 0%{?suse_version}
+Requires:       util-linux-systemd
+%endif
 Requires:       xfsprogs
 Requires:       dialog
 Requires:       pv
@@ -496,6 +514,10 @@ Requires:       dialog
 Requires:       xfsprogs
 Requires:       e2fsprogs
 Requires:       util-linux
+# lsblk is part of util-linux-systemd on openSUSE
+%if 0%{?suse_version}
+Requires:       util-linux-systemd
+%endif
 %if 0%{?debian} || 0%{?ubuntu}
 Requires:       dmsetup
 Requires:       dracut-network
@@ -526,7 +548,6 @@ Summary:        KIWI - Dracut module for vmx(+overlay) image type
 BuildRequires:  dracut
 %endif
 Requires:       dracut-kiwi-lib = %{version}-%{release}
-Requires:       util-linux
 Requires:       dracut
 License:        GPL-3.0-or-later
 Group:          %{sysgroup}

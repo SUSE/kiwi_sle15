@@ -19,9 +19,9 @@ import os
 import logging
 import collections
 from typing import Dict
-from tempfile import NamedTemporaryFile
 
 # project
+from kiwi.utils.temporary import Temporary
 from kiwi.xml_state import XMLState
 from kiwi.system.shell import Shell
 from kiwi.defaults import Defaults
@@ -82,7 +82,7 @@ class Profile:
         :param str filename: file path name
         """
         sorted_profile = self.get_settings()
-        temp_profile = NamedTemporaryFile()
+        temp_profile = Temporary().new_file()
         with open(temp_profile.name, 'w') as profile:
             for key, value in list(sorted_profile.items()):
                 profile.write(
@@ -99,7 +99,6 @@ class Profile:
         # kiwi_oemmultipath_scan
         # kiwi_oemswapMB
         # kiwi_oemrootMB
-        # kiwi_oemswap
         # kiwi_oemresizeonce
         # kiwi_oempartition_install
         # kiwi_oemdevicefilter
@@ -131,16 +130,6 @@ class Profile:
                 self._text(oemconfig.get_oem_swapsize())
             self.dot_profile['kiwi_oemrootMB'] = \
                 self._text(oemconfig.get_oem_systemsize())
-
-            # kiwi_oemconfig is used in older boot code to run the swap
-            # creation and setup code at boot time. This version of kiwi
-            # handles swap as part of the build process and therefore
-            # has to disable swap handling such that we stay backward
-            # compatbile for some time.
-            # OBSOLETE: to be removed at: 2020-05-25
-            self.dot_profile['kiwi_oemswap'] = \
-                self._text(False)
-
             self.dot_profile['kiwi_oemresizeonce'] = \
                 self._text(oemconfig.get_oem_resize_once())
             self.dot_profile['kiwi_oempartition_install'] = \
@@ -345,6 +334,8 @@ class Profile:
             type_section.get_vga()
         self.dot_profile['kiwi_startsector'] = \
             self.xml_state.get_disk_start_sector()
+        self.dot_profile['kiwi_luks_empty_passphrase'] = \
+            True if type_section.get_luks() == '' else False
 
     def _profile_names_to_profile(self):
         # kiwi_profiles

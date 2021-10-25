@@ -51,7 +51,9 @@ follows:
 
 .. code:: bash
 
-    $ qemu -cdrom {exc_image_base_name}.x86_64-{exc_image_version}.install.iso
+    $ sudo qemu -cdrom \
+          {exc_image_base_name}.x86_64-{exc_image_version}.install.iso \
+          -serial stdio
 
 .. note:: Enough Main Memory
 

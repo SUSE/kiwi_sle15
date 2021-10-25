@@ -19,16 +19,15 @@ import glob
 import os
 import logging
 import copy
+import pathlib
 from collections import OrderedDict
 from collections import namedtuple
-from tempfile import NamedTemporaryFile
-from typing import (
-    Any, Optional
-)
+from typing import Any
 
 # project
 import kiwi.defaults as defaults
 
+from kiwi.xml_parse import repository
 from kiwi.utils.fstab import Fstab
 from kiwi.xml_state import XMLState
 from kiwi.runtime_config import RuntimeConfig
@@ -152,7 +151,11 @@ class SystemSetup:
             repo_components = xml_repo.get_components()
             repo_repository_gpgcheck = xml_repo.get_repository_gpgcheck()
             repo_package_gpgcheck = xml_repo.get_package_gpgcheck()
+            repo_customization_script = self._get_repo_customization_script(
+                xml_repo
+            )
             repo_sourcetype = xml_repo.get_sourcetype()
+            repo_use_for_bootstrap = False
             uri = Uri(repo_source, repo_type)
             repo_source_translated = uri.translate(
                 check_build_environment=False
@@ -168,7 +171,8 @@ class SystemSetup:
                 repo_type, repo_priority, repo_dist, repo_components,
                 repo_user, repo_secret, uri.credentials_file_name(),
                 repo_repository_gpgcheck, repo_package_gpgcheck,
-                repo_sourcetype
+                repo_sourcetype, repo_use_for_bootstrap,
+                repo_customization_script
             )
 
     def import_cdroot_files(self, target_dir: str) -> None:
@@ -493,7 +497,7 @@ class SystemSetup:
                 options=['-a']
             )
 
-    def export_package_list(self, target_dir: str) -> Optional[str]:
+    def export_package_list(self, target_dir: str) -> str:
         """
         Export image package list as metadata reference
         used by the open buildservice
@@ -522,9 +526,9 @@ class SystemSetup:
         elif packager == 'pacman':
             self._export_pacman_package_list(filename)
             return filename
-        return None
+        return ''
 
-    def export_package_changes(self, target_dir: str) -> Optional[str]:
+    def export_package_changes(self, target_dir: str) -> str:
         """
         Export image package changelog for comparision of
         actual changes of the installed packages
@@ -551,9 +555,9 @@ class SystemSetup:
             elif packager == 'dpkg':
                 self._export_deb_package_changes(filename)
                 return filename
-        return None
+        return ''
 
-    def export_package_verification(self, target_dir: str) -> Optional[str]:
+    def export_package_verification(self, target_dir: str) -> str:
         """
         Export package verification result as metadata reference
         used by the open buildservice
@@ -579,7 +583,7 @@ class SystemSetup:
         elif packager == 'dpkg':
             self._export_deb_package_verification(filename)
             return filename
-        return None
+        return ''
 
     def call_disk_script(self) -> None:
         """
@@ -587,6 +591,14 @@ class SystemSetup:
         """
         self._call_script(
             defaults.POST_DISK_SYNC_SCRIPT
+        )
+
+    def call_post_bootstrap_script(self) -> None:
+        """
+        Call post_bootstrap.sh script chrooted
+        """
+        self._call_script(
+            defaults.POST_BOOTSTRAP_SCRIPT
         )
 
     def call_config_script(self) -> None:
@@ -732,11 +744,9 @@ class SystemSetup:
             'partition_filesystem':
                 self.root_dir + '/recovery.tar.filesystem'
         }
-        recovery_archive = NamedTemporaryFile(
-            delete=False
-        )
+        pathlib.Path(metadata['archive_name']).touch()
         archive = ArchiveTar(
-            filename=recovery_archive.name,
+            filename=metadata['archive_name'],
             create_from_file_list=False
         )
         archive.create(
@@ -747,9 +757,6 @@ class SystemSetup:
                 '--hard-dereference',
                 '--preserve-permissions'
             ]
-        )
-        Command.run(
-            ['mv', recovery_archive.name, metadata['archive_name']]
         )
         # recovery.tar.filesystem
         recovery_filesystem = self.xml_state.build_type.get_filesystem()
@@ -915,6 +922,10 @@ class SystemSetup:
             'script_type', ['filepath', 'raise_if_not_exists']
         )
         custom_scripts = {
+            defaults.POST_BOOTSTRAP_SCRIPT: script_type(
+                filepath=defaults.POST_BOOTSTRAP_SCRIPT,
+                raise_if_not_exists=False
+            ),
             defaults.POST_PREPARE_SCRIPT: script_type(
                 filepath=defaults.POST_PREPARE_SCRIPT,
                 raise_if_not_exists=False
@@ -987,7 +998,15 @@ class SystemSetup:
         script_path = os.path.join(self.root_dir, 'image', name)
         if os.path.exists(script_path):
             options = option_list or []
-            command = ['chroot', self.root_dir]
+            if log.getLogLevel() == logging.DEBUG and not \
+               Defaults.is_buildservice_worker():
+                # In debug mode run scripts in a screen session to
+                # allow attaching and debugging
+                command = ['screen', '-t', '-X', 'chroot', self.root_dir]
+            else:
+                # In standard mode run scripts without a terminal
+                # associated to them
+                command = ['chroot', self.root_dir]
             if not Path.access(script_path, os.X_OK):
                 command.append('bash')
             command.append(
@@ -1020,9 +1039,18 @@ class SystemSetup:
                 'cd', working_directory, '&&',
                 'bash', '--norc', script_path, ' '.join(option_list)
             ]
-            config_script = Command.call(
-                ['bash', '-c', ' '.join(bash_command)]
-            )
+            if log.getLogLevel() == logging.DEBUG and not \
+               Defaults.is_buildservice_worker():
+                # In debug mode run scripts in a screen session to
+                # allow attaching and debugging
+                config_script = Command.call(
+                    ['screen', '-t', '-X', 'bash', '-c', ' '.join(bash_command)]
+                )
+            else:
+                # In standard mode run script through bash
+                config_script = Command.call(
+                    ['bash', '-c', ' '.join(bash_command)]
+                )
             process = CommandProcess(
                 command=config_script, log_topic='Calling ' + name + ' script'
             )
@@ -1230,3 +1258,9 @@ class SystemSetup:
         data.sync_data(
             options=sync_options
         )
+
+    def _get_repo_customization_script(self, xml_repo: repository) -> str:
+        script_path = xml_repo.get_customize()
+        if script_path and not os.path.isabs(script_path):
+            script_path = os.path.join(self.description_dir, script_path)
+        return script_path

@@ -4,15 +4,15 @@ from mock import (
 from pytest import raises
 from collections import namedtuple
 
+from kiwi.defaults import Defaults
 from kiwi.iso_tools.cdrtools import IsoToolsCdrTools
 
 from kiwi.exceptions import KiwiIsoToolError
 
 
 class TestIsoToolsCdrTools:
-    @patch('platform.machine')
-    def setup(self, mock_machine):
-        mock_machine.return_value = 'x86_64'
+    def setup(self):
+        Defaults.set_platform_name('x86_64')
         self.iso_tool = IsoToolsCdrTools('source-dir')
 
     @patch('kiwi.iso_tools.cdrtools.Path.which')
@@ -35,7 +35,7 @@ class TestIsoToolsCdrTools:
             self.iso_tool.get_tool_name()
 
     @patch('os.walk')
-    @patch('kiwi.iso_tools.cdrtools.NamedTemporaryFile')
+    @patch('kiwi.iso_tools.cdrtools.Temporary.new_file')
     def test_init_iso_creation_parameters(
         self, mock_tempfile, mock_walk
     ):

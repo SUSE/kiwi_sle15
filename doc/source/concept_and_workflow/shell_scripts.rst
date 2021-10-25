@@ -13,6 +13,14 @@ User Defined Scripts
 {kiwi} supports the following optional scripts that it runs in a
 root environment (chroot) containing your new appliance:
 
+post_bootstrap.sh
+  runs at the end of the `bootstrap` phase as part of the
+  :ref:`prepare step <prepare-step>`. The script can be used to
+  configure the package manager with additional settings that
+  should apply in the following chroot based installation step
+  which completes the installation. The script is not dedicated to
+  this use and can also be used for other tasks.
+
 config.sh
   runs at the end of the :ref:`prepare step <prepare-step>`
   and after users have been set and the *overlay tree directory*
@@ -44,6 +52,53 @@ disk.sh
 bit is set (in that case a shebang is mandatory) otherwise they will be
 invoked via the BASH. If a script exits with a non-zero exit code
 then {kiwi} will report the failure and abort the image creation.
+
+Developing/Debugging Scripts
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When creating a custom script it usually takes some iterations of
+try and testing until a final stable state is reached. To support
+developers with this task {kiwi} calls scripts associated with a
+`screen` session. The connection to `screen` is only done if {kiwi}
+is called with the `--debug` option.
+
+In this mode a script can start like the following template:
+
+.. code:: bash
+
+   # The magic bits are still not set
+
+   echo "break"
+   /bin/bash
+
+At call time of the script a `screen` session executes and you get
+access to the break in shell. From this environment the needed script
+code can be implemented. Once the shell is closed the {kiwi} process
+continues.
+
+Apart from providing a full featured terminal throughout the
+execution of the script code, there is also the advantage to
+have control on the session during the process of the image
+creation. Listing the active sessions for script execution
+can be done as follows:
+
+.. code:: bash
+
+   $ sudo screen -list
+
+   There is a screen on:
+        19699.pts-4.asterix     (Attached)
+   1 Socket in /run/screens/S-root.
+
+.. note::
+
+   As shown above the screen session(s) to execute script code
+   provides extended control which could also be considered a
+   security risk. Because of that {kiwi} only runs scripts through
+   `screen` when explicitly enabled via the `--debug` switch.
+   For production processes all scripts should run in their
+   native way and should not require a terminal to operate
+   correctly !
 
 Script Template for config.sh / images.sh
 -----------------------------------------
@@ -92,35 +147,13 @@ name ``base``.
 
 The following list describes all functions provided by :file:`.kconfig`:
 
-baseCleanMount
-  Unmount the filesystems :file:`/proc`, :file:`/dev/pts`, :file:`/sys` and
-  :file:`/proc/sys/fs/binfmt_misc`.
-
-baseGetPackagesForDeletion
-  Return the name(s) of the packages marked for deletion in the image
-  description.
-
-baseGetProfilesUsed
-  Return the name(s) of profiles used to build this image.
-
 baseSetRunlevel {value}
   Set the default run level.
-
-baseSetupUserPermissions
-  Set the ownership of all home directories and their content to the correct
-  users and groups listed in :file:`/etc/passwd`.
 
 baseStripAndKeep {list of info-files to keep}
   Helper function for the ``baseStrip*`` functions, reads the list of files
   to check from stdin for removing
   params: files which should be kept
-
-baseStripDocs {list of docu names to keep}
-  Remove all documentation files, except for the ones given as the
-  parameter.
-
-baseStripInfos {list of info-files to keep}
-  Remove all info files, except for the one given as the parameter.
 
 baseStripLocales {list of locales}
   Remove all locales, except for the ones given as the parameter.
@@ -128,27 +161,12 @@ baseStripLocales {list of locales}
 baseStripTranslations {list of translations}
   Remove all translations, except for the ones given as the parameter.
 
-baseStripMans {list of manpages to keep}
-  Remove all manual pages, except for the ones given as the parameter.
-
-  Example:
-
-  .. code:: bash
-
-     baseStripMans more less
-
-suseImportBuildKey
-  Add the SUSE build keys to the RPM database.
-
 baseStripUnusedLibs
   Remove libraries which are not directly linked against applications
   in the bin directories.
 
 baseUpdateSysConfig {filename} {variable} {value}
   Update the contents of a sysconfig variable
-
-suseConfig
-  This function is deprecated and is a NOP.
 
 baseSystemdServiceInstalled {service}
   Prints the path of the first found systemd unit or mount with name passed
@@ -191,19 +209,11 @@ suseService {servicename} {on|off}
   Calls baseService and exists only for compatibility
   reasons.
 
-suseActivateDefaultServices
-  Activates the `network` and `cron` services to run at boot.
-
 suseSetupProduct
   Creates the :file:`/etc/products.d/baseproduct` link
   pointing to the product referenced by either :file:`/etc/SuSE-brand` or
   :file:`/etc/os-release` or the latest `.prod` file available in
   :file:`/etc/products.d`
-
-suseSetupProductInformation
-  Uses :command:`zypper` to search for the installed product
-  and installs all product specific packages. This function fails
-  when :command:`zypper` is not the appliances package manager.
 
 baseVagrantSetup
   Configures the image to work as a vagrant box by performing the following
@@ -224,10 +234,6 @@ Echo {echo commandline}
 
 Rm {list of files}
   Helper function to delete files and log the deletion.
-
-Rpm {rpm commandline}
-  Helper function for calling ``rpm``: forwards all commandline arguments to
-  ``rpm`` and logs the call.
 
 Profile Environment Variables
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

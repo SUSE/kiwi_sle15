@@ -35,7 +35,7 @@ is required:
 
    .. code:: bash
 
-       $ cd kiwi-descriptions/suse/x86_64/{exc_description}
+       $ cd kiwi/build-tests/{exc_description_pxe}
        $ mkdir -p root/etc/dracut.conf.d
        $ cd root/etc/dracut.conf.d
        $ echo 'add_dracutmodules+=" kiwi-overlay "' > overlay.conf
@@ -151,4 +151,4 @@ from the network:
 
    .. code:: bash
 
-      $ qemu -boot n
+      $ sudo qemu -boot n

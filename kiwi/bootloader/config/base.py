@@ -25,6 +25,7 @@ from kiwi.mount_manager import MountManager
 from kiwi.storage.setup import DiskSetup
 from kiwi.path import Path
 from kiwi.defaults import Defaults
+from kiwi.utils.block import BlockID
 
 from kiwi.exceptions import (
     KiwiBootLoaderTargetError
@@ -76,11 +77,11 @@ class BootLoaderConfigBase:
         """
         raise NotImplementedError
 
-    def write_meta_data(self, root_uuid=None, boot_options=''):
+    def write_meta_data(self, root_device=None, boot_options=''):
         """
         Write bootloader setup meta data files
 
-        :param string root_uuid: root device UUID
+        :param string root_device: root device node
         :param string boot_options: kernel options as string
 
         Implementation in specialized bootloader class optional
@@ -260,11 +261,11 @@ class BootLoaderConfigBase:
             return False
         return True
 
-    def get_boot_cmdline(self, uuid=None):
+    def get_boot_cmdline(self, boot_device=None):
         """
         Boot commandline arguments passed to the kernel
 
-        :param string uuid: boot device UUID
+        :param string boot_device: boot device node
 
         :return: kernel boot arguments
 
@@ -274,7 +275,7 @@ class BootLoaderConfigBase:
         custom_cmdline = self.xml_state.build_type.get_kernelcmdline()
         if custom_cmdline:
             cmdline += ' ' + custom_cmdline
-        custom_root = self._get_root_cmdline_parameter(uuid)
+        custom_root = self._get_root_cmdline_parameter(boot_device)
         if custom_root and custom_root not in cmdline:
             cmdline += ' ' + custom_root
         return cmdline.strip()
@@ -547,8 +548,9 @@ class BootLoaderConfigBase:
         self.device_mount.bind_mount()
         self.proc_mount.bind_mount()
 
-    def _get_root_cmdline_parameter(self, uuid):
+    def _get_root_cmdline_parameter(self, boot_device):
         cmdline = self.xml_state.build_type.get_kernelcmdline()
+        persistency_type = self.xml_state.build_type.get_devicepersistency()
         if cmdline and 'root=' in cmdline:
             log.info(
                 'Kernel root device explicitly set via kernelcmdline'
@@ -556,14 +558,17 @@ class BootLoaderConfigBase:
             root_search = re.search(r'(root=(.*)[ ]+|root=(.*)$)', cmdline)
             if root_search:
                 return root_search.group(1)
-
-        if uuid and self.xml_state.build_type.get_overlayroot():
-            return 'root=overlay:UUID={0}'.format(uuid)
-        elif uuid:
-            return 'root=UUID={0} rw'.format(uuid)
+        if boot_device:
+            block_operation = BlockID(boot_device)
+            blkid_type = 'LABEL' if persistency_type == 'by-label' else 'UUID'
+            location = block_operation.get_blkid(blkid_type)
+            if self.xml_state.build_type.get_overlayroot():
+                return f'root=overlay:{blkid_type}={location}'
+            else:
+                return f'root={blkid_type}={location}'
         else:
             log.warning(
-                'root=UUID=<uuid> setup requested, but uuid is not provided'
+                'No explicit root= cmdline provided'
             )
 
     def __del__(self):

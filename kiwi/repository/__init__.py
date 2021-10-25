@@ -49,9 +49,8 @@ class Repository(metaclass=ABCMeta):
         name_map = {
             'zypper': ['zypper', 'Zypper'],
             'dnf': ['dnf', 'Dnf'],
-            'yum': ['dnf', 'Dnf'],
             'microdnf': ['dnf', 'Dnf'],
-            'apt-get': ['apt', 'Apt'],
+            'apt': ['apt', 'Apt'],
             'pacman': ['pacman', 'Pacman']
         }
         try:

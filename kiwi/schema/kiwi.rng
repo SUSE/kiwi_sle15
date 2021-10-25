@@ -130,7 +130,7 @@ second the location of the XSD Schema
     <define name="k.image.schemaversion.attribute">
       <attribute name="schemaversion">
         <a:documentation>The allowed Schema version (fixed value)</a:documentation>
-        <value>7.3</value>
+        <value>7.4</value>
       </attribute>
     </define>
     <define name="k.image.id">
@@ -166,13 +166,16 @@ named /etc/ImageID</a:documentation>
         <a:documentation>The root element of the configuration file   </a:documentation>
         <interleave>
           <ref name="k.image.attlist"/>
+          <zeroOrMore>
+            <ref name="k.include"/>
+          </zeroOrMore>
           <ref name="k.description"/>
           <oneOrMore>
             <ref name="k.preferences"/>
           </oneOrMore>
-          <optional>
+          <zeroOrMore>
             <ref name="k.profiles"/>
-          </optional>
+          </zeroOrMore>
           <zeroOrMore>
             <ref name="k.users"/>
           </zeroOrMore>
@@ -359,11 +362,22 @@ file was fetched</a:documentation>
     <define name="k.archive.bootinclude.attribute">
       <ref name="k.bootinclude.attribute"/>
     </define>
+    <define name="k.archive.target_dir.attribute">
+      <!--
+        Extract tarball to the specified target directory.
+        By default the target directory is the root(/) of
+        the image.
+      -->
+      <attribute name="target_dir"/>
+    </define>
     <define name="k.archive.attlist">
       <interleave>
         <ref name="k.archive.name.attribute"/>
         <optional>
           <ref name="k.archive.bootinclude.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.archive.target_dir.attribute"/>
         </optional>
       </interleave>
     </define>
@@ -1268,9 +1282,8 @@ the device is looked up in /dev/disk/by-* and /dev/mapper/*</a:documentation>
   <div>
     <define name="k.packagemanager.content">
       <choice>
-        <value>apt-get</value>
+        <value>apt</value>
         <value>zypper</value>
-        <value>yum</value>
         <value>dnf</value>
         <value>microdnf</value>
         <value>pacman</value>
@@ -1493,6 +1506,14 @@ appended into the repository configuration file.</a:documentation>
         <data type="boolean"/>
       </attribute>
     </define>
+    <define name="k.repository.customize.attribute">
+      <attribute name="customize">
+        <a:documentation>Specify the path to a customization script.
+The script receives the repo file according to the
+used package manager as a parameter such that custom
+modifications can be placed when needed</a:documentation>
+      </attribute>
+    </define>
     <define name="k.repository.priority.attribute">
       <attribute name="priority">
         <a:documentation>Channel priority assigned to all packages available in
@@ -1575,6 +1596,9 @@ last one is picked.</a:documentation>
         </optional>
         <optional>
           <ref name="k.repository.repository_gpgcheck.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.repository.customize.attribute"/>
         </optional>
         <optional>
           <ref name="k.repository.package_gpgcheck.attribute"/>
@@ -2083,7 +2107,6 @@ storage device names. By default by-uuid is used.</a:documentation>
         <choice>
           <value>by-uuid</value>
           <value>by-label</value>
-          <value>by-path</value>
         </choice>
       </attribute>
     </define>
@@ -2334,17 +2357,17 @@ create a hybrid GPT/MBR partition table</a:documentation>
     </define>
     <define name="k.type.initrd_system.attribute">
       <attribute name="initrd_system">
-        <a:documentation>specify which initrd builder to use, default is kiwi's
-builtin architecture. Be aware that the dracut initrd
-system does not support all features of the kiwi initrd</a:documentation>
+        <a:documentation>specify which initrd builder to use, default is dracut
+initrd architecture.</a:documentation>
         <choice>
           <value>kiwi</value>
           <value>dracut</value>
+          <value>none</value>
         </choice>
       </attribute>
       <sch:pattern id="initrd_system" is-a="image_type">
         <sch:param name="attr" value="initrd_system"/>
-        <sch:param name="types" value="oem pxe"/>
+        <sch:param name="types" value="oem pxe kis"/>
       </sch:pattern>
     </define>
     <define name="k.type.image.attribute">
@@ -2492,7 +2515,7 @@ mount that filesystem while booting</a:documentation>
     </define>
     <define name="k.type.luksOS.attribute">
       <attribute name="luksOS">
-        <a:documentation>With the luksOS value a predefined set of ciper, keysize
+        <a:documentation>With the luksOS value a predefined set of cipher, keysize
 and hash format options is passed to the cryptsetup call
 in order to create a format compatible to the specified
 distribution</a:documentation>
@@ -2630,6 +2653,26 @@ default.</a:documentation>
         <sch:param name="attr" value="disk_start_sector"/>
         <sch:param name="types" value="oem"/>
       </sch:pattern>
+    </define>
+    <define name="k.type.bundle_format.attribute">
+      <attribute name="bundle_format">
+        <a:documentation>Specifies the bundle format pattern
+The format string can contain placeholders for the
+following elements
+
+%N : Image name
+%P : Concatenated profile name (_)
+%A : Architecture name
+%I : Bundle ID
+%T : Image build type name
+%M : Image Major version number
+%m : Image Minor version number
+%p : Image Patch version number
+
+The specified bundle_format will be used as base name
+for all target image files at call time of:
+kiwi-ng result bundle ...</a:documentation>
+      </attribute>
     </define>
     <define name="k.type.attlist">
       <interleave>
@@ -2815,6 +2858,9 @@ default.</a:documentation>
         </optional>
         <optional>
           <ref name="k.type.disk_start_sector.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.bundle_format.attribute"/>
         </optional>
       </interleave>
     </define>
@@ -3182,6 +3228,18 @@ add "M" and/or "G" as postfix</a:documentation>
         <data type="boolean"/>
       </attribute>
     </define>
+    <define name="k.volume.filesystem_check">
+      <attribute name="filesystem_check">
+        <a:documentation>Indicate that this filesystem should perform the validation
+to become filesystem checked. The actual constraints if the
+check is performed or not depends on systemd and filesystem
+specific components. If not set or set to false no system
+component will be triggered to run an eventual filesystem
+check, which results in this filesystem to be never checked.
+The latter is the default.</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+    </define>
     <define name="k.volume.label.attribute">
       <attribute name="label">
         <a:documentation>filesystem label name of the volume.</a:documentation>
@@ -3191,6 +3249,9 @@ add "M" and/or "G" as postfix</a:documentation>
       <interleave>
         <optional>
           <ref name="k.volume.copy_on_write.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.volume.filesystem_check"/>
         </optional>
         <optional>
           <ref name="k.volume.freespace.attribute"/>
@@ -3213,6 +3274,27 @@ add "M" and/or "G" as postfix</a:documentation>
 on an extra volume.</a:documentation>
         <ref name="k.volume.attlist"/>
         <empty/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    main block: <include>
+    
+  -->
+  <div>
+    <define name="k.include.from.attribute">
+      <attribute name="from">
+        <a:documentation>include given file and replace the include
+statement with its contents</a:documentation>
+      </attribute>
+    </define>
+    <define name="k.include.attlist">
+      <ref name="k.include.from.attribute"/>
+    </define>
+    <define name="k.include">
+      <element name="include">
+        <ref name="k.include.attlist"/>
       </element>
     </define>
   </div>

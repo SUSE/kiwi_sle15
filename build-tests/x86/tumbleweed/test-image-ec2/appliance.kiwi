@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.3" name="kiwi-test-image-ec2">
+<image schemaversion="7.4" name="kiwi-test-image-ec2">
     <description type="system">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.de</contact>
@@ -11,7 +11,7 @@
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
-            <bootloader name="grub2" timeout="1" console="serial"/>
+            <bootloader name="grub2" timeout="10" console="serial"/>
             <size unit="M">10240</size>
             <machine xen_loader="pvgrub"/>
         </type>

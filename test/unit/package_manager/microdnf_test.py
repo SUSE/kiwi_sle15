@@ -50,13 +50,12 @@ class TestPackageManagerMicroDnf:
         self.manager.process_install_requests_bootstrap()
         mock_call.assert_called_once_with(
             [
-                'bash', '-c',
-                'microdnf --refresh --config /root-dir/dnf.conf -y '
-                '--installroot /root-dir --releasever=0 --noplugins '
-                '--setopt=cachedir=cache '
-                '--setopt=reposdir=repos '
-                '--setopt=varsdir=vars '
-                'install vim'
+                'microdnf', '--refresh', '--config', '/root-dir/dnf.conf',
+                '-y', '--installroot', '/root-dir', '--releasever=0',
+                '--noplugins', '--setopt=cachedir=cache',
+                '--setopt=reposdir=repos',
+                '--setopt=varsdir=vars',
+                'install', 'vim'
             ], ['env']
         )
 
@@ -68,9 +67,8 @@ class TestPackageManagerMicroDnf:
         self.manager.process_install_requests()
         mock_call.assert_called_once_with(
             [
-                'bash', '-c',
-                'chroot /root-dir microdnf --config /dnf.conf -y '
-                '--exclude=skipme install vim'
+                'chroot', '/root-dir', 'microdnf', '--config', '/dnf.conf',
+                '-y', '--exclude=skipme', 'install', 'vim'
             ], ['env']
         )
 
@@ -110,7 +108,7 @@ class TestPackageManagerMicroDnf:
         mock_run.side_effect = Exception
         self.manager.request_package('vim')
         with raises(KiwiRequestError):
-            self.manager.process_delete_requests()
+            self.manager.process_delete_requests(force=True)
         mock_run.assert_called_once_with(
             ['chroot', '/root-dir', 'rpm', '-q', 'vim']
         )

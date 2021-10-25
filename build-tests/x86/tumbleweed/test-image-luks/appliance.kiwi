@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.3" name="kiwi-test-image-luks">
+<image schemaversion="7.4" name="kiwi-test-image-luks">
     <description type="system">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.com</contact>
@@ -20,7 +20,7 @@
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
-            <bootloader name="grub2" console="serial"/>
+            <bootloader name="grub2" console="serial" timeout="10"/>
         </type>
     </preferences>
     <users>
@@ -59,7 +59,11 @@
         <package name="cryptsetup"/>
     </packages>
     <packages type="bootstrap">
+        <package name="gawk"/>
+        <package name="grep"/>
+        <package name="gzip"/>
         <package name="udev"/>
+        <package name="xz"/>
         <package name="filesystem"/>
         <package name="glibc-locale"/>
         <package name="cracklib-dict-full"/>

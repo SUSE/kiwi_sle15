@@ -17,6 +17,9 @@
 #
 import os
 import logging
+from typing import (
+    List, Optional, Dict
+)
 
 # project
 from kiwi.command import Command
@@ -25,6 +28,8 @@ from kiwi.boot.image.base import BootImageBase
 from kiwi.defaults import Defaults
 from kiwi.system.profile import Profile
 from kiwi.system.setup import SystemSetup
+from kiwi.system.identifier import SystemIdentifier
+from kiwi.mount_manager import MountManager
 
 log = logging.getLogger('kiwi')
 
@@ -33,12 +38,22 @@ class BootImageDracut(BootImageBase):
     """
     **Implements creation of dracut boot(initrd) images.**
     """
-    def post_init(self):
+    @staticmethod
+    def has_initrd_support() -> bool:
+        """
+        This instance supports initrd preparation and creation
+        """
+        return True
+
+    def post_init(self) -> None:
         """
         Post initialization method
 
         Initialize empty list of dracut caller options
         """
+        self.device_mount: Optional[MountManager] = None
+        self.proc_mount: Optional[MountManager] = None
+
         # signing keys are only taken into account on install of
         # packages. As dracut runs from a pre defined root directory,
         # no signing keys will be used in the process of creating
@@ -46,75 +61,66 @@ class BootImageDracut(BootImageBase):
         self.signing_keys = None
 
         # Initialize empty list of dracut caller options
-        self.dracut_options = []
-        self.included_files = []
-        self.included_files_install = []
-        self.modules = []
-        self.install_modules = []
-        self.add_modules = []
-        self.add_install_modules = []
-        self.omit_modules = []
-        self.omit_install_modules = []
+        self.dracut_options: List[str] = []
+        self.included_files: List[str] = []
+        self.modules: List[str] = []
+        self.add_modules: List[str] = []
+        self.omit_modules: List[str] = []
         self.available_modules = self._get_modules()
 
-    def include_file(self, filename, install_media=False):
+    def include_file(self, filename: str, install_media: bool = False) -> None:
         """
         Include file to dracut boot image
 
-        :param string filename: file path name
+        :param str filename: file path name
+        :param bool install_media: unused
         """
         self.included_files.append('--install')
         self.included_files.append(filename)
-        if install_media:
-            self.included_files_install.append('--install')
-            self.included_files_install.append(filename)
 
-    def include_module(self, module, install_media=False):
+    def include_module(self, module: str, install_media: bool = False) -> None:
         """
         Include module to dracut boot image
 
-        :param string module: module to include
-        :param bool install_media: include the module for install initrds
+        :param str module: module to include
+        :param bool install_media: unused
         """
         warn_msg = 'module "{0}" not included in initrd'.format(module)
         if self._module_available(module):
-            if install_media and module not in self.add_install_modules:
-                self.add_install_modules.append(module)
-            elif module not in self.add_modules:
+            if module not in self.add_modules:
                 self.add_modules.append(module)
         else:
             log.warning(warn_msg)
 
-    def omit_module(self, module, install_media=False):
+    def omit_module(self, module: str, install_media: bool = False) -> None:
         """
         Omit module to dracut boot image
 
-        :param string module: module to omit
-        :param bool install_media: omit the module for install initrds
+        :param str module: module to omit
+        :param bool install_media: unused
         """
-        if install_media and module not in self.omit_install_modules:
-            self.omit_install_modules.append(module)
-        elif module not in self.omit_modules:
+        if module not in self.omit_modules:
             self.omit_modules.append(module)
 
-    def set_static_modules(self, modules, install_media=False):
+    def set_static_modules(
+        self, modules: List[str], install_media: bool = False
+    ) -> None:
         """
         Set static dracut modules list for boot image
 
         :param list modules: list of the modules to include
-        :param bool install_media: lists the modules for install initrds
+        :param bool install_media: unused
         """
-        if install_media:
-            self.install_modules = modules
-        else:
-            self.modules = modules
+        self.modules = modules
 
-    def write_system_config_file(self, config, config_file=None):
+    def write_system_config_file(
+        self, config: Dict, config_file: Optional[str] = None
+    ) -> None:
         """
         Writes modules configuration into a dracut configuration file.
 
         :param dict config: a dictionary containing the modules to add and omit
-        :param string conf_file: configuration file to write
+        :param str conf_file: configuration file to write
         """
         dracut_config = []
         if not config_file:
@@ -141,11 +147,11 @@ class BootImageDracut(BootImageBase):
                     ' '.join(config['install_items'])
                 )
             )
-        if dracut_config:
-            with open(config_file, 'w') as config:
-                config.writelines(dracut_config)
+        if dracut_config and config_file:
+            with open(config_file, 'w') as config_handle:
+                config_handle.writelines(dracut_config)
 
-    def prepare(self):
+    def prepare(self) -> None:
         """
         Prepare dracut caller environment
 
@@ -158,15 +164,18 @@ class BootImageDracut(BootImageBase):
         self.dracut_options.append('--install')
         self.dracut_options.append('/.profile')
 
-    def create_initrd(self, mbrid=None, basename=None, install_initrd=False):
+    def create_initrd(
+        self, mbrid: Optional[SystemIdentifier] = None,
+        basename: Optional[str] = None, install_initrd: bool = False
+    ) -> None:
         """
         Create kiwi .profile environment to be included in dracut initrd.
         Call dracut as chroot operation to create the initrd and move
         the result into the image build target directory
 
-        :param object mbrid: unused
-        :param string basename: base initrd file name
-        :param bool install_initrd: installation media initrd
+        :param SystemIdentifier mbrid: unused
+        :param str basename: base initrd file name
+        :param bool install_initrd: unused
         """
         if self.is_prepared():
             log.info('Creating generic dracut initrd archive')
@@ -177,45 +186,44 @@ class BootImageDracut(BootImageBase):
                 dracut_initrd_basename = basename
             else:
                 dracut_initrd_basename = self.initrd_base_name
-            if install_initrd:
-                included_files = self.included_files_install
-                modules_args = [
-                    '--modules', ' {0} '.format(' '.join(self.install_modules))
-                ] if self.install_modules else []
-                modules_args += [
-                    '--add', ' {0} '.format(' '.join(self.add_install_modules))
-                ] if self.add_install_modules else []
-                modules_args += [
-                    '--omit', ' {0} '.format(
-                        ' '.join(self.omit_install_modules)
-                    )
-                ] if self.omit_install_modules else []
-            else:
-                included_files = self.included_files
-                modules_args = [
-                    '--modules', ' {0} '.format(' '.join(self.modules))
-                ] if self.modules else []
-                modules_args += [
-                    '--add', ' {0} '.format(' '.join(self.add_modules))
-                ] if self.add_modules else []
-                modules_args += [
-                    '--omit', ' {0} '.format(' '.join(self.omit_modules))
-                ] if self.omit_modules else []
+            included_files = self.included_files
+            modules_args = [
+                '--modules', ' {0} '.format(' '.join(self.modules))
+            ] if self.modules else []
+            modules_args += [
+                '--add', ' {0} '.format(' '.join(self.add_modules))
+            ] if self.add_modules else []
+            modules_args += [
+                '--omit', ' {0} '.format(' '.join(self.omit_modules))
+            ] if self.omit_modules else []
             dracut_initrd_basename += '.xz'
             options = self.dracut_options + modules_args + included_files
-            dracut_call = Command.run(
-                [
-                    'chroot', self.boot_root_directory,
-                    'dracut', '--verbose',
-                    '--no-hostonly',
-                    '--no-hostonly-cmdline',
-                    '--xz'
-                ] + options + [
-                    dracut_initrd_basename,
-                    kernel_details.version
-                ],
-                stderr_to_stdout=True
-            )
+            if kernel_details:
+                self.device_mount = MountManager(
+                    device='/dev',
+                    mountpoint=self.boot_root_directory + '/dev'
+                )
+                self.device_mount.bind_mount()
+                self.proc_mount = MountManager(
+                    device='/proc',
+                    mountpoint=self.boot_root_directory + '/proc'
+                )
+                self.proc_mount.bind_mount()
+                dracut_call = Command.run(
+                    [
+                        'chroot', self.boot_root_directory,
+                        'dracut', '--verbose',
+                        '--no-hostonly',
+                        '--no-hostonly-cmdline',
+                        '--xz'
+                    ] + options + [
+                        dracut_initrd_basename,
+                        kernel_details.version
+                    ],
+                    stderr_to_stdout=True
+                )
+                self.device_mount.umount()
+                self.proc_mount.umount()
             log.debug(dracut_call.output)
             Command.run(
                 [
@@ -230,7 +238,7 @@ class BootImageDracut(BootImageBase):
                 [self.target_dir, dracut_initrd_basename]
             )
 
-    def _get_modules(self):
+    def _get_modules(self) -> List[str]:
         cmd = Command.run(
             [
                 'chroot', self.boot_root_directory,
@@ -239,17 +247,24 @@ class BootImageDracut(BootImageBase):
         )
         return cmd.output.splitlines()
 
-    def _module_available(self, module):
+    def _module_available(self, module: str) -> bool:
         warn_msg = 'dracut module "{0}" not found in the root tree'
         if module in self.available_modules:
             return True
         log.warning(warn_msg.format(module))
         return False
 
-    def _create_profile_environment(self):
+    def _create_profile_environment(self) -> None:
         profile = Profile(self.xml_state)
         defaults = Defaults()
         defaults.to_profile(profile)
         profile.create(
             Defaults.get_profile_file(self.boot_root_directory)
         )
+
+    def __del__(self):
+        log.info('Cleaning up %s instance', type(self).__name__)
+        if self.device_mount:
+            self.device_mount.umount()
+        if self.proc_mount:
+            self.proc_mount.umount()

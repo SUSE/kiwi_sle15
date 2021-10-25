@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.3" name="kiwi-test-image-docker">
+<image schemaversion="7.4" name="kiwi-test-image-docker">
     <description type="system">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.com</contact>
@@ -27,7 +27,6 @@
         <source path="obsrepositories:/"/>
     </repository>
     <packages type="image">
-        <package name="grub"/>
         <package name="grub2"/>
         <package name="ncurses-utils"/>
         <package name="patterns-openSUSE-base"/>

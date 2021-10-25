@@ -180,11 +180,21 @@ class SystemPrepareTask(CliTask):
         )
         manager = system.setup_repositories(
             self.command_args['--clear-cache'],
-            self.command_args['--signing-key']
+            self.command_args['--signing-key'],
+            self.global_args['--target-arch']
         )
         system.install_bootstrap(
             manager, self.command_args['--add-bootstrap-package']
         )
+
+        setup = SystemSetup(
+            self.xml_state, abs_root_path
+        )
+        setup.import_description()
+
+        # call post_bootstrap.sh script if present
+        setup.call_post_bootstrap_script()
+
         system.install_system(
             manager
         )
@@ -203,15 +213,10 @@ class SystemPrepareTask(CliTask):
         defaults = Defaults()
         defaults.to_profile(profile)
 
-        setup = SystemSetup(
-            self.xml_state, abs_root_path
-        )
-
         profile.create(
             Defaults.get_profile_file(abs_root_path)
         )
 
-        setup.import_description()
         setup.import_overlay_files()
         setup.import_image_identifier()
         setup.setup_groups()
@@ -227,6 +232,8 @@ class SystemPrepareTask(CliTask):
 
         # setup permanent image repositories after cleanup
         setup.import_repositories_marked_as_imageinclude()
+
+        # call config.sh script if present
         setup.call_config_script()
 
         # handle uninstall package requests, gracefully uninstall

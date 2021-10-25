@@ -4,13 +4,13 @@ from mock import (
 
 import kiwi
 
+from kiwi.defaults import Defaults
 from kiwi.storage.subformat.qcow2 import DiskFormatQcow2
 
 
 class TestDiskFormatQcow2:
-    @patch('platform.machine')
-    def setup(self, mock_machine):
-        mock_machine.return_value = 'x86_64'
+    def setup(self):
+        Defaults.set_platform_name('x86_64')
         xml_data = Mock()
         xml_data.get_name = Mock(
             return_value='some-disk-image'
@@ -34,11 +34,11 @@ class TestDiskFormatQcow2:
         assert self.disk_format.options == ['-o', 'option=value']
 
     @patch('kiwi.storage.subformat.qcow2.Command.run')
-    @patch('kiwi.storage.subformat.qcow2.NamedTemporaryFile')
-    def test_create_image_format(self, mock_NamedTemporaryFile, mock_command):
+    @patch('kiwi.storage.subformat.qcow2.Temporary.new_file')
+    def test_create_image_format(self, mock_Temporary_new_file, mock_command):
         tmpfile = Mock()
         tmpfile.name = 'tmpfile'
-        mock_NamedTemporaryFile.return_value = tmpfile
+        mock_Temporary_new_file.return_value = tmpfile
         self.disk_format.create_image_format()
         assert mock_command.call_args_list == [
             call(

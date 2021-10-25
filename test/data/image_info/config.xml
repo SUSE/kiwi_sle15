@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.3" name="LimeJeOS" displayname="Bob">
+<image schemaversion="7.4" name="LimeJeOS" displayname="Bob">
     <description type="system">
         <author>Marcus</author>
         <contact>ms@suse.com</contact>
@@ -36,5 +36,6 @@
     </packages>
     <packages type="bootstrap">
         <package name="filesystem"/>
+        <archive name="foo.tar.gz" target_dir="etc"/>
     </packages>
 </image>

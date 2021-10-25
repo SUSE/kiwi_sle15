@@ -12,7 +12,7 @@ class TestRepositoryDnf:
     def inject_fixtures(self, caplog):
         self._caplog = caplog
 
-    @patch('kiwi.repository.dnf.NamedTemporaryFile')
+    @patch('kiwi.repository.dnf.Temporary.new_file')
     @patch('kiwi.repository.dnf.ConfigParser')
     @patch('kiwi.repository.dnf.Path.create')
     def setup(self, mock_path, mock_config, mock_temp):
@@ -27,7 +27,10 @@ class TestRepositoryDnf:
 
         with patch('builtins.open', create=True):
             self.repo = RepositoryDnf(
-                root_bind, ['exclude_docs', '_install_langs%en_US:de_DE']
+                root_bind, [
+                    'exclude_docs', '_install_langs%en_US:de_DE',
+                    '_target_arch%x86_64'
+                ]
             )
 
         assert runtime_dnf_config.set.call_args_list == [
@@ -42,17 +45,19 @@ class TestRepositoryDnf:
             call('main', 'plugins', '1'),
             call('main', 'gpgcheck', '0'),
             call('main', 'tsflags', 'nodocs'),
+            call('main', 'arch', 'x86_64'),
+            call('main', 'ignorearch', '1'),
             call('main', 'enabled', '1')
         ]
 
-    @patch('kiwi.repository.dnf.NamedTemporaryFile')
+    @patch('kiwi.repository.dnf.Temporary.new_file')
     @patch('kiwi.repository.dnf.Path.create')
     def test_post_init_no_custom_args(self, mock_path, mock_temp):
         with patch('builtins.open', create=True):
             self.repo.post_init()
         assert self.repo.custom_args == []
 
-    @patch('kiwi.repository.dnf.NamedTemporaryFile')
+    @patch('kiwi.repository.dnf.Temporary.new_file')
     @patch('kiwi.repository.dnf.Path.create')
     @patch('os.path.exists')
     def test_post_init_with_custom_args(
@@ -89,6 +94,8 @@ class TestRepositoryDnf:
             call('main', 'plugins', '1'),
             call('main', 'gpgcheck', '0'),
             call('main', 'tsflags', 'nodocs'),
+            call('main', 'arch', 'x86_64'),
+            call('main', 'ignorearch', '1'),
             call('main', 'enabled', '1')
         ]
 
@@ -101,23 +108,37 @@ class TestRepositoryDnf:
     @patch('kiwi.repository.dnf.ConfigParser')
     @patch('kiwi.repository.dnf.Defaults.is_buildservice_worker')
     @patch('os.path.exists')
-    def test_add_repo(self, mock_exists, mock_buildservice, mock_config):
+    @patch('kiwi.command.Command.run')
+    def test_add_repo(
+        self, mock_Command_run, mock_exists, mock_buildservice, mock_config
+    ):
         repo_config = mock.Mock()
         mock_buildservice.return_value = False
         mock_config.return_value = repo_config
         mock_exists.return_value = True
 
         with patch('builtins.open', create=True) as mock_open:
-            self.repo.add_repo('foo', 'kiwi_iso_mount/uri', 'rpm-md', 42)
+            self.repo.add_repo(
+                'foo', 'kiwi_iso_mount/uri', 'rpm-md', 42,
+                customization_script='custom_script'
+            )
 
             repo_config.add_section.assert_called_once_with('foo')
             assert repo_config.set.call_args_list == [
                 call('foo', 'name', 'foo'),
                 call('foo', 'baseurl', 'file://kiwi_iso_mount/uri'),
-                call('foo', 'priority', '42')
+                call('foo', 'priority', '42'),
+                call('foo', 'repo_gpgcheck', '0'),
+                call('foo', 'gpgcheck', '0'),
             ]
             mock_open.assert_called_once_with(
                 '/shared-dir/dnf/repos/foo.repo', 'w'
+            )
+            mock_Command_run.assert_called_once_with(
+                [
+                    'bash', '--norc', 'custom_script',
+                    '/shared-dir/dnf/repos/foo.repo'
+                ]
             )
 
         repo_config.add_section.reset_mock()
@@ -131,7 +152,9 @@ class TestRepositoryDnf:
             repo_config.add_section.assert_called_once_with('bar')
             assert repo_config.set.call_args_list == [
                 call('bar', 'name', 'bar'),
-                call('bar', 'metalink', 'https://metalink')
+                call('bar', 'metalink', 'https://metalink'),
+                call('bar', 'repo_gpgcheck', '0'),
+                call('bar', 'gpgcheck', '0')
             ]
             mock_open.assert_called_once_with(
                 '/shared-dir/dnf/repos/bar.repo', 'w'
@@ -156,6 +179,8 @@ class TestRepositoryDnf:
                 call('foo', 'name', 'foo'),
                 call('foo', 'baseurl', 'file://kiwi_iso_mount/uri'),
                 call('foo', 'priority', '42'),
+                call('foo', 'repo_gpgcheck', '0'),
+                call('foo', 'gpgcheck', '0'),
                 call('foo', 'module_hotfixes', '1')
             ]
             mock_open.assert_called_once_with(

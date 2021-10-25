@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.3" name="kiwi-test-image-docker-derived">
+<image schemaversion="7.4" name="kiwi-test-image-docker-derived">
     <description type="system">
         <author>David Cassany</author>
         <contact>dcassany@suse.de</contact>
@@ -10,7 +10,7 @@
         <type image="docker" derived_from="obs://openSUSE:Containers:Leap:15.3/containers/opensuse/leap#15.3">
             <containerconfig name="builder" tag="1.0" additionaltags="latest"/>
         </type>
-        <version>1.0</version>
+        <version>1.15.3</version>
         <packagemanager>zypper</packagemanager>
         <rpm-excludedocs>true</rpm-excludedocs>
     </preferences>

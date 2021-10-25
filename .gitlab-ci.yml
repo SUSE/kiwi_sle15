@@ -5,53 +5,15 @@
     - master
 
 stages:
-  - test
   - documentation
-  - deploy
   - sourcepackage
   - packages
-  - release
 
 variables:
   LANG: en_US.UTF-8
   BUILD_IMAGES_PROJECT: kiwi3/kiwi-ci-containers
   TUMBLEWEED_BUILD: buildenv-tumbleweed
   FEDORA_BUILD: buildenv-fedora
-
-code_style:
-  image: $CI_REGISTRY/$BUILD_IMAGES_PROJECT:$FEDORA_BUILD
-  stage: test
-  <<: *only-default
-  script:
-    - tox -e check
-  cache:
-    key: "$CI_JOB_NAME"
-    paths:
-      - .tox/3
-
-unit_py36:
-  image: $CI_REGISTRY/$BUILD_IMAGES_PROJECT:$FEDORA_BUILD
-  stage: test
-  <<: *only-default
-  script:
-    - export PYTHON=python3.6
-    - tox -e unit_py3_6 "-n $(nproc)"
-  cache:
-    key: "$CI_JOB_NAME"
-    paths:
-      - .tox/3.6
-
-unit_py38:
-  image: $CI_REGISTRY/$BUILD_IMAGES_PROJECT:$FEDORA_BUILD
-  stage: test
-  <<: *only-default
-  script:
-    - export PYTHON=python3.8
-    - tox -e unit_py3_8 "-n $(nproc)"
-  cache:
-    key: "$CI_JOB_NAME"
-    paths:
-      - .tox/3.8
 
 build_doc:
   image: $CI_REGISTRY/$BUILD_IMAGES_PROJECT:$TUMBLEWEED_BUILD
@@ -77,30 +39,6 @@ build_suse_doc:
   artifacts:
     paths:
       - doc/build/
-
-push_suse_doc:
-  image: $CI_REGISTRY/$BUILD_IMAGES_PROJECT:$TUMBLEWEED_BUILD
-  stage: deploy
-  only:
-    - master
-  script:
-    - "export GIT_SSH=$(pwd)/run_ssh"
-    - "export ID_DOC_SUSE=$(pwd)/id_doc_suse"
-    - echo 'exec ssh -o StrictHostKeyChecking=no -i $ID_DOC_SUSE "$@"' > run_ssh
-    - chmod u+x run_ssh
-    - base64 --decode "$DOC_SUSE_SECRET" > id_doc_suse
-    - chmod 600 id_doc_suse
-    - git clone git@github.com:OSInside/kiwi-suse-doc.git /tmp/kiwi-suse-doc
-    - cp doc/DC-kiwi /tmp/kiwi-suse-doc/doc/build
-    - cp doc/source/.images/* /tmp/kiwi-suse-doc/doc/build/images/src/png
-    - cp doc/build/xml/book.xml /tmp/kiwi-suse-doc/doc/build/xml
-    - git config --global user.email "kiwi-internal@suse.de"
-    - git config --global user.name "SUSE KIWI Team"
-    - cd /tmp/kiwi-suse-doc
-    - git add .
-    - git commit -a -m "upstream sync" && git push || true
-  dependencies:
-    - build_suse_doc
 
 rpm_source_package:
   image: $CI_REGISTRY/$BUILD_IMAGES_PROJECT:$FEDORA_BUILD
@@ -165,25 +103,3 @@ rpm_suse_TW:
   allow_failure: true
   dependencies:
     - rpm_source_package
-
-pypi_upload:
-  stage: release
-  image: $CI_REGISTRY/$BUILD_IMAGES_PROJECT:$FEDORA_BUILD
-  only:
-    - tags
-  script:
-    - base64 --decode "$PYPI_CONFIG" > .pypirc
-    - export PYTHON=python3.6
-    - tox -e doc_man,release
-  cache:
-    key: "$CI_JOB_NAME"
-    paths:
-      - .tox/3.6
-
-doc_update:
-  stage: release
-  image: $CI_REGISTRY/$BUILD_IMAGES_PROJECT:$FEDORA_BUILD
-  only:
-    - tags
-  script:
-    - helper/deploy_pages.sh "$GITHUB_TOKEN" "$GITLAB_USER_NAME" "$GITLAB_USER_EMAIL"

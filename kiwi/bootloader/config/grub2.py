@@ -77,6 +77,9 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         elif arch.startswith('s390'):
             # grub2 support for s390x systems
             self.arch = arch
+        elif arch == 'riscv64':
+            # grub2 support for efi systems
+            self.arch = arch
         else:
             raise KiwiBootLoaderGrubPlatformError(
                 'host architecture %s not supported for grub2 setup' % arch
@@ -101,6 +104,8 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         self.failsafe_boot = self.failsafe_boot_entry_requested()
         self.mediacheck_boot = self.xml_state.build_type.get_mediacheck()
         self.xen_guest = self.xml_state.is_xen_guest()
+        self.persistency_type = \
+            self.xml_state.build_type.get_devicepersistency()
         self.firmware = FirmWare(
             self.xml_state
         )
@@ -170,7 +175,7 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
                 if self.iso_boot:
                     self._create_embedded_fat_efi_image()
 
-    def write_meta_data(self, root_uuid=None, boot_options=''):
+    def write_meta_data(self, root_device=None, boot_options=''):
         """
         Write bootloader setup meta data files
 
@@ -179,17 +184,17 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         * etc/default/zipl2grub.conf.in (s390 only)
         * etc/sysconfig/bootloader
 
-        :param string root_uuid: root device UUID
+        :param string root_device: root device node
         :param string boot_options: kernel options as string
         :param bool iso_boot: indicate target is an ISO
         """
         self.cmdline = ' '.join(
-            [self.get_boot_cmdline(root_uuid), boot_options]
+            [self.get_boot_cmdline(root_device), boot_options]
         )
         self.cmdline_failsafe = ' '.join(
             [self.cmdline, Defaults.get_failsafe_kernel_options(), boot_options]
         )
-        self.root_reference = self._get_root_cmdline_parameter(root_uuid)
+        self.root_reference = self._get_root_cmdline_parameter(root_device)
 
         self._setup_default_grub()
         self._setup_sysconfig_bootloader()
@@ -406,8 +411,9 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         self.efi_boot_path = self.create_efi_path(in_sub_dir='')
 
         log.info('--> Creating identifier file %s', mbrid.get_id())
+        grub_boot_path = self._get_grub2_boot_path()
         Path.create(
-            self._get_grub2_boot_path()
+            grub_boot_path
         )
         mbrid.write(
             self.boot_dir + '/boot/' + mbrid.get_id()
@@ -433,6 +439,14 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
             self._setup_secure_boot_efi_image(
                 lookup_path=lookup_path, mbrid=mbrid
             )
+
+        log.info('--> Creating loopback config')
+        loopback_file = os.path.normpath(
+            os.sep.join([grub_boot_path, 'loopback.cfg'])
+        )
+        self._create_loopback_config(
+            loopback_file
+        )
 
     def setup_live_boot_images(self, mbrid, lookup_path=None):
         """
@@ -480,6 +494,24 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         efi_boot_path = Defaults.get_shim_vendor_directory(
             root_path
         )
+        if not efi_boot_path:
+            # not all distributors installs a vendor directory but
+            # have them in their encoded early boot script. Thus
+            # the following code tries to look up the vendor string
+            # from the signed grub binary
+            grub_image = Defaults.get_signed_grub_loader(self.root_dir)
+            if grub_image and grub_image.filename:
+                bash_command = [
+                    'strings', grub_image.filename, '|', 'grep', 'EFI\/'
+                ]
+                efi_boot_path = Command.run(
+                    ['bash', '-c', ' '.join(bash_command)],
+                    raise_on_error=False
+                ).output
+                if efi_boot_path:
+                    efi_boot_path = os.path.normpath(
+                        os.sep.join([root_path, efi_boot_path.strip()])
+                    )
         if not efi_boot_path:
             efi_boot_path = os.path.normpath(
                 os.sep.join([root_path, 'EFI/BOOT'])
@@ -610,6 +642,7 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         * GRUB_GFXMODE
         * GRUB_TERMINAL
         * GRUB_DISTRIBUTOR
+        * GRUB_DISABLE_LINUX_UUID
         """
         grub_default_entries = {
             'GRUB_TIMEOUT': self.timeout,
@@ -617,8 +650,10 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
             'GRUB_TERMINAL': '"{0}"'.format(self.terminal)
         }
         grub_final_cmdline = re.sub(
-            r'root=.* |root=.*$', '', self.cmdline
+            r'(^root=[^\s]+)|( root=[^\s]+)', '', self.cmdline
         ).strip()
+        if self.persistency_type == 'by-label':
+            grub_default_entries['GRUB_DISABLE_LINUX_UUID'] = 'true'
         if self.displayname:
             grub_default_entries['GRUB_DISTRIBUTOR'] = '"{0}"'.format(
                 self.displayname
@@ -660,7 +695,7 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
                     grub_default_entries['GRUB_USE_INITRDEFI'] = 'true'
         if self.xml_state.build_type.get_btrfs_root_is_snapshot():
             grub_default_entries['SUSE_BTRFS_SNAPSHOT_BOOTING'] = 'true'
-        if self.custom_args.get('boot_is_crypto'):
+        if self.custom_args.get('crypto_disk'):
             grub_default_entries['GRUB_ENABLE_CRYPTODISK'] = 'y'
 
         enable_blscfg_implemented = Command.run(
@@ -709,23 +744,31 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
                 'Signed grub2 efi loader not found'
             )
         shim_image = Defaults.get_shim_loader(lookup_path)
-        if shim_image:
+        if shim_image and shim_image.filename:
             # The shim concept is based on a two step system including a
             # grub image(shim) that got signed by Microsoft followed by
             # a grub image that got signed by the shim. The shim image
             # is the one that gets loaded by the firmware which itself
             # loads the second stage grub image
             Command.run(
-                ['cp', shim_image, self._get_efi_image_name()]
+                ['cp', shim_image.filename, self._get_efi_image_name()]
             )
             Command.run(
-                ['cp', grub_image, self.efi_boot_path]
+                [
+                    'cp', grub_image.filename,
+                    os.sep.join([self.efi_boot_path, grub_image.binaryname])
+                ]
             )
+            mok_manager = Defaults.get_mok_manager(lookup_path)
+            if mok_manager:
+                Command.run(
+                    ['cp', mok_manager, self.efi_boot_path]
+                )
         else:
             # Without shim a self signed grub image is used that
             # gets loaded by the firmware
             Command.run(
-                ['cp', grub_image, self._get_efi_image_name()]
+                ['cp', grub_image.filename, self._get_efi_image_name()]
             )
         self._create_efi_config_search(uuid, mbrid)
 
@@ -790,7 +833,7 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
             [self.boot_dir + '/boot/', self.arch, '/efi']
         )
         Command.run(
-            ['qemu-img', 'create', efi_fat_image, '15M']
+            ['qemu-img', 'create', efi_fat_image, '20M']
         )
         Command.run(
             ['mkdosfs', '-n', 'BOOT', efi_fat_image]
@@ -902,12 +945,16 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
                     self._get_grub2_mkimage_tool()
                 ) or 'grub2-mkimage',
                 '-O', Defaults.get_bios_module_directory_name(),
-                '-o', self._get_bios_image_name(os.sep),
+                '-o', self._get_bios_image_name(self.root_dir).replace(
+                    self.root_dir, ''
+                ),
                 '-c', early_boot_script.replace(self.boot_dir, ''),
                 '-p', os.sep.join(
                     [self.get_boot_path(), self.boot_directory_name]
                 ),
-                '-d', self._get_bios_modules_path(os.sep)
+                '-d', self._get_bios_modules_path(self.root_dir).replace(
+                    self.root_dir, ''
+                )
             ] + Defaults.get_grub_bios_modules(multiboot=self.xen_guest)
         )
         log.debug(mkimage_call.output)
@@ -1229,48 +1276,45 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
 
     def _fix_grub_root_device_reference(self, config_file, boot_options):
         if self.root_reference:
-            if self.root_filesystem_is_overlay or \
-               self.arch.startswith('s390') or \
-               Defaults.is_buildservice_worker():
-                # grub2-mkconfig has no idea how the correct root= setup is
-                # for disk images created with overlayroot enabled or in a
-                # buildservice worker environment. Because of that the mkconfig
-                # tool just finds the raw partition loop device and includes it
-                # which is wrong. In this particular case we have to patch the
-                # written config file and replace the wrong root= reference with
-                # the correct value.
-                with open(config_file) as grub_config_file:
-                    grub_config = grub_config_file.read()
-                    # The following expression matches any of the following
-                    # grub mkconfig root= settings and replaces it with a
-                    # correct value
-                    # 1. root=LOCAL-KIWI-MAPPED-DEVICE
-                    # 2. root=[a-zA-Z]=ANY-LINUX-BY-ID-VALUE
-                    grub_config = re.sub(
-                        r'(root=[a-zA-Z]+=[a-zA-Z0-9:\.-]+)|(root={0})'.format(
-                            boot_options.get('root_device')
-                        ),
-                        '{0}'.format(self.root_reference),
-                        grub_config
-                    )
+            # grub2-mkconfig has no idea how the correct root= setup is
+            # for disk images created with overlayroot enabled or in a
+            # buildservice worker environment. Because of that the mkconfig
+            # tool just finds the raw partition loop device and includes it
+            # which is wrong. In this particular case we have to patch the
+            # written config file and replace the wrong root= reference with
+            # the correct value.
+            with open(config_file) as grub_config_file:
+                grub_config = grub_config_file.read()
+                # The following expression matches any of the following
+                # grub mkconfig root= settings and replaces it with a
+                # correct value
+                # 1. root=LOCAL-KIWI-MAPPED-DEVICE
+                # 2. root=[a-zA-Z]=ANY-LINUX-BY-ID-VALUE
+                grub_config = re.sub(
+                    r'(root=[a-zA-Z]+=[a-zA-Z0-9:\.-]+)|(root={0})'.format(
+                        boot_options.get('root_device')
+                    ),
+                    '{0}'.format(self.root_reference),
+                    grub_config
+                )
 
-                with open(config_file, 'w') as grub_config_file:
-                    grub_config_file.write(grub_config)
+            with open(config_file, 'w') as grub_config_file:
+                grub_config_file.write(grub_config)
 
-                if self.firmware.efi_mode():
-                    vendor_grubenv_file = \
-                        Defaults.get_vendor_grubenv(self.efi_mount.mountpoint)
-                    if vendor_grubenv_file:
-                        with open(vendor_grubenv_file) as vendor_grubenv:
-                            grubenv = vendor_grubenv.read()
-                            grubenv = grubenv.replace(
-                                'root={0}'.format(
-                                    boot_options.get('root_device')
-                                ),
-                                self.root_reference
-                            )
-                        with open(vendor_grubenv_file, 'w') as vendor_grubenv:
-                            vendor_grubenv.write(grubenv)
+            if self.firmware.efi_mode():
+                vendor_grubenv_file = \
+                    Defaults.get_vendor_grubenv(self.efi_mount.mountpoint)
+                if vendor_grubenv_file:
+                    with open(vendor_grubenv_file) as vendor_grubenv:
+                        grubenv = vendor_grubenv.read()
+                        grubenv = grubenv.replace(
+                            'root={0}'.format(
+                                boot_options.get('root_device')
+                            ),
+                            self.root_reference
+                        )
+                    with open(vendor_grubenv_file, 'w') as vendor_grubenv:
+                        vendor_grubenv.write(grubenv)
 
     def _fix_grub_loader_entries_boot_cmdline(self):
         if self.cmdline:
@@ -1367,4 +1411,12 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         except Exception:
             raise KiwiDiskGeometryError(
                 'unknown format for disk geometry: %s' % fdasd_output
+            )
+
+    def _create_loopback_config(self, filename):
+        with open(filename, 'w') as loopback_cfg:
+            loopback_cfg.write(
+                'source /boot/{0}/grub.cfg{1}'.format(
+                    self.boot_directory_name, os.linesep
+                )
             )

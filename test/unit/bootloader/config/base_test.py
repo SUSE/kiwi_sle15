@@ -6,6 +6,7 @@ from pytest import (
     raises, fixture
 )
 
+from kiwi.defaults import Defaults
 from kiwi.xml_state import XMLState
 from kiwi.xml_description import XMLDescription
 from kiwi.exceptions import KiwiBootLoaderTargetError
@@ -17,9 +18,8 @@ class TestBootLoaderConfigBase:
     def inject_fixtures(self, caplog):
         self._caplog = caplog
 
-    @patch('platform.machine')
-    def setup(self, mock_machine):
-        mock_machine.return_value = 'x86_64'
+    def setup(self):
+        Defaults.set_platform_name('x86_64')
         description = XMLDescription(
             '../data/example_config.xml'
         )
@@ -109,34 +109,32 @@ class TestBootLoaderConfigBase:
         mock_cmdline.return_value = 'root=/dev/myroot'
         assert self.bootloader.get_boot_cmdline() == 'root=/dev/myroot'
 
-    @patch('kiwi.xml_parse.type_.get_firmware')
-    def test_get_boot_cmdline_firmware_ec2(self, mock_firmware):
-        mock_firmware.return_value = 'ec2'
-        assert self.bootloader.get_boot_cmdline('uuid') == \
-            'splash root=UUID=uuid rw'
-
     @patch('kiwi.xml_parse.type_.get_initrd_system')
-    def test_get_boot_cmdline_initrd_system_is_dracut(self, mock_initrd):
+    @patch('kiwi.bootloader.config.base.BlockID')
+    def test_get_boot_cmdline_initrd_system_is_dracut(
+        self, mock_BlockID, mock_initrd
+    ):
+        block_operation = Mock()
+        block_operation.get_blkid.return_value = 'uuid'
+        mock_BlockID.return_value = block_operation
         mock_initrd.return_value = 'dracut'
         assert self.bootloader.get_boot_cmdline('uuid') == \
-            'splash root=UUID=uuid rw'
+            'splash root=UUID=uuid'
 
     @patch('kiwi.xml_parse.type_.get_initrd_system')
+    @patch('kiwi.bootloader.config.base.BlockID')
     def test_get_boot_cmdline_initrd_system_is_dracut_with_overlay(
-        self, mock_initrd
+        self, mock_BlockID, mock_initrd
     ):
+        block_operation = Mock()
+        block_operation.get_blkid.return_value = 'uuid'
+        mock_BlockID.return_value = block_operation
         mock_initrd.return_value = 'dracut'
         self.state.build_type.get_overlayroot = Mock(
             return_value=True
         )
         assert self.bootloader.get_boot_cmdline('uuid') == \
             'splash root=overlay:UUID=uuid'
-
-    @patch('kiwi.xml_parse.type_.get_firmware')
-    def test_get_boot_cmdline_firmware_ec2_no_uuid(self, mock_firmware):
-        mock_firmware.return_value = 'ec2'
-        with self._caplog.at_level(logging.WARNING):
-            self.bootloader.get_boot_cmdline()
 
     @patch('kiwi.xml_parse.type_.get_installboot')
     def test_get_install_image_boot_default(self, mock_installboot):

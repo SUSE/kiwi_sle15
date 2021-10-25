@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.3" name="kiwi-test-image-qcow-openstack">
+<image schemaversion="7.4" name="kiwi-test-image-qcow-openstack">
     <description type="system">
         <author>KIWI Team</author>
         <contact>kiwi-images@googlegroups.com</contact>
@@ -11,7 +11,7 @@
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
-            <bootloader name="grub2" timeout="1" console="serial gfxterm"/>
+            <bootloader name="grub2" timeout="10" console="serial gfxterm"/>
             <size unit="M">10240</size>
         </type>
         <version>0.3.10</version>

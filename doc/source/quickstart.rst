@@ -17,23 +17,28 @@ Before you start
 
    .. code:: bash
 
-      $ pip install kiwi
+      $ sudo pip install kiwi
 
-2. Clone the repository containing example appliances (see
+2. Clone the {kiwi} repository containing example appliances (see
    :ref:`example-descriptions`):
 
    .. code:: bash
 
-      $ git clone https://github.com/OSInside/kiwi-descriptions
-
+      $ git clone https://github.com/OSInside/kiwi
 
 Choose a First Image
 --------------------
 
+Find example appliance descriptions in the {kiwi} repository checkout
+as follows:
+
+    .. code:: bash
+
+       $ tree -L 3 kiwi/build-tests
+
 Take a look which images are available in the example appliances repository
 and select one that matches your desired image as close as possible. Or
 just use the one given in the examples below.
-
 
 Build your First Image
 ----------------------
@@ -44,8 +49,9 @@ command in order to build it:
 
 .. code:: bash
 
-    $ sudo kiwi-ng --profile=Disk --type oem system build \
-        --description kiwi-descriptions/suse/x86_64/{exc_description} \
+    $ sudo kiwi-ng system build \
+        --description kiwi/build-tests/{exc_description_disk} \
+        --set-repo {exc_repo_leap} \
         --target-dir /tmp/myimage
 
 The resulting image will be placed into the folder :file:`/tmp/myimage`
@@ -65,9 +71,9 @@ QEMU and boot it as follows:
 
 .. code:: bash
 
-    $ qemu -boot c \
-        -drive file={exc_image_base_name}.x86_64-{exc_image_version}.raw,format=raw,if=virtio \
-        -m 4096
+    $ sudo qemu -boot c \
+        -drive file={exc_image_base_name_disk}.x86_64-{exc_image_version}.raw,format=raw,if=virtio \
+        -m 4096 -serial stdio
 
 Tweak and Customize your Image
 ------------------------------

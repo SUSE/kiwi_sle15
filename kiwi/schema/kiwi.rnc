@@ -62,7 +62,7 @@ div {
         attribute xsi:schemaLocation { xsd:anyURI }
     k.image.schemaversion.attribute =
         ## The allowed Schema version (fixed value)
-        attribute schemaversion { "7.3" }
+        attribute schemaversion { "7.4" }
     k.image.id =
         ## An identification number which is represented in a file
         ## named /etc/ImageID
@@ -78,9 +78,10 @@ div {
         ## The root element of the configuration file   
         element image {
             k.image.attlist &
+            k.include* &
             k.description &
             k.preferences+ &
-            k.profiles? &
+            k.profiles* &
             k.users* &
             k.drivers* &
             k.strip* &
@@ -187,9 +188,15 @@ div {
 div {
     k.archive.name.attribute = k.name.attribute
     k.archive.bootinclude.attribute = k.bootinclude.attribute
+    k.archive.target_dir.attribute =
+        # Extract tarball to the specified target directory.
+        # By default the target directory is the root(/) of
+        # the image.
+        attribute target_dir { text }
     k.archive.attlist =
         k.archive.name.attribute &
-        k.archive.bootinclude.attribute?
+        k.archive.bootinclude.attribute? &
+        k.archive.target_dir.attribute?
     k.archive =
         ## Name of an image archive file (tarball)
         element archive {
@@ -830,7 +837,7 @@ div {
 #
 div {
     k.packagemanager.content = 
-        "apt-get" | "zypper" | "yum" | "dnf" | "microdnf" | "pacman"
+        "apt" | "zypper" | "dnf" | "microdnf" | "pacman"
     k.packagemanager.attlist = empty
     k.packagemanager =
         ## Name of the Package Manager
@@ -976,6 +983,12 @@ div {
         ## to run package signature validation. If not set, no value is
         ## appended into the repository configuration file.
         attribute package_gpgcheck { xsd:boolean }
+    k.repository.customize.attribute =
+        ## Specify the path to a customization script.
+        ## The script receives the repo file according to the
+        ## used package manager as a parameter such that custom
+        ## modifications can be placed when needed
+        attribute customize { text }
     k.repository.priority.attribute =
         ## Channel priority assigned to all packages available in
         ## this channel (0 if not set). If the exact same package
@@ -1031,6 +1044,7 @@ div {
             k.repository.imageonly.attribute
         )? &
         k.repository.repository_gpgcheck.attribute? &
+        k.repository.customize.attribute? &
         k.repository.package_gpgcheck.attribute? &
         k.repository.priority.attribute? &
         k.repository.password.attribute? &
@@ -1420,7 +1434,7 @@ div {
     k.type.devicepersistency.attribute =
         ## Specifies which method to use in order to get persistent
         ## storage device names. By default by-uuid is used.
-        attribute devicepersistency { "by-uuid" | "by-label" | "by-path" }
+        attribute devicepersistency { "by-uuid" | "by-label" }
     k.type.editbootconfig.attribute =
         ## Specifies the path to a script which is called right
         ## before the bootloader is installed. The script runs
@@ -1594,15 +1608,14 @@ div {
             sch:param [ name = "types" value = "oem" ]
         ]
     k.type.initrd_system.attribute =
-        ## specify which initrd builder to use, default is kiwi's
-        ## builtin architecture. Be aware that the dracut initrd
-        ## system does not support all features of the kiwi initrd
+        ## specify which initrd builder to use, default is dracut
+        ## initrd architecture.
         attribute initrd_system {
-            "kiwi" | "dracut"
+            "kiwi" | "dracut" | "none"
         }
         >> sch:pattern [ id = "initrd_system" is-a = "image_type"
             sch:param [ name = "attr" value = "initrd_system" ]
-            sch:param [ name = "types" value = "oem pxe" ]
+            sch:param [ name = "types" value = "oem pxe kis" ]
         ]
     k.type.image.attribute =
         ## Specifies the image type
@@ -1704,7 +1717,7 @@ div {
             sch:param [ name = "types" value = "oem iso pxe kis" ]
         ]
     k.type.luksOS.attribute =
-        ## With the luksOS value a predefined set of ciper, keysize
+        ## With the luksOS value a predefined set of cipher, keysize
         ## and hash format options is passed to the cryptsetup call
         ## in order to create a format compatible to the specified
         ## distribution
@@ -1809,6 +1822,24 @@ div {
             sch:param [ name = "attr" value = "disk_start_sector" ]
             sch:param [ name = "types" value = "oem" ]
         ]
+    k.type.bundle_format.attribute =
+        ## Specifies the bundle format pattern
+        ## The format string can contain placeholders for the
+        ## following elements
+        ##
+        ## %N : Image name
+        ## %P : Concatenated profile name (_)
+        ## %A : Architecture name
+        ## %I : Bundle ID
+        ## %T : Image build type name
+        ## %M : Image Major version number
+        ## %m : Image Minor version number
+        ## %p : Image Patch version number
+        ##
+        ## The specified bundle_format will be used as base name
+        ## for all target image files at call time of:
+        ## kiwi-ng result bundle ...
+        attribute bundle_format { text }
     k.type.attlist =
         ## Specifies the image type
         k.type.boot.attribute? &
@@ -1871,7 +1902,8 @@ div {
         k.type.derived_from.attribute? &
         k.type.xen_server.attribute? &
         k.type.publisher.attribute? &
-        k.type.disk_start_sector.attribute?
+        k.type.disk_start_sector.attribute? &
+        k.type.bundle_format.attribute?
     k.type =
         ## The Image Type of the Logical Extend
         element type { 
@@ -2082,11 +2114,21 @@ div {
     k.volume.copy_on_write.attribute =
         ## Apply the filesystem copy-on-write attribute for this volume
         attribute copy_on_write { xsd:boolean }
+    k.volume.filesystem_check =
+        ## Indicate that this filesystem should perform the validation
+        ## to become filesystem checked. The actual constraints if the
+        ## check is performed or not depends on systemd and filesystem
+        ## specific components. If not set or set to false no system
+        ## component will be triggered to run an eventual filesystem
+        ## check, which results in this filesystem to be never checked.
+        ## The latter is the default.
+        attribute filesystem_check { xsd:boolean }
     k.volume.label.attribute =
         ## filesystem label name of the volume.
         attribute label { text }
     k.volume.attlist =
         k.volume.copy_on_write.attribute? &
+        k.volume.filesystem_check? &
         k.volume.freespace.attribute? &
         k.volume.mountpoint.attribute? &
         k.volume.label.attribute? &
@@ -2098,6 +2140,21 @@ div {
         element volume {
             k.volume.attlist,
             empty
+        }
+}
+
+#==========================================
+# main block: <include>
+#
+div {
+    k.include.from.attribute =
+        ## include given file and replace the include
+        ## statement with its contents
+        attribute from { text }
+    k.include.attlist = k.include.from.attribute
+    k.include =
+        element include {
+            k.include.attlist
         }
 }
 

@@ -28,15 +28,14 @@ class TestSystemSetup:
     def inject_fixtures(self, caplog):
         self._caplog = caplog
 
-    @patch('platform.machine')
     @patch('kiwi.system.setup.RuntimeConfig')
-    def setup(self, mock_RuntimeConfig, mock_machine):
+    def setup(self, mock_RuntimeConfig):
+        Defaults.set_platform_name('x86_64')
         self.runtime_config = Mock()
         self.runtime_config.get_package_changes = Mock(
             return_value=True
         )
         mock_RuntimeConfig.return_value = self.runtime_config
-        mock_machine.return_value = 'x86_64'
         self.xml_state = MagicMock()
         self.xml_state.get_package_manager = Mock(
             return_value='zypper'
@@ -74,9 +73,8 @@ class TestSystemSetup:
     def teardown(self):
         sys.argv = argv_kiwi_tests
 
-    @patch('platform.machine')
-    def test_setup_ix86(self, mock_machine):
-        mock_machine.return_value = 'i686'
+    def test_setup_ix86(self):
+        Defaults.set_platform_name('i686')
         setup = SystemSetup(
             MagicMock(), 'root_dir'
         )
@@ -131,6 +129,12 @@ class TestSystemSetup:
             ),
             call(
                 [
+                    'cp', '{0}/post_bootstrap.sh'.format(self.description_dir),
+                    'root_dir/image/post_bootstrap.sh'
+                ]
+            ),
+            call(
+                [
                     'cp', Defaults.project_file('config/functions.sh'),
                     'root_dir/.kconfig'
                 ]
@@ -158,7 +162,7 @@ class TestSystemSetup:
         self, mock_path, mock_command, mock_create
     ):
         path_return_values = [
-            True, False, True, True, True, True, True, True
+            True, False, True, True, True, True, True, True, True
         ]
 
         def side_effect(arg):
@@ -199,6 +203,12 @@ class TestSystemSetup:
                 [
                     'cp', '{0}/images.sh'.format(self.description_dir),
                     'root_dir/image/images.sh'
+                ]
+            ),
+            call(
+                [
+                    'cp', '{0}/post_bootstrap.sh'.format(self.description_dir),
+                    'root_dir/image/post_bootstrap.sh'
                 ]
             ),
             call(
@@ -671,10 +681,46 @@ class TestSystemSetup:
     @patch('os.stat')
     @patch('os.access')
     @patch('copy.deepcopy')
-    def test_call_disk_script(
+    def test_call_excutable_post_bootstrap_script(
         self, mock_copy_deepcopy, mock_access, mock_stat, mock_os_path,
         mock_watch, mock_command, mock_Profile
     ):
+        mock_copy_deepcopy.return_value = {}
+        profile = Mock()
+        mock_Profile.return_value = profile
+        profile.get_settings.return_value = {}
+        result_type = namedtuple(
+            'result', ['stderr', 'returncode']
+        )
+        mock_result = result_type(stderr='stderr', returncode=0)
+        mock_os_path.return_value = True
+        mock_watch.return_value = mock_result
+
+        # pretend that the script is executable
+        mock_access.return_value = True
+        self.setup.call_post_bootstrap_script()
+
+        mock_copy_deepcopy.assert_called_once_with(os.environ)
+        mock_command.assert_called_once_with(
+            ['chroot', 'root_dir', 'image/post_bootstrap.sh'], {}
+        )
+
+    @patch('kiwi.system.setup.Defaults.is_buildservice_worker')
+    @patch('kiwi.logger.Logger.getLogLevel')
+    @patch('kiwi.system.setup.Profile')
+    @patch('kiwi.command.Command.call')
+    @patch('kiwi.command_process.CommandProcess.poll_and_watch')
+    @patch('os.path.exists')
+    @patch('os.stat')
+    @patch('os.access')
+    @patch('copy.deepcopy')
+    def test_call_disk_script(
+        self, mock_copy_deepcopy, mock_access, mock_stat, mock_os_path,
+        mock_watch, mock_command, mock_Profile, mock_getLogLevel,
+        mock_is_buildservice_worker
+    ):
+        mock_is_buildservice_worker.return_value = False
+        mock_getLogLevel.return_value = logging.DEBUG
         mock_copy_deepcopy.return_value = {}
         profile = Mock()
         mock_Profile.return_value = profile
@@ -690,7 +736,10 @@ class TestSystemSetup:
         self.setup.call_disk_script()
         mock_copy_deepcopy.assert_called_once_with(os.environ)
         mock_command.assert_called_once_with(
-            ['chroot', 'root_dir', 'bash', 'image/disk.sh'], {}
+            [
+                'screen', '-t', '-X',
+                'chroot', 'root_dir', 'bash', 'image/disk.sh'
+            ], {}
         )
 
     @patch('kiwi.system.setup.Profile')
@@ -746,13 +795,18 @@ class TestSystemSetup:
             'ext4 1'
         ])
 
+    @patch('kiwi.system.setup.Defaults.is_buildservice_worker')
+    @patch('kiwi.logger.Logger.getLogLevel')
     @patch('kiwi.command.Command.call')
     @patch('kiwi.command_process.CommandProcess.poll_and_watch')
     @patch('os.path.exists')
     @patch('os.path.abspath')
     def test_call_edit_boot_install_script(
-        self, mock_abspath, mock_exists, mock_watch, mock_command
+        self, mock_abspath, mock_exists, mock_watch, mock_command,
+        mock_getLogLevel, mock_is_buildservice_worker
     ):
+        mock_is_buildservice_worker.return_value = False
+        mock_getLogLevel.return_value = logging.DEBUG
         result_type = namedtuple(
             'result_type', ['stderr', 'returncode']
         )
@@ -766,11 +820,15 @@ class TestSystemSetup:
         mock_abspath.assert_called_once_with(
             'root_dir/image/edit_boot_install.sh'
         )
-        mock_command.assert_called_once_with([
-            'bash', '-c',
-            'cd root_dir && bash --norc /root_dir/image/edit_boot_install.sh '
-            'my_image.raw /dev/mapper/loop0p1'
-        ])
+        mock_command.assert_called_once_with(
+            [
+                'screen', '-t', '-X',
+                'bash', '-c',
+                'cd root_dir && bash --norc '
+                '/root_dir/image/edit_boot_install.sh '
+                'my_image.raw /dev/mapper/loop0p1'
+            ]
+        )
 
     @patch('kiwi.system.setup.Profile')
     @patch('kiwi.command.Command.call')
@@ -860,23 +918,20 @@ class TestSystemSetup:
         ]
 
     @patch('kiwi.command.Command.run')
-    @patch('kiwi.system.setup.NamedTemporaryFile')
+    @patch('pathlib.Path.touch')
     @patch('kiwi.system.setup.ArchiveTar')
     @patch('kiwi.system.setup.Compress')
     @patch('os.path.getsize')
     @patch('kiwi.system.setup.Path.wipe')
     def test_create_recovery_archive(
         self, mock_wipe, mock_getsize, mock_compress,
-        mock_archive, mock_temp, mock_command
+        mock_archive, mock_pathlib_Path_touch, mock_command
     ):
         mock_getsize.return_value = 42
         compress = Mock()
         mock_compress.return_value = compress
         archive = Mock()
         mock_archive.return_value = archive
-        tmpdir = Mock()
-        tmpdir.name = 'tmpdir'
-        mock_temp.return_value = tmpdir
         self.setup.oemconfig['recovery'] = True
         self.setup.oemconfig['recovery_inplace'] = True
 
@@ -888,7 +943,7 @@ class TestSystemSetup:
             ['bash', '-c', 'rm -f root_dir/recovery.*']
         )
         mock_archive.assert_called_once_with(
-            create_from_file_list=False, filename='tmpdir'
+            create_from_file_list=False, filename='root_dir/recovery.tar'
         )
         archive.create.assert_called_once_with(
             exclude=['dev', 'proc', 'sys'],
@@ -899,14 +954,12 @@ class TestSystemSetup:
             ],
             source_dir='root_dir'
         )
-        assert mock_command.call_args_list[1] == call(
-            ['mv', 'tmpdir', 'root_dir/recovery.tar']
-        )
         assert m_open.call_args_list[0] == call(
             'root_dir/recovery.tar.filesystem', 'w'
         )
         assert m_open.return_value.write.call_args_list[0] == call('ext3')
-        assert mock_command.call_args_list[2] == call(
+
+        assert mock_command.call_args_list[1] == call(
             ['bash', '-c', 'tar -tf root_dir/recovery.tar | wc -l']
         )
         assert m_open.call_args_list[1] == call(
@@ -958,19 +1011,19 @@ class TestSystemSetup:
     def test_export_package_list_unknown_packager(
         self, mock_get_default_packager_tool
     ):
-        assert self.setup.export_package_list('target_dir') is None
+        assert self.setup.export_package_list('target_dir') == ''
 
     @patch('kiwi.defaults.Defaults.get_default_packager_tool')
     def test_export_package_changes_unknown_packager(
         self, mock_get_default_packager_tool
     ):
-        assert self.setup.export_package_changes('target_dir') is None
+        assert self.setup.export_package_changes('target_dir') == ''
 
     @patch('kiwi.defaults.Defaults.get_default_packager_tool')
     def test_export_package_verification_unknown_packager(
         self, mock_get_default_packager_tool
     ):
-        assert self.setup.export_package_verification('target_dir') is None
+        assert self.setup.export_package_verification('target_dir') == ''
 
     @patch('kiwi.system.setup.Command.run')
     @patch('kiwi.system.setup.RpmDataBase')
@@ -1053,7 +1106,7 @@ class TestSystemSetup:
         command.output = 'packages_data'
         mock_command.return_value = command
         self.xml_state.get_package_manager = Mock(
-            return_value='apt-get'
+            return_value='apt'
         )
 
         with patch('builtins.open') as m_open:
@@ -1131,7 +1184,7 @@ class TestSystemSetup:
         command.output = 'changes'
         mock_command.return_value = command
         self.xml_state.get_package_manager = Mock(
-            return_value='apt-get'
+            return_value='apt'
         )
         mock_os_listdir.return_value = ['package_b', 'package_a']
         mock_os_path_exists.return_value = True
@@ -1220,7 +1273,7 @@ class TestSystemSetup:
         command.output = 'verification_data'
         mock_command.return_value = command
         self.xml_state.get_package_manager = Mock(
-            return_value='apt-get'
+            return_value='apt'
         )
 
         with patch('builtins.open') as m_open:
@@ -1271,7 +1324,7 @@ class TestSystemSetup:
         self.setup_with_real_xml.import_repositories_marked_as_imageinclude()
         assert repo.add_repo.call_args_list[0] == call(
             'uri-alias', 'uri', 'rpm-md', None, None, None, None, None,
-            'kiwiRepoCredentials', None, None, None
+            'kiwiRepoCredentials', None, None, None, False, '../data/script'
         )
 
     @patch('os.path.exists')

@@ -41,6 +41,56 @@ id
    sets an identification number which appears as file ``/etc/ImageID``
    within the image.
 
+.. _sec.include:
+
+<include>
+---------
+
+Optional include of XML file content from file
+
+.. code:: xml
+
+   <image schemaversion="{schema_version}" name="{exc_image_base_name}">
+       <include from="description.xml"/>
+   </image> 
+
+with file :file:`description.xml` as follows:
+
+.. code:: xml
+
+   <image>
+       <description type="system">
+           <author>name</author>
+           <contact>contact</contact>
+           <specification>text</specification>
+       </description>
+   </image>
+
+This will replace the `include` statement with the contents
+of :file:`description.xml`. The validation of the result happens
+after the inclusion of all `include` references.
+
+.. note::
+
+   The include information must be embedded into an `<image>`
+   root node. Only the inner elements of the root node will
+   be included. The processing of XML data via XSLT always
+   requires a root node which is the reason why this is
+   required to be specified for include files as well.
+
+.. note::
+
+   Nesting of include statements in other include files is
+   not supported. This will lead to unresolved include
+   statements in the final document and will cause the
+   runtime checker to complain about it.
+
+.. note::
+
+   The include is implemented via a XSLT stylesheet and therefore
+   expects an XML document. Other markup formats are not supported
+   as include reference.
+
 .. _sec.description:
 
 <description>
@@ -118,7 +168,7 @@ table shows which package manager is connected to which distributor:
 +--------------+-----------------+
 | RedHat       | dnf             |
 +--------------+-----------------+
-| Debian Based | apt-get         |
+| Debian Based | apt             |
 +--------------+-----------------+ 
 | Arch Linux   | pacman          |
 +--------------+-----------------+
@@ -190,7 +240,7 @@ Europe/Berlin for ``/usr/share/zoneinfo/Europe/Berlin``.
 .. code:: xml
 
    <preferences>
-     <keytable>Europe/Berlin</keytable>
+     <timezone>Europe/Berlin</timezone>
    </preferences>
 
 <preferences><locale>
@@ -465,7 +515,7 @@ spare_part_is_last="true|false":
   if oem-resize is switched off. There is a runtime
   check in the {kiwi} code to check this condition
 
-devicepersistency="by-uuid|by-label|by-path":
+devicepersistency="by-uuid|by-label":
   Specifies which method to use for persistent device names.
   This will affect all files written by kiwi that includes
   device references for example `etc/fstab` or the `root=`
@@ -557,8 +607,12 @@ hybridpersistent_filesystem="ext4|xfs":
   writing if a hybrid image is used as disk on e.g a USB Stick.
   By default the ext4 filesystem is used.
 
-initrd_system="kiwi|dracut":
-  Specify which initrd builder to use, default is set to `dracut`
+initrd_system="kiwi|dracut|none":
+  Specify which initrd builder to use, default is set to `dracut`.
+  If set to `none` the image is build without an initrd. Depending
+  on the image type this can lead to a non bootable system as its
+  now a kernel responsibility if the given root device can be
+  mounted or not.
 
 metadata_path="dir_path":
   Specifies a path to additional metadata required for the selected
@@ -722,6 +776,15 @@ repository_gpgcheck="true|false"
   appended into the repository configuration file. If set the
   relevant key information needs to be provided on the {kiwi}
   commandline using the `--signing-key` option
+
+customize="/path/to/custom_script"
+  Custom script hook which is invoked with the repo file as parameter
+  for each file created by {kiwi}.
+
+  .. note::
+
+     If the script is provided as relative path it will
+     be searched in the image description directory
 
 imageinclude="true|false"
   Specifies whether the given repository should be configured as a
@@ -931,7 +994,7 @@ any of its required packages and any recommended packages.
 .. code:: xml
 
    <packages type="image"/>
-     <archive name="name"/>
+     <archive name="name" target_dir="some/path"/>
    </packages>
 
 The archive element takes the `name` attribute and looks up the
@@ -939,7 +1002,9 @@ given name as file on the system. If specified relative {kiwi}
 looks up the name in the image description directory. The archive
 is installed using the `tar` program. Thus the file name is
 expected to be a tar archive. The compression of the archive is
-detected automatically by the tar program.
+detected automatically by the tar program. The optional target_dir
+attribute can be used to specify a target directory to unpack the
+archive.
 
 <packages><ignore>
 ~~~~~~~~~~~~~~~~~~

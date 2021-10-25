@@ -5,21 +5,20 @@ from mock import (
 )
 from pytest import raises
 
+from kiwi.boot.image.base import BootImageBase
+from kiwi.defaults import Defaults
+
 from kiwi.exceptions import (
     KiwiTargetDirectoryNotFound,
-    KiwiBootImageDumpError,
     KiwiConfigFileNotFound,
     KiwiDiskBootImageError
 )
 
-from kiwi.boot.image.base import BootImageBase
-
 
 class TestBootImageBase:
     @patch('kiwi.boot.image.base.os.path.exists')
-    @patch('platform.machine')
-    def setup(self, mock_machine, mock_exists):
-        mock_machine.return_value = 'x86_64'
+    def setup(self, mock_exists):
+        Defaults.set_platform_name('x86_64')
         self.boot_names_type = namedtuple(
             'boot_names_type', ['kernel_name', 'initrd_name']
         )
@@ -60,24 +59,6 @@ class TestBootImageBase:
     def test_create_initrd(self):
         with raises(NotImplementedError):
             self.boot_image.create_initrd()
-
-    @patch('pickle.dump')
-    def test_dump_error(self, mock_dump):
-        mock_dump.side_effect = Exception
-        with patch('builtins.open'):
-            with raises(KiwiBootImageDumpError):
-                self.boot_image.dump('filename')
-
-    @patch('pickle.dump')
-    def test_dump(self, mock_dump):
-        with patch('builtins.open', create=True) as mock_open:
-            mock_open.return_value = MagicMock(spec=io.IOBase)
-            file_handle = mock_open.return_value.__enter__.return_value
-            self.boot_image.dump('filename')
-            mock_open.assert_called_once_with('filename', 'wb')
-            mock_dump.assert_called_once_with(
-                self.boot_image, file_handle
-            )
 
     @patch('os.listdir')
     def test_is_prepared(self, mock_listdir):
@@ -190,3 +171,6 @@ class TestBootImageBase:
         self.boot_image.set_static_modules(['module'])
         self.boot_image.write_system_config_file({'config_key': 'value'})
         self.boot_image.cleanup()
+
+    def test_has_initrd_support(self):
+        assert self.boot_image.has_initrd_support() is False

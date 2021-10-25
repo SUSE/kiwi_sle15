@@ -15,6 +15,12 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
+from typing import (
+    List, Dict
+)
+
+from kiwi.system.root_bind import RootBind
+from kiwi.command import Command
 
 
 class RepositoryBase:
@@ -28,14 +34,17 @@ class RepositoryBase:
     :param str shared_location: shared directory between image root
         and build system root
     """
-    def __init__(self, root_bind, custom_args=None):
+
+    def __init__(
+        self, root_bind: RootBind, custom_args: List = []
+    ) -> None:
         self.root_bind = root_bind
         self.root_dir = root_bind.root_dir
         self.shared_location = root_bind.shared_location
 
-        self.post_init(custom_args)
+        self.post_init(custom_args or [])
 
-    def post_init(self, custom_args):
+    def post_init(self, custom_args: List = []) -> None:
         """
         Post initialization method
 
@@ -45,7 +54,7 @@ class RepositoryBase:
         """
         pass
 
-    def use_default_location(self):
+    def use_default_location(self) -> None:
         """
         Call repository operations with default repository manager setup
 
@@ -53,7 +62,7 @@ class RepositoryBase:
         """
         raise NotImplementedError
 
-    def runtime_config(self):
+    def runtime_config(self) -> Dict:
         """
         Repository runtime configuration and environment
 
@@ -62,10 +71,11 @@ class RepositoryBase:
         raise NotImplementedError
 
     def add_repo(
-        self, name, uri, repo_type, prio, dist, components,
-        user, secret, credentials_file, repo_gpgcheck, pkg_gpgcheck,
-        sourcetype, use_for_bootstrap=False
-    ):
+        self, name: str, uri: str, repo_type: str, prio: int, dist: str,
+        components: str, user: str, secret: str, credentials_file: str,
+        repo_gpgcheck: bool, pkg_gpgcheck: bool, sourcetype: str,
+        use_for_bootstrap: bool = False, customization_script: str = None
+    ) -> None:
         """
         Add repository
 
@@ -73,7 +83,7 @@ class RepositoryBase:
 
         :param str name: unused
         :param str uri: unused
-        :param repo_type: unused
+        :param str repo_type: unused
         :param int prio: unused
         :param str dist: unused
         :param str components: unused
@@ -84,10 +94,11 @@ class RepositoryBase:
         :param bool pkg_gpgcheck: unused
         :param str sourcetype: unused
         :param bool use_for_bootstrap: unused
+        :param str customization_script: unused
         """
         raise NotImplementedError
 
-    def setup_package_database_configuration(self):
+    def setup_package_database_configuration(self) -> None:
         """
         Setup package database configuration
 
@@ -95,7 +106,7 @@ class RepositoryBase:
         """
         raise NotImplementedError
 
-    def import_trusted_keys(self, signing_keys):
+    def import_trusted_keys(self, signing_keys: List) -> None:
         """
         Imports trusted keys into the image
 
@@ -105,7 +116,7 @@ class RepositoryBase:
         """
         raise NotImplementedError
 
-    def cleanup_unused_repos(self):
+    def cleanup_unused_repos(self) -> None:
         """
         Cleanup/Delete unused repositories
 
@@ -116,7 +127,7 @@ class RepositoryBase:
         """
         raise NotImplementedError
 
-    def delete_repo(self, name):
+    def delete_repo(self, name: str) -> None:
         """
         Delete repository
 
@@ -126,7 +137,7 @@ class RepositoryBase:
         """
         raise NotImplementedError
 
-    def delete_all_repos(self):
+    def delete_all_repos(self) -> None:
         """
         Delete all repositories
 
@@ -134,7 +145,7 @@ class RepositoryBase:
         """
         raise NotImplementedError
 
-    def delete_repo_cache(self, name):
+    def delete_repo_cache(self, name: str) -> None:
         """
         Delete repository cache
 
@@ -143,3 +154,15 @@ class RepositoryBase:
         :param str name: unused
         """
         raise NotImplementedError
+
+    @staticmethod
+    def run_repo_customize(script_path: str, repo_file) -> None:
+        """
+        Run an optional customization script
+
+        :param str script_path: unused
+        :param str repo_file: unused
+        """
+        Command.run(
+            ['bash', '--norc', script_path, repo_file]
+        )

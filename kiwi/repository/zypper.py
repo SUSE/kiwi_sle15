@@ -17,9 +17,10 @@
 #
 import os
 from configparser import ConfigParser
-from tempfile import NamedTemporaryFile
+from typing import List, Dict
 
 # project
+from kiwi.utils.temporary import Temporary
 from kiwi.defaults import Defaults
 from kiwi.command import Command
 from kiwi.repository.base import RepositoryBase
@@ -40,7 +41,8 @@ class RepositoryZypper(RepositoryBase):
     :param dict command_env: customized os.environ for zypper
     :param object runtime_zypper_config: instance of :class:`ConfigParser`
     """
-    def post_init(self, custom_args=None):
+
+    def post_init(self, custom_args: List = []) -> None:
         """
         Post initialization method
 
@@ -52,8 +54,8 @@ class RepositoryZypper(RepositoryBase):
         self.custom_args = custom_args
         self.exclude_docs = False
         self.gpgcheck = False
-        if not custom_args:
-            self.custom_args = []
+        self.locale = None
+        self.target_arch = None
 
         # extract custom arguments used for zypp config only
         if 'exclude_docs' in self.custom_args:
@@ -64,13 +66,18 @@ class RepositoryZypper(RepositoryBase):
             self.custom_args.remove('check_signatures')
             self.gpgcheck = True
 
-        self.locale = list(
-            item for item in self.custom_args if '_install_langs' in item
-        )
+        for argument in self.custom_args:
+            if '_install_langs' in argument:
+                self.locale = argument
+            elif '_target_arch' in argument:
+                self.target_arch = argument
         if self.locale:
-            self.custom_args.remove(self.locale[0])
+            self.custom_args.remove(self.locale)
+        if self.target_arch:
+            self.custom_args.remove(self.target_arch)
+            self.target_arch = self.target_arch.split('%')[1]
 
-        self.repo_names = []
+        self.repo_names: List = []
 
         # zypper support by default point all actions into the root
         # directory of the image system. This information is passed
@@ -101,15 +108,16 @@ class RepositoryZypper(RepositoryBase):
             )
         }
 
-        self.runtime_zypper_config_file = NamedTemporaryFile(
+        self.runtime_zypper_config_file = Temporary(
             dir=self.root_dir
-        )
-        self.runtime_zypp_config_file = NamedTemporaryFile(
+        ).new_file()
+        self.runtime_zypp_config_file = Temporary(
             dir=self.root_dir
-        )
+        ).new_file()
 
         self.zypper_args = [
             '--non-interactive',
+            '--gpg-auto-import-keys',
             '--pkg-cache-dir', self.shared_zypper_dir['pkg-cache-dir'],
             '--reposd-dir', self.shared_zypper_dir['reposd-dir'],
             '--solv-cache-dir', self.shared_zypper_dir['solv-cache-dir'],
@@ -131,6 +139,10 @@ class RepositoryZypper(RepositoryBase):
             'main', 'credentials.global.dir',
             self.shared_zypper_dir['credentials-dir']
         )
+        if self.target_arch:
+            self.runtime_zypp_config.set(
+                'main', 'arch', self.target_arch
+            )
         if self.exclude_docs:
             self.runtime_zypp_config.set(
                 'main', 'rpm.install.excludedocs', 'yes'
@@ -147,7 +159,7 @@ class RepositoryZypper(RepositoryBase):
 
         self._write_runtime_config()
 
-    def setup_package_database_configuration(self):
+    def setup_package_database_configuration(self) -> None:
         """
         Setup rpm macros for bootstrapping and image building
 
@@ -162,7 +174,7 @@ class RepositoryZypper(RepositoryBase):
             self.root_dir, Defaults.get_custom_rpm_image_macro_name()
         )
         if self.locale:
-            rpmdb.set_macro_from_string(self.locale[0])
+            rpmdb.set_macro_from_string(self.locale)
         rpmdb.write_config()
 
         rpmdb = RpmDataBase(self.root_dir)
@@ -207,7 +219,7 @@ class RepositoryZypper(RepositoryBase):
                 ], raise_on_error=False
             )
 
-    def use_default_location(self):
+    def use_default_location(self) -> None:
         """
         Setup zypper repository operations to store all data
         in the default places
@@ -221,7 +233,7 @@ class RepositoryZypper(RepositoryBase):
         ] + self.custom_args
         self.command_env = dict(os.environ, LANG='C')
 
-    def runtime_config(self):
+    def runtime_config(self) -> Dict:
         """
         zypper runtime configuration and environment
         """
@@ -231,18 +243,19 @@ class RepositoryZypper(RepositoryBase):
         }
 
     def add_repo(
-        self, name, uri, repo_type='rpm-md',
-        prio=None, dist=None, components=None,
-        user=None, secret=None, credentials_file=None,
-        repo_gpgcheck=None, pkg_gpgcheck=None,
-        sourcetype=None, use_for_bootstrap=False
-    ):
+        self, name: str, uri: str, repo_type: str = 'rpm-md',
+        prio: int = None, dist: str = None, components: str = None,
+        user: str = None, secret: str = None, credentials_file: str = None,
+        repo_gpgcheck: bool = False, pkg_gpgcheck: bool = False,
+        sourcetype: str = None, use_for_bootstrap: bool = False,
+        customization_script: str = None
+    ) -> None:
         """
         Add zypper repository
 
         :param str name: repository name
         :param str uri: repository URI
-        :param repo_type: repostory type name
+        :param str repo_type: repostory type name
         :param int prio: zypper repostory priority
         :param str dist: unused
         :param str components: unused
@@ -253,6 +266,8 @@ class RepositoryZypper(RepositoryBase):
         :param bool pkg_gpgcheck: enable package signature validation
         :param str sourcetype: unused
         :param boot use_for_bootstrap: unused
+        :param str customization_script:
+            custom script called after the repo file was created
         """
         if credentials_file:
             repo_secret = os.sep.join(
@@ -305,26 +320,25 @@ class RepositoryZypper(RepositoryBase):
                 zypper_addrepo_command, self.command_env
             )
 
-        if prio or repo_gpgcheck is not None or pkg_gpgcheck is not None:
-            repo_config = ConfigParser()
-            repo_config.read(repo_file)
-            if repo_gpgcheck is not None:
-                repo_config.set(
-                    name, 'repo_gpgcheck', '1' if repo_gpgcheck else '0'
-                )
-            if pkg_gpgcheck is not None:
-                repo_config.set(
-                    name, 'pkg_gpgcheck', '1' if pkg_gpgcheck else '0'
-                )
-            if prio:
-                repo_config.set(
-                    name, 'priority', format(prio)
-                )
-            with open(repo_file, 'w') as repo:
-                repo_config.write(repo)
+        repo_config = ConfigParser()
+        repo_config.read(repo_file)
+        repo_config.set(
+            name, 'repo_gpgcheck', '1' if repo_gpgcheck else '0'
+        )
+        repo_config.set(
+            name, 'pkg_gpgcheck', '1' if pkg_gpgcheck else '0'
+        )
+        if prio:
+            repo_config.set(
+                name, 'priority', format(prio)
+            )
+        with open(repo_file, 'w') as repo:
+            repo_config.write(repo)
+        if customization_script:
+            self.run_repo_customize(customization_script, repo_file)
         self._restore_package_cache()
 
-    def import_trusted_keys(self, signing_keys):
+    def import_trusted_keys(self, signing_keys: List) -> None:
         """
         Imports trusted keys into the image
 
@@ -334,7 +348,7 @@ class RepositoryZypper(RepositoryBase):
         for key in signing_keys:
             rpmdb.import_signing_key_to_image(key)
 
-    def delete_repo(self, name):
+    def delete_repo(self, name: str) -> None:
         """
         Delete zypper repository
 
@@ -347,14 +361,14 @@ class RepositoryZypper(RepositoryBase):
             self.command_env
         )
 
-    def delete_all_repos(self):
+    def delete_all_repos(self) -> None:
         """
         Delete all zypper repositories
         """
         Path.wipe(self.shared_zypper_dir['reposd-dir'])
         Path.create(self.shared_zypper_dir['reposd-dir'])
 
-    def delete_repo_cache(self, name):
+    def delete_repo_cache(self, name: str) -> None:
         """
         Delete zypper repository cache
 
@@ -374,7 +388,7 @@ class RepositoryZypper(RepositoryBase):
             os.sep.join([self.shared_zypper_dir['raw-cache-dir'], name])
         )
 
-    def cleanup_unused_repos(self):
+    def cleanup_unused_repos(self) -> None:
         """
         Delete unused zypper repositories
 
@@ -396,7 +410,7 @@ class RepositoryZypper(RepositoryBase):
             if repo_file not in self.repo_names:
                 Path.wipe(repos_dir + '/' + repo_file)
 
-    def _create_zypper_runtime_environment(self):
+    def _create_zypper_runtime_environment(self) -> Dict:
         for zypper_dir in list(self.shared_zypper_dir.values()):
             Path.create(zypper_dir)
         return dict(
@@ -405,13 +419,13 @@ class RepositoryZypper(RepositoryBase):
             ZYPP_CONF=self.runtime_zypp_config_file.name
         )
 
-    def _write_runtime_config(self):
+    def _write_runtime_config(self) -> None:
         with open(self.runtime_zypper_config_file.name, 'w') as config:
             self.runtime_zypper_config.write(config)
         with open(self.runtime_zypp_config_file.name, 'w') as config:
             self.runtime_zypp_config.write(config)
 
-    def _backup_package_cache(self):
+    def _backup_package_cache(self) -> None:
         """
         preserve package cache which otherwise will be removed by
         zypper if no repo file is found. But this situation is
@@ -420,13 +434,13 @@ class RepositoryZypper(RepositoryBase):
         """
         self._move_package_cache(backup=True)
 
-    def _restore_package_cache(self):
+    def _restore_package_cache(self) -> None:
         """
         restore preserved package cache at the location passed to zypper
         """
         self._move_package_cache(restore=True)
 
-    def _move_package_cache(self, backup=False, restore=False):
+    def _move_package_cache(self, backup: bool = False, restore: bool = False) -> None:
         package_cache = self.shared_location + '/packages'
         package_cache_moved = package_cache + '.moved'
         if backup and os.path.exists(package_cache):
@@ -438,5 +452,5 @@ class RepositoryZypper(RepositoryBase):
                 ['mv', '-f', package_cache_moved, package_cache]
             )
 
-    def __del__(self):
+    def __del__(self) -> None:
         self._restore_package_cache()

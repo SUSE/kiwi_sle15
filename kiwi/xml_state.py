@@ -21,7 +21,6 @@ from typing import (
 import re
 import logging
 import copy
-import platform
 from textwrap import dedent
 
 # project
@@ -90,7 +89,7 @@ class XMLState:
     ):
         self.root_partition_uuid: Optional[str] = None
         self.root_filesystem_uuid: Optional[str] = None
-        self.host_architecture = platform.machine()
+        self.host_architecture = defaults.PLATFORM_MACHINE
         self.xml_data = xml_data
         self.profiles = self._used_profiles(profiles)
         self.build_type = self._build_type_section(
@@ -141,6 +140,19 @@ class XMLState:
             self.xml_data.get_users()
         )
 
+    def get_build_type_bundle_format(self) -> str:
+        """
+        Return bundle_format for build type
+
+        The bundle_format string is validated against the available
+        name tags from kiwi.system.result::result_name_tags.
+
+        :return: bundle format string
+
+        :rtype: str
+        """
+        return self.build_type.get_bundle_format()
+
     def get_build_type_name(self) -> str:
         """
         Default build type name
@@ -175,24 +187,28 @@ class XMLState:
 
         Depending on the image type a specific initrd system is
         either pre selected or free of choice according to the
-        XML type setup
+        XML type setup.
 
-        :return: dracut, kiwi or None
+        :return: 'dracut', 'kiwi' or 'none'
 
         :rtype: str
         """
-        if self.get_build_type_name() in ['vmx', 'iso', 'kis']:
-            # vmx, iso and kis image types always use dracut as initrd system
-            initrd_system = 'dracut'
-        elif self.get_build_type_name() == 'pxe':
-            # pxe image type defaults to kiwi if unset
-            initrd_system = self.build_type.get_initrd_system() or 'kiwi'
-        elif self.get_build_type_name() == 'oem':
-            # oem image type defaults to dracut if unset
-            initrd_system = self.build_type.get_initrd_system() or 'dracut'
-        else:
-            initrd_system = self.build_type.get_initrd_system()
-        return initrd_system
+        pre_selection_map = {
+            'vmx': 'dracut',
+            'oem': 'dracut',
+            'iso': 'dracut',
+            'kis': 'dracut',
+            'pxe': 'kiwi',
+        }
+        build_type = self.get_build_type_name()
+        default_initrd_system = pre_selection_map.get(build_type) or 'none'
+
+        if build_type == 'iso':
+            # iso type always use dracut as initrd system
+            return default_initrd_system
+
+        # Allow to choose for any other build type
+        return self.build_type.get_initrd_system() or default_initrd_system
 
     def get_locale(self) -> Optional[List]:
         """
@@ -1379,6 +1395,12 @@ class XMLState:
                     # the attribute is handled
                     attributes.append('no-copy-on-write')
 
+                if volume.get_filesystem_check() is True:
+                    # by default filesystem check is switched off for any
+                    # filesystem except the rootfs. Thus only if filesystem
+                    # check is requested the attribute is handled
+                    attributes.append('enable-for-filesystem-check')
+
                 if '@root' in name:
                     # setup root volume, it takes an optional volume
                     # name if specified as @root=name and has no specific
@@ -1570,6 +1592,19 @@ class XMLState:
         :rtype: list
         """
         return self.get_strip_list('libs')
+
+    def get_include_section_reference_file_names(self) -> List[str]:
+        """
+        List of all <include> section file name references
+
+        :return: List[str]
+
+        :rtype: list
+        """
+        include_files = []
+        for include in self.xml_data.get_include():
+            include_files.append(include.get_from())
+        return include_files
 
     def get_repository_sections(self) -> List:
         """
@@ -2101,6 +2136,45 @@ class XMLState:
         """
         return self.root_filesystem_uuid
 
+    @staticmethod
+    def get_archives_target_dirs(
+        packages_sections_names: Optional[List[xml_parse.packages]]
+    ) -> Dict:
+        """
+        Dict of archive names and target dirs for packages section(s), if any
+        :return: archive names and its target dir
+        :rtype: dict
+        """
+        result = {}
+        if packages_sections_names:
+            for package_section_name in packages_sections_names:
+                for archive in package_section_name.get_archive():
+                    result[archive.get_name().strip()] = archive.get_target_dir()
+
+        return result
+
+    def get_bootstrap_archives_target_dirs(self) -> Dict:
+        """
+        Dict of archive names and target dirs from the type="bootstrap"
+        packages section(s)
+        :return: archive names and its target dir
+        :rtype: dict
+        """
+        return self.get_archives_target_dirs(
+            self.get_packages_sections(['bootstrap'])
+        )
+
+    def get_system_archives_target_dirs(self) -> Dict:
+        """
+        Dict of archive names and its target dir from the packages sections matching
+        type="image" and type=build_type
+        :return: archive names and its target dir
+        :rtype: dict
+        """
+        return self.get_archives_target_dirs(
+            self.get_packages_sections(['image', self.get_build_type_name()])
+        )
+
     def _used_profiles(self, profiles=None):
         """
         return list of profiles to use. The method looks up the
@@ -2118,14 +2192,14 @@ class XMLState:
         """
         available_profiles = dict()
         import_profiles = []
-        profiles_section = self.xml_data.get_profiles()
-        if profiles_section:
-            for profile in profiles_section[0].get_profile():
+        for profiles_section in self.xml_data.get_profiles():
+            for profile in profiles_section.get_profile():
                 if self.profile_matches_host_architecture(profile):
                     name = profile.get_name()
                     available_profiles[name] = profile
                     if profile.get_import():
                         import_profiles.append(name)
+
         if not profiles:
             return import_profiles
         else:
@@ -2320,8 +2394,8 @@ class XMLState:
                 if build_type == image_type.get_image():
                     return image_type
             raise KiwiTypeNotFound(
-                'build type {0} not found in {1}'.format(
-                    build_type, self.xml_data.description
+                'Build type {0!r} not found for applied profiles: {1!r}'.format(
+                    build_type, self.profiles
                 )
             )
 
@@ -2334,7 +2408,9 @@ class XMLState:
         if image_type_sections:
             return image_type_sections[0]
         raise KiwiTypeNotFound(
-            'No build type defined in {0}'.format(self.xml_data.description)
+            'No build type defined with applied profiles: {0!r}'.format(
+                self.profiles
+            )
         )
 
     def _profiled(self, xml_abstract):

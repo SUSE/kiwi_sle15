@@ -17,9 +17,9 @@
 #
 import os
 import logging
-from tempfile import NamedTemporaryFile
 
 # project
+from kiwi.utils.temporary import Temporary
 from kiwi.archive.tar import ArchiveTar
 from kiwi.defaults import Defaults
 from kiwi.utils.compress import Compress
@@ -75,7 +75,9 @@ class ContainerImageAppx:
         :param string filename: archive file name
         :param string base_image: not-supported
         """
-        exclude_list = Defaults.get_exclude_list_for_root_data_sync()
+        exclude_list = Defaults.\
+            get_exclude_list_for_root_data_sync() + Defaults.\
+            get_exclude_list_from_custom_exclude_files(self.root_dir)
         exclude_list.append('boot')
         exclude_list.append('dev')
         exclude_list.append('sys')
@@ -96,7 +98,7 @@ class ContainerImageAppx:
         compressor = Compress(archive_file_name)
         archive_file_name = compressor.gzip()
 
-        filemap_file = NamedTemporaryFile()
+        filemap_file = Temporary().new_file()
         with open(filemap_file.name, 'w') as filemap:
             filemap.write('[Files]{0}'.format(os.linesep))
             for topdir, dirs, files in sorted(os.walk(self.meta_data_path)):

@@ -47,13 +47,6 @@ class KiwiArchiveTarError(KiwiError):
     """
 
 
-class KiwiBootImageDumpError(KiwiError):
-    """
-    Exception raised if an instance of BootImage* can not be
-    serialized on as file via pickle dump
-    """
-
-
 class KiwiBootImageSetupError(KiwiError):
     """
     Exception raised if an unsupported initrd system type is used.
@@ -807,4 +800,17 @@ class KiwiShellVariableValueError(KiwiError):
     """
     Exception raised if a given python value cannot be converted
     into a string representation for use in shell scripts
+    """
+
+
+class KiwiIncludFileNotFoundError(KiwiError):
+    """
+    Exception raised if the file reference in an <include>
+    statement could not be found
+    """
+
+
+class KiwiUmountBusyError(KiwiError):
+    """
+    Exception raised if the attempt to umount a resource has failed
     """

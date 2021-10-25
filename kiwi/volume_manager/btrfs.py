@@ -25,6 +25,8 @@ from xml.dom import minidom
 from typing import List
 
 # project
+import kiwi.defaults as defaults
+
 from kiwi.command import Command
 from kiwi.volume_manager.base import VolumeManagerBase
 from kiwi.mount_manager import MountManager
@@ -209,10 +211,16 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         for volume_mount in self.subvol_mount_list:
             subvol_name = self._get_subvol_name_from_mountpoint(volume_mount)
             mount_entry_options = mount_options + ['subvol=' + subvol_name]
+            fs_check = self._is_volume_enabled_for_fs_check(
+                volume_mount.mountpoint
+            )
             fstab_entry = ' '.join(
                 [
                     blkid_type + '=' + device_id, subvol_name.replace('@', ''),
-                    'btrfs', ','.join(mount_entry_options), '0 0'
+                    'btrfs', ','.join(mount_entry_options),
+                    '0 {fs_passno}'.format(
+                        fs_passno='2' if fs_check else '0'
+                    )
                 ]
             )
             fstab_entries.append(fstab_entry)
@@ -340,6 +348,13 @@ class VolumeManagerBtrfs(VolumeManagerBase):
                 ['btrfs', 'property', 'set', sync_target, 'ro', 'true']
             )
 
+    def _is_volume_enabled_for_fs_check(self, mountpoint):
+        for volume in self.volumes:
+            if volume.realpath in mountpoint:
+                if 'enable-for-filesystem-check' in volume.attributes:
+                    return True
+        return False
+
     def _set_default_volume(self, default_volume):
         subvolume_list_call = Command.run(
             ['btrfs', 'subvolume', 'list', self.mountpoint]
@@ -429,7 +444,10 @@ class VolumeManagerBtrfs(VolumeManagerBase):
             snapshot_info_file.write(self._xml_pretty(snapshot))
 
     def _get_subvol_name_from_mountpoint(self, volume_mount):
-        subvol_name = '/'.join(volume_mount.mountpoint.split('/')[3:])
+        path_start_index = len(defaults.TEMP_DIR.split(os.sep)) + 1
+        subvol_name = os.sep.join(
+            volume_mount.mountpoint.split(os.sep)[path_start_index:]
+        )
         if self.toplevel_volume and self.toplevel_volume in subvol_name:
             subvol_name = subvol_name.replace(self.toplevel_volume, '')
         return os.path.normpath(os.sep.join(['@', subvol_name]))
@@ -439,6 +457,3 @@ class VolumeManagerBtrfs(VolumeManagerBase):
             log.info('Cleaning up %s instance', type(self).__name__)
             if not self.umount_volumes():
                 log.warning('Subvolumes still busy')
-                return
-            Path.wipe(self.mountpoint)
-        self._cleanup_tempdirs()

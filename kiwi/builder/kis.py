@@ -17,6 +17,7 @@
 #
 import os
 import logging
+from typing import Dict
 
 # project
 from kiwi.defaults import Defaults
@@ -29,6 +30,7 @@ from kiwi.system.kernel import Kernel
 from kiwi.system.result import Result
 from kiwi.runtime_config import RuntimeConfig
 from kiwi.archive.tar import ArchiveTar
+from kiwi.xml_state import XMLState
 
 from kiwi.exceptions import (
     KiwiKisBootImageError
@@ -48,16 +50,17 @@ class KisBuilder:
         * signing_keys: list of package signing keys
         * xz_options: string of XZ compression parameters
     """
-    def __init__(self, xml_state, target_dir, root_dir, custom_args=None):
+    def __init__(
+        self, xml_state: XMLState, target_dir: str,
+        root_dir: str, custom_args: Dict = None
+    ):
         self.target_dir = target_dir
         self.compressed = xml_state.build_type.get_compressed()
         self.xen_server = xml_state.is_xen_server()
         self.custom_cmdline = xml_state.build_type.get_kernelcmdline()
-        self.filesystem = xml_state.build_type.get_filesystem()
-        if self.filesystem:
-            self.filesystem = FileSystemBuilder(
-                xml_state, target_dir, root_dir + '/'
-            )
+        self.filesystem = FileSystemBuilder(
+            xml_state, target_dir, root_dir + '/'
+        ) if xml_state.build_type.get_filesystem() else None
         self.system_setup = SystemSetup(
             xml_state=xml_state, root_dir=root_dir
         )
@@ -73,6 +76,7 @@ class KisBuilder:
             xml_state, target_dir, root_dir,
             signing_keys=self.boot_signing_keys
         )
+        self.bundle_format = xml_state.get_build_type_bundle_format()
         self.image_name = ''.join(
             [
                 target_dir, '/',
@@ -81,16 +85,19 @@ class KisBuilder:
                 '-' + xml_state.get_image_version()
             ]
         )
-        self.image = None
+        self.image: str = ''
         self.append_file = ''.join([self.image_name, '.append'])
         self.archive_name = ''.join([self.image_name, '.tar'])
         self.checksum_name = ''.join([self.image_name, '.md5'])
-        self.kernel_filename = None
-        self.hypervisor_filename = None
+        self.kernel_filename: str = ''
+        self.hypervisor_filename: str = ''
         self.result = Result(xml_state)
         self.runtime_config = RuntimeConfig()
 
-    def create(self):
+        if not self.boot_image_task.has_initrd_support():
+            log.warning('Building without initrd support !')
+
+    def create(self) -> Result:
         """
         Build a component image consisting out of a boot image(initrd)
         plus its appropriate kernel files and the root filesystem
@@ -124,16 +131,17 @@ class KisBuilder:
             checksum = Checksum(self.image)
             checksum.md5(self.checksum_name)
 
-        # prepare boot(initrd) root system
-        log.info('Creating boot image')
-        self.boot_image_task.prepare()
+        # prepare initrd
+        if self.boot_image_task.has_initrd_support():
+            log.info('Creating boot image')
+            self.boot_image_task.prepare()
 
         # export modprobe configuration to boot image
         self.system_setup.export_modprobe_setup(
             self.boot_image_task.boot_root_directory
         )
 
-        # extract kernel from boot(initrd) root system
+        # extract kernel from boot system
         kernel = Kernel(self.boot_image_task.boot_root_directory)
         kernel_data = kernel.get_kernel()
         if kernel_data:
@@ -154,10 +162,13 @@ class KisBuilder:
 
         # extract hypervisor from boot(initrd) root system
         if self.xen_server:
-            kernel_data = kernel.get_xen_hypervisor()
-            if kernel_data:
+            hypervisor_data = kernel.get_xen_hypervisor()
+            if hypervisor_data:
                 self.hypervisor_filename = ''.join(
-                    [os.path.basename(self.image_name), '-', kernel_data.name]
+                    [
+                        os.path.basename(self.image_name),
+                        '-', hypervisor_data.name
+                    ]
                 )
                 kernel.copy_xen_hypervisor(
                     self.target_dir, self.hypervisor_filename
@@ -176,7 +187,8 @@ class KisBuilder:
                 )
 
         # create initrd
-        self.boot_image_task.create_initrd()
+        if self.boot_image_task.has_initrd_support():
+            self.boot_image_task.create_initrd()
 
         # create append information
         # this information helps to configure the deployment infrastructure
@@ -194,9 +206,12 @@ class KisBuilder:
 
         kis_tarball_files = [
             self.kernel_filename,
-            os.path.basename(self.boot_image_task.initrd_filename),
             os.path.basename(self.checksum_name),
         ]
+        if self.boot_image_task.initrd_filename:
+            kis_tarball_files.append(
+                os.path.basename(self.boot_image_task.initrd_filename)
+            )
 
         if self.image:
             kis_tarball_files.append(os.path.basename(self.image))
@@ -222,7 +237,11 @@ class KisBuilder:
             self.runtime_config.get_max_size_constraint(),
             self.archive_name
         )
-        # store results
+        # store image bundle_format in result
+        if self.bundle_format:
+            self.result.add_bundle_format(self.bundle_format)
+
+        # # store archive file name in result
         self.result.add(
             key='kis_archive',
             filename=self.archive_name,

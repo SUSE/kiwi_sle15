@@ -27,13 +27,18 @@ wheel
 # Python style guide checker
 flake8
 mypy
+types-pkg_resources
+types-requests
+types-PyYAML
+types-mock
+types-simplejson
 
 # Generate Data Structures from XML Schema
 # http://pythonhosted.org/generateDS
 generateDS==2.29.24
 
 # for building documentation
-sphinx
+sphinx>=4.0.2
 
 git+https://github.com/openSUSE/rstxml2docbook.git@feature/kiwi
 
@@ -50,3 +55,7 @@ python-dateutil
 
 # for release
 twine
+
+# for scripts testing
+pytest-testinfra
+dataclasses ; python_version < "3.7"

@@ -17,9 +17,12 @@
 #
 import os
 from configparser import ConfigParser
-from tempfile import NamedTemporaryFile
+from typing import (
+    List, Dict
+)
 
 # project
+from kiwi.utils.temporary import Temporary
 from kiwi.repository.base import RepositoryBase
 from kiwi.path import Path
 from kiwi.command import Command
@@ -35,7 +38,8 @@ class RepositoryPacman(RepositoryBase):
     :param list pacman_args: pacman caller args plus additional custom args
     :param dict command_env: customized os.environ for pacman
     """
-    def post_init(self, custom_args=None):
+
+    def post_init(self, custom_args: List = []) -> None:
         """
         Post initialization method
 
@@ -46,13 +50,11 @@ class RepositoryPacman(RepositoryBase):
         """
         self.custom_args = custom_args
         self.check_signatures = False
-        self.repo_names = []
-        if not custom_args:
-            self.custom_args = []
+        self.repo_names: List = []
 
-        self.runtime_pacman_config_file = NamedTemporaryFile(
+        self.runtime_pacman_config_file = Temporary(
             dir=self.root_dir
-        )
+        ).new_file()
 
         if 'check_signatures' in self.custom_args:
             self.custom_args.remove('check_signatures')
@@ -73,7 +75,7 @@ class RepositoryPacman(RepositoryBase):
 
         self._write_runtime_config()
 
-    def use_default_location(self):
+    def use_default_location(self) -> None:
         """
         Setup pacman repository operations to store all data
         in the default places
@@ -81,7 +83,7 @@ class RepositoryPacman(RepositoryBase):
         self.shared_pacman_dir['repos-dir'] = \
             self.root_dir + '/etc/pacman.d'
 
-    def runtime_config(self):
+    def runtime_config(self) -> Dict:
         """
         pacman runtime configuration and environment
         """
@@ -91,8 +93,9 @@ class RepositoryPacman(RepositoryBase):
         }
 
     def _add_repo_section(
-        self, config_parser, name, uri, repo_gpgcheck=None, pkg_gpgcheck=None
-    ):
+        self, config_parser: ConfigParser, name: str, uri: str,
+        repo_gpgcheck: bool = False, pkg_gpgcheck: bool = False
+    ) -> None:
         config_parser.add_section(name)
         if uri.startswith(os.sep) and os.path.exists(uri):
             uri = 'file://{}'.format(uri)
@@ -105,35 +108,38 @@ class RepositoryPacman(RepositoryBase):
         )
 
     def add_repo(
-        self, name, uri, repo_type=None,
-        prio=None, dist=None, components=None,
-        user=None, secret=None, credentials_file=None,
-        repo_gpgcheck=None, pkg_gpgcheck=None,
-        sourcetype=None, use_for_bootstrap=False
-    ):
+        self, name: str, uri: str, repo_type: str = None,
+        prio: int = None, dist: str = None, components: str = None,
+        user: str = None, secret: str = None, credentials_file: str = None,
+        repo_gpgcheck: bool = False, pkg_gpgcheck: bool = False,
+        sourcetype: str = None, use_for_bootstrap: bool = False,
+        customization_script: str = None
+    ) -> None:
         """
         Add pacman repository
 
         :param str name: repository base file name
         :param str uri: repository URI
-        :param repo_type: unused
+        :param str repo_type: unused
         :param int prio:
         :param dist: unused
-        :param components: components to be used from this repository
-        :param user: unused
-        :param secret: unused
+        :param str components: components to be used from this repository
+        :param str user: unused
+        :param str secret: unused
         :param credentials_file: unused
         :param bool repo_gpgcheck: enable database signature validation
         :param bool pkg_gpgcheck: enable package signature validation
         :param str sourcetype: unused
         :param bool use_for_bootstrap: unused
+        :param str customization_script:
+            custom script called after the repo file was created
         """
         repo_file = '{0}/{1}.repo'.format(
             self.shared_pacman_dir['repos-dir'], name
         )
         self.repo_names.append(name + '.repo')
         repo_config = ConfigParser()
-        repo_config.optionxform = str
+        repo_config.optionxform = str  # type: ignore
         if not components:
             self._add_repo_section(
                 repo_config, name, uri, repo_gpgcheck,
@@ -148,8 +154,10 @@ class RepositoryPacman(RepositoryBase):
 
         with open(repo_file, 'w') as config:
             repo_config.write(config)
+        if customization_script:
+            self.run_repo_customize(customization_script, repo_file)
 
-    def import_trusted_keys(self, signing_keys):
+    def import_trusted_keys(self, signing_keys: List) -> None:
         """
         pacman runtime configuration and environment
         """
@@ -163,7 +171,7 @@ class RepositoryPacman(RepositoryBase):
                     ['pacman-key', '--add', signing_key]
                 )
 
-    def delete_repo(self, name):
+    def delete_repo(self, name: str) -> None:
         """
         Delete pacman repository
 
@@ -173,14 +181,14 @@ class RepositoryPacman(RepositoryBase):
             '{0}/{1}.repo'.format(self.shared_pacman_dir['repos-dir'], name)
         )
 
-    def delete_all_repos(self):
+    def delete_all_repos(self) -> None:
         """
         Delete all pacman repositories
         """
         Path.wipe(self.shared_pacman_dir['repos-dir'])
         Path.create(self.shared_pacman_dir['repos-dir'])
 
-    def delete_repo_cache(self, name):
+    def delete_repo_cache(self, name: str) -> None:
         """
         Delete pacman repository cache
 
@@ -191,13 +199,13 @@ class RepositoryPacman(RepositoryBase):
         """
         Path.wipe(self.shared_pacman_dir['cache-dir'])
 
-    def setup_package_database_configuration(self):
+    def setup_package_database_configuration(self) -> None:
         """
         Creates the folder that will contain the package manager database
         """
         Path.create(os.sep.join([self.root_dir, 'var/lib/pacman']))
 
-    def cleanup_unused_repos(self):
+    def cleanup_unused_repos(self) -> None:
         """
         Delete unused pacman repositories
 
@@ -211,9 +219,9 @@ class RepositoryPacman(RepositoryBase):
             if repo_file not in self.repo_names:
                 Path.wipe(repos_dir + '/' + repo_file)
 
-    def _write_runtime_config(self):
+    def _write_runtime_config(self) -> None:
         runtime_pacman_config = ConfigParser()
-        runtime_pacman_config.optionxform = str
+        runtime_pacman_config.optionxform = str  # type: ignore
         runtime_pacman_config.add_section('options')
 
         runtime_pacman_config.set(

@@ -6,15 +6,17 @@ import kiwi
 
 from ..test_helper import argv_kiwi_tests
 
-from kiwi.exceptions import KiwiArchiveSetupError
+from kiwi.defaults import Defaults
 from kiwi.builder.archive import ArchiveBuilder
+
+from kiwi.exceptions import KiwiArchiveSetupError
 
 
 class TestArchiveBuilder:
-    @patch('platform.machine')
-    def setup(self, mock_machine):
-        mock_machine.return_value = 'x86_64'
+    def setup(self):
+        Defaults.set_platform_name('x86_64')
         self.xml_state = mock.Mock()
+        self.xml_state.profiles = None
         self.xml_state.get_image_version = mock.Mock(
             return_value='1.2.3'
         )
@@ -50,9 +52,8 @@ class TestArchiveBuilder:
             archive.create()
 
     @patch('kiwi.builder.archive.ArchiveTar')
-    @patch('platform.machine')
-    def test_create(self, mock_machine, mock_tar):
-        mock_machine.return_value = 'x86_64'
+    def test_create(self, mock_tar):
+        Defaults.set_platform_name('x86_64')
         archive = mock.Mock()
         mock_tar.return_value = archive
         self.archive.create()
@@ -61,7 +62,8 @@ class TestArchiveBuilder:
         )
         archive.create_xz_compressed.assert_called_once_with(
             'root_dir', exclude=[
-                'image', '.profile', '.kconfig', '.buildenv', 'var/cache/kiwi'
+                'image', '.profile', '.kconfig', 'run/*', 'tmp/*',
+                '.buildenv', 'var/cache/kiwi'
             ], xz_options=None
         )
         self.setup.export_package_verification.assert_called_once_with(

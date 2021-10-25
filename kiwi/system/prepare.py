@@ -18,11 +18,12 @@
 import os
 import logging
 from typing import (
-    List, Any
+    List, Any, Optional
 )
 from textwrap import dedent
 
 # project
+from kiwi.xml_parse import repository
 from kiwi.xml_state import XMLState
 from kiwi.system.root_init import RootInit
 from kiwi.system.root_import import RootImport
@@ -101,7 +102,8 @@ class SystemPrepare:
         self.uri_list: List[Uri] = []
 
     def setup_repositories(
-        self, clear_cache: bool = False, signing_keys: List[str] = None
+        self, clear_cache: bool = False,
+        signing_keys: List[str] = None, target_arch: Optional[str] = None
     ) -> PackageManagerBase:
         """
         Set up repositories for software installation and return a
@@ -111,6 +113,8 @@ class SystemPrepare:
             Flag the clear cache before configure anything
         :param list signing_keys:
             Keys imported to the package manager
+        :param str target_arch:
+            Target architecture name
 
         :return: instance of :class:`PackageManager` subclass
 
@@ -129,6 +133,10 @@ class SystemPrepare:
             repository_options.append(
                 '_install_langs%{0}'.format(':'.join(rpm_locale_list))
             )
+        if target_arch:
+            repository_options.append(
+                f'_target_arch%{target_arch}'
+            )
         repo = Repository.new(
             self.root_bind, package_manager, repository_options
         )
@@ -146,6 +154,9 @@ class SystemPrepare:
             repo_components = xml_repo.get_components()
             repo_repository_gpgcheck = xml_repo.get_repository_gpgcheck()
             repo_package_gpgcheck = xml_repo.get_package_gpgcheck()
+            repo_customization_script = self._get_repo_customization_script(
+                xml_repo
+            )
             repo_sourcetype = xml_repo.get_sourcetype()
             repo_use_for_bootstrap = \
                 True if xml_repo.get_use_for_bootstrap() else False
@@ -180,7 +191,8 @@ class SystemPrepare:
                 repo_type, repo_priority, repo_dist, repo_components,
                 repo_user, repo_secret, uri.credentials_file_name(),
                 repo_repository_gpgcheck, repo_package_gpgcheck,
-                repo_sourcetype, repo_use_for_bootstrap
+                repo_sourcetype, repo_use_for_bootstrap,
+                repo_customization_script
             )
             if clear_cache:
                 repo.delete_repo_cache(repo_alias)
@@ -219,6 +231,7 @@ class SystemPrepare:
         bootstrap_collections = self.xml_state.get_bootstrap_collections()
         bootstrap_products = self.xml_state.get_bootstrap_products()
         bootstrap_archives = self.xml_state.get_bootstrap_archives()
+        bootstrap_archives_target_dirs = self.xml_state.get_bootstrap_archives_target_dirs()
         # process package installations
         if collection_type == 'onlyRequired':
             manager.process_only_required()
@@ -253,7 +266,9 @@ class SystemPrepare:
         # process archive installations
         if bootstrap_archives:
             try:
-                self._install_archives(bootstrap_archives)
+                self._install_archives(
+                    bootstrap_archives, bootstrap_archives_target_dirs
+                )
             except Exception as issue:
                 raise KiwiBootStrapPhaseFailed(
                     self.issue_message.format(
@@ -285,6 +300,7 @@ class SystemPrepare:
         system_collections = self.xml_state.get_system_collections()
         system_products = self.xml_state.get_system_products()
         system_archives = self.xml_state.get_system_archives()
+        system_archives_target_dirs = self.xml_state.get_system_archives_target_dirs()
         system_packages_ignored = self.xml_state.get_system_ignore_packages()
         # process package installations
         if collection_type == 'onlyRequired':
@@ -320,7 +336,10 @@ class SystemPrepare:
         # process archive installations
         if system_archives:
             try:
-                self._install_archives(system_archives)
+                self._install_archives(
+                    system_archives,
+                    system_archives_target_dirs
+                )
             except Exception as issue:
                 raise KiwiInstallPhaseFailed(
                     self.issue_message.format(
@@ -484,7 +503,7 @@ class SystemPrepare:
         )
         manager.clean_leftovers()
 
-    def _install_archives(self, archive_list):
+    def _install_archives(self, archive_list, archive_target_dir_dict):
         log.info("Installing archives")
         for archive in archive_list:
             log.info("--> archive: %s", archive)
@@ -505,8 +524,15 @@ class SystemPrepare:
                 archive_file = '/'.join(
                     [derived_description_dir, archive]
                 )
+            target_dir = self.root_bind.root_dir
+            if archive_target_dir_dict.get(archive):
+                target_dir = os.path.join(
+                    target_dir,
+                    archive_target_dir_dict.get(archive)
+                )
+            log.info('--> target dir: %s', target_dir)
             tar = ArchiveTar(archive_file)
-            tar.extract(self.root_bind.root_dir)
+            tar.extract(target_dir)
 
     def _setup_requests(
         self, manager, packages, collections=None, products=None, ignored=None
@@ -532,6 +558,14 @@ class SystemPrepare:
             manager.collection_requests + \
             manager.product_requests + \
             manager.exclude_requests
+
+    def _get_repo_customization_script(self, xml_repo: repository) -> str:
+        script_path = xml_repo.get_customize()
+        if script_path and not os.path.isabs(script_path):
+            script_path = os.path.join(
+                self.xml_state.xml_data.description_dir, script_path
+            )
+        return script_path
 
     def __del__(self):
         log.info('Cleaning up {:s} instance'.format(type(self).__name__))

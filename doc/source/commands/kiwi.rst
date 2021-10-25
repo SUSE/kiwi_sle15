@@ -12,6 +12,7 @@ SYNOPSIS
 
    kiwi-ng -h | --help
    kiwi-ng [--profile=<name>...]
+           [--temp-dir=<directory>]
            [--type=<build_type>]
            [--logfile=<filename>]
            [--debug]
@@ -24,6 +25,8 @@ SYNOPSIS
        result <command> [<args>...]
    kiwi-ng [--profile=<name>...]
            [--shared-cache-dir=<directory>]
+           [--temp-dir=<directory>]
+           [--target-arch=<name>]
            [--type=<build_type>]
            [--logfile=<filename>]
            [--debug]
@@ -98,13 +101,14 @@ GLOBAL OPTIONS
 --logfile=<filename>
 
   Specify log file. the logfile contains detailed information about
-  the process.
+  the process. The special call: `--logfile stdout` sends all
+  information to standard out instead of writing to a file
 
 --profile=<name>
 
   Select profile to use. The specified profile must be part of the
   XML description. The option can be specified multiple times to
-  allow using a combination of profiles
+  allow using a combination of profiles.
 
 --shared-cache-dir=<directory>
 
@@ -112,7 +116,23 @@ GLOBAL OPTIONS
   is shared via bind mount between the build host and image
   root system and contains information about package repositories
   and their cache and meta data. The default location is set
-  to /var/cache/kiwi
+  to `/var/cache/kiwi`.
+
+--temp-dir=<directory>
+
+  Specify an alternative base temporary directory. The
+  provided path is used as base directory to store temporary
+  files and directories. By default `/var/tmp` is used.
+
+--target-arch=<name>
+
+  Specify the image architecture. By default the host architecture is
+  used as the image architecture. If the specified architecture name
+  does not match the host architecture and is therefore requesting
+  a cross architecture image build, it's important to understand that
+  for this process to work a preparatory step to support the image
+  architecture and binary format on the building host is required
+  and not a responsibility of {kiwi}.
 
 --type=<build_type>
 
@@ -130,24 +150,9 @@ EXAMPLE
 
 .. code:: bash
 
-   $ git clone https://github.com/OSInside/kiwi-descriptions
+   $ git clone https://github.com/OSInside/kiwi
 
-   $ kiwi --type oem system build \
-       --description kiwi-descriptions/suse/x86_64/{exc_description} \
+   $ sudo kiwi-ng system build \
+       --description kiwi/build-tests/{exc_description_disk} \
+       --set-repo {exc_repo_leap} \
        --target-dir /tmp/myimage
-
-
-.. _db_commands_kiwi_compat:
-
-COMPATIBILITY
--------------
-
-This version of {kiwi} uses a different caller syntax compared to
-former versions. However there is a compatibility mode which allows
-to use a legacy {kiwi} commandline as follows:
-
-.. code:: bash
-
-   $ kiwi compat \
-       --build kiwi-descriptions/suse/x86_64/{exc_description} \
-       --type oem -d /tmp/myimage

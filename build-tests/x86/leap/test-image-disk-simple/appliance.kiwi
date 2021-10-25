@@ -1,13 +1,13 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.3" name="kiwi-test-image-disk-simple" displayname="Simple Disk">
+<image schemaversion="7.4" name="kiwi-test-image-disk-simple" displayname="Simple Disk">
     <description type="system">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.com</contact>
         <specification>Simple disk test build</specification>
     </description>
     <preferences>
-        <version>1.42.1</version>
+        <version>1.15.3</version>
         <packagemanager>zypper</packagemanager>
         <locale>en_US</locale>
         <keytable>us</keytable>
@@ -20,7 +20,7 @@
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
-            <bootloader name="grub2" console="serial"/>
+            <bootloader name="grub2" console="serial" timeout="10"/>
         </type>
     </preferences>
     <users>

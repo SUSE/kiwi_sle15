@@ -15,9 +15,8 @@ from kiwi.exceptions import (
 
 
 class TestBootLoaderInstallGrub2:
-    @patch('platform.machine')
-    def setup(self, mock_machine):
-        mock_machine.return_value = 'x86_64'
+    def setup(self):
+        Defaults.set_platform_name('x86_64')
 
         self.firmware = mock.Mock()
         self.firmware.efi_mode = mock.Mock(
@@ -136,6 +135,10 @@ class TestBootLoaderInstallGrub2:
 
     def test_install_required_arm64(self):
         self.bootloader.arch = 'arm64'
+        assert self.bootloader.install_required() is False
+
+    def test_install_required_riscv64(self):
+        self.bootloader.arch = 'riscv64'
         assert self.bootloader.install_required() is False
 
     @patch('kiwi.bootloader.install.grub2.Path.wipe')

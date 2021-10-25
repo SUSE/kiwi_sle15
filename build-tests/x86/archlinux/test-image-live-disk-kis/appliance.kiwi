@@ -3,7 +3,7 @@
 <!-- The line below is required in order to use the multibuild OBS features -->
 <!-- OBS-Profiles: @BUILD_FLAVOR@ -->
 
-<image schemaversion="7.3" name="kiwi-test-image-live-disk-kis">
+<image schemaversion="7.4" name="kiwi-test-image-live-disk-kis">
     <description type="system">
         <author>David Cassany</author>
         <contact>dcassany@suse.com</contact>
@@ -50,8 +50,11 @@
              grub.cfg file. This hotpatch only applies for disk images
              therefore the installation ISO does not support EFI
         -->
-        <type image="oem" filesystem="ext4" installiso="true" kernelcmdline="console=ttyS0" editbootinstall="editbootinstall_arch.sh" firmware="efi">
-            <bootloader name="grub2" console="serial"/>
+        <type image="oem" filesystem="ext4" installiso="true" installboot="install" kernelcmdline="console=ttyS0" editbootinstall="editbootinstall_arch.sh" firmware="efi">
+            <bootloader name="grub2" console="serial" timeout="10"/>
+            <oemconfig>
+                <oem-unattended>true</oem-unattended>
+            </oemconfig>
         </type>
     </preferences>
     <preferences profiles="KIS">

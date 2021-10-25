@@ -95,11 +95,6 @@ class ContainerImageOCI:
             self.oci_config['container_tag'] = \
                 Defaults.get_default_container_tag()
 
-        if 'entry_command' not in self.oci_config and \
-                'entry_subcommand' not in self.oci_config:
-            self.oci_config['entry_subcommand'] = \
-                Defaults.get_default_container_subcommand()
-
         if 'history' not in self.oci_config:
             self.oci_config['history'] = {}
         if 'created_by' not in self.oci_config['history']:
@@ -113,7 +108,9 @@ class ContainerImageOCI:
         :param string filename: archive file name
         :param string base_image: archive used as a base image
         """
-        exclude_list = Defaults.get_exclude_list_for_root_data_sync()
+        exclude_list = Defaults.\
+            get_exclude_list_for_root_data_sync() + Defaults.\
+            get_exclude_list_from_custom_exclude_files(self.root_dir)
         exclude_list.append('dev/*')
         exclude_list.append('sys/*')
         exclude_list.append('proc/*')
@@ -126,6 +123,11 @@ class ContainerImageOCI:
                 )
             )
         else:
+            # Apply default subcommand only for base images
+            if 'entry_command' not in self.oci_config and \
+                    'entry_subcommand' not in self.oci_config:
+                self.oci_config['entry_subcommand'] = \
+                    Defaults.get_default_container_subcommand()
             oci.init_container()
 
         image_ref = '{0}:{1}'.format(

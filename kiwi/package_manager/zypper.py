@@ -17,10 +17,14 @@
 #
 import re
 import os
+from typing import List
+
 
 # project
+from kiwi.command import command_call_type
 from kiwi.command import Command
 from kiwi.package_manager.base import PackageManagerBase
+from kiwi.system.root_bind import RootBind
 from kiwi.utils.rpm_database import RpmDataBase
 from kiwi.utils.rpm import Rpm
 from kiwi.path import Path
@@ -30,15 +34,15 @@ from kiwi.defaults import Defaults
 
 class PackageManagerZypper(PackageManagerBase):
     """
-    **Implements base class for installation/deletion of
-    packages and collections using zypper**
+    **Implements Installation/Deletion of packages/collections with zypper**
 
-    :param list zypper_args: zypper arguments from repository runtime
-        configuration
-    :param dict command_env: zypper command environment from repository
+    :param list zypper_args:
+        zypper arguments from repository runtime configuration
+    :param dict command_env:
+        zypper command environment from repository
         runtime configuration
     """
-    def post_init(self, custom_args=None):
+    def post_init(self, custom_args: List = []) -> None:
         """
         Post initialization method
 
@@ -48,8 +52,6 @@ class PackageManagerZypper(PackageManagerBase):
         """
         self.anonymousId_file = '/var/lib/zypp/AnonymousUniqueId'
         self.custom_args = custom_args
-        if not custom_args:
-            self.custom_args = []
 
         runtime_config = self.repository.runtime_config()
 
@@ -65,7 +67,7 @@ class PackageManagerZypper(PackageManagerBase):
                 self.root_dir, [self.command_env['ZYPP_CONF']]
             )[0]
 
-    def request_package(self, name):
+    def request_package(self, name: str) -> None:
         """
         Queue a package request
 
@@ -73,7 +75,7 @@ class PackageManagerZypper(PackageManagerBase):
         """
         self.package_requests.append(name)
 
-    def request_collection(self, name):
+    def request_collection(self, name: str) -> None:
         """
         Queue a collection request
 
@@ -81,7 +83,7 @@ class PackageManagerZypper(PackageManagerBase):
         """
         self.collection_requests.append('pattern:' + name)
 
-    def request_product(self, name):
+    def request_product(self, name: str) -> None:
         """
         Queue a product request
 
@@ -89,7 +91,7 @@ class PackageManagerZypper(PackageManagerBase):
         """
         self.product_requests.append('product:' + name)
 
-    def request_package_exclusion(self, name):
+    def request_package_exclusion(self, name: str) -> None:
         """
         Queue a package exclusion(skip) request
 
@@ -97,7 +99,9 @@ class PackageManagerZypper(PackageManagerBase):
         """
         self.exclude_requests.append(name)
 
-    def process_install_requests_bootstrap(self, root_bind=None):
+    def process_install_requests_bootstrap(
+        self, root_bind: RootBind = None
+    ) -> command_call_type:
         """
         Process package install requests for bootstrap phase (no chroot)
 
@@ -109,13 +113,14 @@ class PackageManagerZypper(PackageManagerBase):
         """
         command = ['zypper'] + self.zypper_args + [
             '--root', self.root_dir,
-            'install', '--auto-agree-with-licenses'
+            'install', '--download', 'in-advance',
+            '--auto-agree-with-licenses'
         ] + self.custom_args + ['--'] + self._install_items()
         return Command.call(
             command, self.command_env
         )
 
-    def process_install_requests(self):
+    def process_install_requests(self) -> command_call_type:
         """
         Process package install requests for image phase (chroot)
 
@@ -140,12 +145,13 @@ class PackageManagerZypper(PackageManagerBase):
                 )
         return Command.call(
             ['chroot', self.root_dir, 'zypper'] + self.chroot_zypper_args + [
-                'install', '--auto-agree-with-licenses'
+                'install', '--download', 'in-advance',
+                '--auto-agree-with-licenses'
             ] + self.custom_args + ['--'] + self._install_items(),
             self.chroot_command_env
         )
 
-    def process_delete_requests(self, force=False):
+    def process_delete_requests(self, force: bool = False) -> command_call_type:
         """
         Process package delete requests (chroot)
 
@@ -157,19 +163,22 @@ class PackageManagerZypper(PackageManagerBase):
 
         :rtype: namedtuple
         """
-        delete_items = []
-        for delete_item in self._delete_items():
-            try:
-                Command.run(['chroot', self.root_dir, 'rpm', '-q', delete_item])
-                delete_items.append(delete_item)
-            except Exception:
-                # ignore packages which are not installed
-                pass
-        if not delete_items:
-            raise KiwiRequestError(
-                'None of the requested packages to delete are installed'
-            )
         if force:
+            delete_items = []
+            for delete_item in self._delete_items():
+                try:
+                    Command.run(
+                        ['chroot', self.root_dir, 'rpm', '-q', delete_item]
+                    )
+                    delete_items.append(delete_item)
+                except Exception:
+                    # ignore packages which are not installed
+                    pass
+            if not delete_items:
+                raise KiwiRequestError(
+                    'None of the requested packages to delete are installed'
+                )
+            self.cleanup_requests()
             force_options = ['--nodeps', '--allmatches', '--noscripts']
             return Command.call(
                 [
@@ -178,16 +187,17 @@ class PackageManagerZypper(PackageManagerBase):
                 self.chroot_command_env
             )
         else:
+            zypper_command = [
+                'chroot', self.root_dir, 'zypper'
+            ] + self.chroot_zypper_args + [
+                'remove', '-u', '--force-resolution'
+            ] + self._delete_items()
+            self.cleanup_requests()
             return Command.call(
-                [
-                    'chroot', self.root_dir, 'zypper'
-                ] + self.chroot_zypper_args + [
-                    'remove', '-u', '--force-resolution'
-                ] + delete_items,
-                self.chroot_command_env
+                zypper_command, self.chroot_command_env
             )
 
-    def update(self):
+    def update(self) -> command_call_type:
         """
         Process package update requests (chroot)
 
@@ -197,26 +207,29 @@ class PackageManagerZypper(PackageManagerBase):
         """
         return Command.call(
             ['chroot', self.root_dir, 'zypper'] + self.chroot_zypper_args + [
-                'update', '--auto-agree-with-licenses'
+                'update', '--download', 'in-advance',
+                '--auto-agree-with-licenses'
             ] + self.custom_args,
             self.chroot_command_env
         )
 
-    def process_only_required(self):
+    def process_only_required(self) -> None:
         """
         Setup package processing only for required packages
         """
         if '--no-recommends' not in self.custom_args:
             self.custom_args.append('--no-recommends')
 
-    def process_plus_recommended(self):
+    def process_plus_recommended(self) -> None:
         """
         Setup package processing to also include recommended dependencies.
         """
         if '--no-recommends' in self.custom_args:
             self.custom_args.remove('--no-recommends')
 
-    def match_package_installed(self, package_name, zypper_output):
+    def match_package_installed(
+        self, package_name: str, package_manager_output: str
+    ) -> bool:
         """
         Match expression to indicate a package has been installed
 
@@ -225,33 +238,43 @@ class PackageManagerZypper(PackageManagerBase):
         be false positives due to sub package names starting with
         the same base package name
 
-        :param list package_list: list of all packages
-        :param str log_line: zypper status line
+        :param str package_name: package_name
+        :param str package_manager_output: zypper status line
 
-        :returns: match or None if there isn't any match
+        :returns: True|False
 
-        :rtype: match object, None
+        :rtype: bool
         """
-        return re.match(
-            '.*Installing: ' + re.escape(package_name) + '.*', zypper_output
+        return bool(
+            re.match(
+                '.*Installing: {0}.*'.format(re.escape(package_name)),
+                package_manager_output
+            )
         )
 
-    def match_package_deleted(self, package_name, zypper_output):
+    def match_package_deleted(
+        self, package_name: str, package_manager_output: str
+    ) -> bool:
         """
         Match expression to indicate a package has been deleted
 
-        :param list package_list: list of all packages
-        :param str log_line: zypper status line
+        :param str package_name: package_name
+        :param str package_manager_output: zypper status line
 
-        :returns: match or None if there isn't any match
+        :returns: True|False
 
-        :rtype: match object, None
+        :rtype: bool
         """
-        return re.match(
-            '.*Removing: ' + re.escape(package_name) + '.*', zypper_output
+        return bool(
+            re.match(
+                '.*Removing: {0}.*'.format(re.escape(package_name)),
+                package_manager_output
+            )
         )
 
-    def post_process_install_requests_bootstrap(self, root_bind=None):
+    def post_process_install_requests_bootstrap(
+        self, root_bind: RootBind = None
+    ) -> None:
         """
         Move the rpm database to the place as it is expected by the
         rpm package installed during bootstrap phase
@@ -262,7 +285,8 @@ class PackageManagerZypper(PackageManagerBase):
         if rpmdb.has_rpm():
             rpmdb.set_database_to_image_path()
 
-    def has_failed(self, returncode):
+    @staticmethod
+    def has_failed(returncode: int) -> bool:
         """
         Evaluate given result return code
 
@@ -297,7 +321,7 @@ class PackageManagerZypper(PackageManagerBase):
         # Treat any other error code as error
         return True
 
-    def clean_leftovers(self):
+    def clean_leftovers(self) -> None:
         """
         Cleans package manager related data not needed in the
         resulting image such as custom macros
@@ -311,13 +335,13 @@ class PackageManagerZypper(PackageManagerBase):
         if os.path.exists(id_file):
             os.unlink(id_file)
 
-    def _install_items(self):
+    def _install_items(self) -> List:
         items = self.package_requests + self.collection_requests \
             + self.product_requests
         self.cleanup_requests()
         return items
 
-    def _delete_items(self):
+    def _delete_items(self) -> List:
         # collections and products can't be deleted
         items = []
         items += self.package_requests

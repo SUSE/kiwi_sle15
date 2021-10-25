@@ -3,7 +3,7 @@
 <!-- The line below is required in order to use the multibuild OBS features -->
 <!-- OBS-Profiles: @BUILD_FLAVOR@ -->
 
-<image schemaversion="7.3" name="kiwi-test-image-live-disk">
+<image schemaversion="7.4" name="kiwi-test-image-live-disk">
     <description type="system">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.de</contact>
@@ -16,7 +16,7 @@
     </profiles>
     <preferences>
         <version>10.4</version>
-        <packagemanager>apt-get</packagemanager>
+        <packagemanager>apt</packagemanager>
         <bootsplash-theme>fade-in</bootsplash-theme>
         <bootloader-theme>starfield</bootloader-theme>
         <rpm-check-signatures>false</rpm-check-signatures>
@@ -26,22 +26,23 @@
     </preferences>
     <preferences profiles="Live">
         <type image="iso" flags="overlay" hybridpersistent_filesystem="ext4" hybridpersistent="true" firmware="efi" kernelcmdline="console=ttyS0">
-            <bootloader name="grub2" console="serial"/>
+            <bootloader name="grub2" console="serial" timeout="10"/>
         </type>
     </preferences>
     <preferences profiles="Virtual">
-        <type image="oem" filesystem="ext4" kernelcmdline="console=ttyS0" firmware="efi" format="qcow2">
+        <type image="oem" filesystem="ext4" kernelcmdline="console=ttyS0" firmware="uefi" format="qcow2">
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
-            <bootloader name="grub2" console="serial"/>
+            <bootloader name="grub2" console="serial" timeout="10"/>
         </type>
     </preferences>
     <preferences profiles="Disk">
-        <type image="oem" filesystem="ext4" firmware="efi" installiso="true" kernelcmdline="console=ttyS0">
-            <bootloader name="grub2" console="serial"/>
+        <type image="oem" filesystem="ext4" firmware="efi" installiso="true" installboot="install" kernelcmdline="console=ttyS0">
+            <bootloader name="grub2" console="serial" timeout="10"/>
             <oemconfig>
                 <oem-swap>true</oem-swap>
+                <oem-unattended>true</oem-unattended>
                 <oem-device-filter>/dev/ram</oem-device-filter>
                 <oem-multipath-scan>false</oem-multipath-scan>
             </oemconfig>
@@ -84,6 +85,10 @@
         <package name="netbase"/>
         <package name="bsdmainutils"/>
         <package name="usrmerge"/>
+    </packages>
+    <packages type="image" profiles="Virtual">
+        <package name="shim-signed"/>
+        <package name="grub-efi-amd64-signed"/>
     </packages>
     <packages type="image" profiles="Live">
         <package name="dracut-kiwi-live"/>

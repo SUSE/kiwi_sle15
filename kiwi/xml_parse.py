@@ -16,7 +16,7 @@
 #   kiwi/schema/kiwi_for_generateDS.xsd
 #
 # Command line:
-#   /home/david/work/kiwi/.tox/3/bin/generateDS.py -f --external-encoding="utf-8" --no-dates --no-warnings -o "kiwi/xml_parse.py" kiwi/schema/kiwi_for_generateDS.xsd
+#   /home/ms/Project/kiwi/.tox/3.6/bin/generateDS.py -f --external-encoding="utf-8" --no-dates --no-warnings -o "kiwi/xml_parse.py" kiwi/schema/kiwi_for_generateDS.xsd
 #
 # Current working directory (os.getcwd()):
 #   kiwi
@@ -726,9 +726,8 @@ def _cast(typ, value):
 
 
 class k_packagemanager_content(object):
-    APTGET='apt-get'
+    APT='apt'
     ZYPPER='zypper'
-    YUM='yum'
     DNF='dnf'
     MICRODNF='microdnf'
     PACMAN='pacman'
@@ -812,7 +811,7 @@ class image(GeneratedsSuper):
     """The root element of the configuration file"""
     subclass = None
     superclass = None
-    def __init__(self, name=None, displayname=None, id=None, schemaversion=None, noNamespaceSchemaLocation=None, schemaLocation=None, description=None, preferences=None, profiles=None, users=None, drivers=None, strip=None, repository=None, packages=None, extension=None):
+    def __init__(self, name=None, displayname=None, id=None, schemaversion=None, noNamespaceSchemaLocation=None, schemaLocation=None, include=None, description=None, preferences=None, profiles=None, users=None, drivers=None, strip=None, repository=None, packages=None, extension=None):
         self.original_tagname_ = None
         self.name = _cast(None, name)
         self.displayname = _cast(None, displayname)
@@ -820,6 +819,10 @@ class image(GeneratedsSuper):
         self.schemaversion = _cast(None, schemaversion)
         self.noNamespaceSchemaLocation = _cast(None, noNamespaceSchemaLocation)
         self.schemaLocation = _cast(None, schemaLocation)
+        if include is None:
+            self.include = []
+        else:
+            self.include = include
         if description is None:
             self.description = []
         else:
@@ -867,6 +870,11 @@ class image(GeneratedsSuper):
         else:
             return image(*args_, **kwargs_)
     factory = staticmethod(factory)
+    def get_include(self): return self.include
+    def set_include(self, include): self.include = include
+    def add_include(self, value): self.include.append(value)
+    def insert_include_at(self, index, value): self.include.insert(index, value)
+    def replace_include_at(self, index, value): self.include[index] = value
     def get_description(self): return self.description
     def set_description(self, description): self.description = description
     def add_description(self, value): self.description.append(value)
@@ -933,6 +941,7 @@ class image(GeneratedsSuper):
     validate_safe_posix_name_patterns_ = [['^[a-zA-Z0-9_\\-\\.]+$']]
     def hasContent_(self):
         if (
+            self.include or
             self.description or
             self.preferences or
             self.profiles or
@@ -991,6 +1000,8 @@ class image(GeneratedsSuper):
             eol_ = '\n'
         else:
             eol_ = ''
+        for include_ in self.include:
+            include_.export(outfile, level, namespaceprefix_, name_='include', pretty_print=pretty_print)
         for description_ in self.description:
             description_.export(outfile, level, namespaceprefix_, name_='description', pretty_print=pretty_print)
         for preferences_ in self.preferences:
@@ -1045,7 +1056,12 @@ class image(GeneratedsSuper):
             already_processed.add('schemaLocation')
             self.schemaLocation = value
     def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
-        if nodeName_ == 'description':
+        if nodeName_ == 'include':
+            obj_ = include.factory()
+            obj_.build(child_)
+            self.include.append(obj_)
+            obj_.original_tagname_ = 'include'
+        elif nodeName_ == 'description':
             obj_ = description.factory()
             obj_.build(child_)
             self.description.append(obj_)
@@ -1175,10 +1191,11 @@ class archive(GeneratedsSuper):
     """Name of an image archive file (tarball)"""
     subclass = None
     superclass = None
-    def __init__(self, name=None, bootinclude=None):
+    def __init__(self, name=None, bootinclude=None, target_dir=None):
         self.original_tagname_ = None
         self.name = _cast(None, name)
         self.bootinclude = _cast(bool, bootinclude)
+        self.target_dir = _cast(None, target_dir)
     def factory(*args_, **kwargs_):
         if CurrentSubclassModule_ is not None:
             subclass = getSubclassFromModule_(
@@ -1194,6 +1211,8 @@ class archive(GeneratedsSuper):
     def set_name(self, name): self.name = name
     def get_bootinclude(self): return self.bootinclude
     def set_bootinclude(self, bootinclude): self.bootinclude = bootinclude
+    def get_target_dir(self): return self.target_dir
+    def set_target_dir(self, target_dir): self.target_dir = target_dir
     def hasContent_(self):
         if (
 
@@ -1228,6 +1247,9 @@ class archive(GeneratedsSuper):
         if self.bootinclude is not None and 'bootinclude' not in already_processed:
             already_processed.add('bootinclude')
             outfile.write(' bootinclude="%s"' % self.gds_format_boolean(self.bootinclude, input_name='bootinclude'))
+        if self.target_dir is not None and 'target_dir' not in already_processed:
+            already_processed.add('target_dir')
+            outfile.write(' target_dir=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.target_dir), input_name='target_dir')), ))
     def exportChildren(self, outfile, level, namespaceprefix_='', name_='archive', fromsubclass_=False, pretty_print=True):
         pass
     def build(self, node):
@@ -1251,6 +1273,10 @@ class archive(GeneratedsSuper):
                 self.bootinclude = False
             else:
                 raise_parse_error(node, 'Bad boolean attribute')
+        value = find_attr_value_('target_dir', node)
+        if value is not None and 'target_dir' not in already_processed:
+            already_processed.add('target_dir')
+            self.target_dir = value
     def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
         pass
 # end class archive
@@ -2065,7 +2091,7 @@ class repository(k_source):
     """The Name of the Repository"""
     subclass = None
     superclass = k_source
-    def __init__(self, source=None, type_=None, profiles=None, alias=None, sourcetype=None, components=None, distribution=None, imageinclude=None, imageonly=None, repository_gpgcheck=None, package_gpgcheck=None, priority=None, password=None, username=None, use_for_bootstrap=None):
+    def __init__(self, source=None, type_=None, profiles=None, alias=None, sourcetype=None, components=None, distribution=None, imageinclude=None, imageonly=None, repository_gpgcheck=None, customize=None, package_gpgcheck=None, priority=None, password=None, username=None, use_for_bootstrap=None):
         self.original_tagname_ = None
         super(repository, self).__init__(source, )
         self.type_ = _cast(None, type_)
@@ -2077,6 +2103,7 @@ class repository(k_source):
         self.imageinclude = _cast(bool, imageinclude)
         self.imageonly = _cast(bool, imageonly)
         self.repository_gpgcheck = _cast(bool, repository_gpgcheck)
+        self.customize = _cast(None, customize)
         self.package_gpgcheck = _cast(bool, package_gpgcheck)
         self.priority = _cast(int, priority)
         self.password = _cast(None, password)
@@ -2111,6 +2138,8 @@ class repository(k_source):
     def set_imageonly(self, imageonly): self.imageonly = imageonly
     def get_repository_gpgcheck(self): return self.repository_gpgcheck
     def set_repository_gpgcheck(self, repository_gpgcheck): self.repository_gpgcheck = repository_gpgcheck
+    def get_customize(self): return self.customize
+    def set_customize(self, customize): self.customize = customize
     def get_package_gpgcheck(self): return self.package_gpgcheck
     def set_package_gpgcheck(self, package_gpgcheck): self.package_gpgcheck = package_gpgcheck
     def get_priority(self): return self.priority
@@ -2178,6 +2207,9 @@ class repository(k_source):
         if self.repository_gpgcheck is not None and 'repository_gpgcheck' not in already_processed:
             already_processed.add('repository_gpgcheck')
             outfile.write(' repository_gpgcheck="%s"' % self.gds_format_boolean(self.repository_gpgcheck, input_name='repository_gpgcheck'))
+        if self.customize is not None and 'customize' not in already_processed:
+            already_processed.add('customize')
+            outfile.write(' customize=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.customize), input_name='customize')), ))
         if self.package_gpgcheck is not None and 'package_gpgcheck' not in already_processed:
             already_processed.add('package_gpgcheck')
             outfile.write(' package_gpgcheck="%s"' % self.gds_format_boolean(self.package_gpgcheck, input_name='package_gpgcheck'))
@@ -2256,6 +2288,10 @@ class repository(k_source):
                 self.repository_gpgcheck = False
             else:
                 raise_parse_error(node, 'Bad boolean attribute')
+        value = find_attr_value_('customize', node)
+        if value is not None and 'customize' not in already_processed:
+            already_processed.add('customize')
+            self.customize = value
         value = find_attr_value_('package_gpgcheck', node)
         if value is not None and 'package_gpgcheck' not in already_processed:
             already_processed.add('package_gpgcheck')
@@ -2583,7 +2619,7 @@ class type_(GeneratedsSuper):
     """The Image Type of the Logical Extend"""
     subclass = None
     superclass = None
-    def __init__(self, boot=None, bootfilesystem=None, firmware=None, bootkernel=None, bootpartition=None, bootpartsize=None, efipartsize=None, efiparttable=None, bootprofile=None, btrfs_quota_groups=None, btrfs_root_is_snapshot=None, btrfs_root_is_readonly_snapshot=None, compressed=None, devicepersistency=None, editbootconfig=None, editbootinstall=None, filesystem=None, flags=None, format=None, formatoptions=None, fsmountoptions=None, fscreateoptions=None, squashfscompression=None, gcelicense=None, hybridpersistent=None, hybridpersistent_filesystem=None, gpt_hybrid_mbr=None, force_mbr=None, initrd_system=None, image=None, metadata_path=None, installboot=None, install_continue_on_timeout=None, installprovidefailsafe=None, installiso=None, installstick=None, installpxe=None, mediacheck=None, kernelcmdline=None, luks=None, luksOS=None, mdraid=None, overlayroot=None, primary=None, ramonly=None, rootfs_label=None, spare_part=None, spare_part_mountpoint=None, spare_part_fs=None, spare_part_fs_attributes=None, spare_part_is_last=None, target_blocksize=None, target_removable=None, vga=None, vhdfixedtag=None, volid=None, wwid_wait_timeout=None, derived_from=None, xen_server=None, publisher=None, disk_start_sector=None, bootloader=None, containerconfig=None, machine=None, oemconfig=None, size=None, systemdisk=None, vagrantconfig=None, installmedia=None):
+    def __init__(self, boot=None, bootfilesystem=None, firmware=None, bootkernel=None, bootpartition=None, bootpartsize=None, efipartsize=None, efiparttable=None, bootprofile=None, btrfs_quota_groups=None, btrfs_root_is_snapshot=None, btrfs_root_is_readonly_snapshot=None, compressed=None, devicepersistency=None, editbootconfig=None, editbootinstall=None, filesystem=None, flags=None, format=None, formatoptions=None, fsmountoptions=None, fscreateoptions=None, squashfscompression=None, gcelicense=None, hybridpersistent=None, hybridpersistent_filesystem=None, gpt_hybrid_mbr=None, force_mbr=None, initrd_system=None, image=None, metadata_path=None, installboot=None, install_continue_on_timeout=None, installprovidefailsafe=None, installiso=None, installstick=None, installpxe=None, mediacheck=None, kernelcmdline=None, luks=None, luksOS=None, mdraid=None, overlayroot=None, primary=None, ramonly=None, rootfs_label=None, spare_part=None, spare_part_mountpoint=None, spare_part_fs=None, spare_part_fs_attributes=None, spare_part_is_last=None, target_blocksize=None, target_removable=None, vga=None, vhdfixedtag=None, volid=None, wwid_wait_timeout=None, derived_from=None, xen_server=None, publisher=None, disk_start_sector=None, bundle_format=None, bootloader=None, containerconfig=None, machine=None, oemconfig=None, size=None, systemdisk=None, vagrantconfig=None, installmedia=None):
         self.original_tagname_ = None
         self.boot = _cast(None, boot)
         self.bootfilesystem = _cast(None, bootfilesystem)
@@ -2646,6 +2682,7 @@ class type_(GeneratedsSuper):
         self.xen_server = _cast(bool, xen_server)
         self.publisher = _cast(None, publisher)
         self.disk_start_sector = _cast(int, disk_start_sector)
+        self.bundle_format = _cast(None, bundle_format)
         if bootloader is None:
             self.bootloader = []
         else:
@@ -2851,6 +2888,8 @@ class type_(GeneratedsSuper):
     def set_publisher(self, publisher): self.publisher = publisher
     def get_disk_start_sector(self): return self.disk_start_sector
     def set_disk_start_sector(self, disk_start_sector): self.disk_start_sector = disk_start_sector
+    def get_bundle_format(self): return self.bundle_format
+    def set_bundle_format(self, bundle_format): self.bundle_format = bundle_format
     def validate_partition_size_type(self, value):
         # Validate type partition-size-type, a restriction on xs:token.
         if value is not None and Validate_simpletypes_:
@@ -3098,6 +3137,9 @@ class type_(GeneratedsSuper):
         if self.disk_start_sector is not None and 'disk_start_sector' not in already_processed:
             already_processed.add('disk_start_sector')
             outfile.write(' disk_start_sector="%s"' % self.gds_format_integer(self.disk_start_sector, input_name='disk_start_sector'))
+        if self.bundle_format is not None and 'bundle_format' not in already_processed:
+            already_processed.add('bundle_format')
+            outfile.write(' bundle_format=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.bundle_format), input_name='bundle_format')), ))
     def exportChildren(self, outfile, level, namespaceprefix_='', name_='type', fromsubclass_=False, pretty_print=True):
         if pretty_print:
             eol_ = '\n'
@@ -3517,6 +3559,10 @@ class type_(GeneratedsSuper):
                 self.disk_start_sector = int(value)
             except ValueError as exp:
                 raise_parse_error(node, 'Bad integer attribute: %s' % exp)
+        value = find_attr_value_('bundle_format', node)
+        if value is not None and 'bundle_format' not in already_processed:
+            already_processed.add('bundle_format')
+            self.bundle_format = value
     def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
         if nodeName_ == 'bootloader':
             obj_ = bootloader.factory()
@@ -4033,9 +4079,10 @@ class volume(GeneratedsSuper):
     """Specify which parts of the filesystem should be on an extra volume."""
     subclass = None
     superclass = None
-    def __init__(self, copy_on_write=None, freespace=None, mountpoint=None, label=None, name=None, size=None):
+    def __init__(self, copy_on_write=None, filesystem_check=None, freespace=None, mountpoint=None, label=None, name=None, size=None):
         self.original_tagname_ = None
         self.copy_on_write = _cast(bool, copy_on_write)
+        self.filesystem_check = _cast(bool, filesystem_check)
         self.freespace = _cast(None, freespace)
         self.mountpoint = _cast(None, mountpoint)
         self.label = _cast(None, label)
@@ -4054,6 +4101,8 @@ class volume(GeneratedsSuper):
     factory = staticmethod(factory)
     def get_copy_on_write(self): return self.copy_on_write
     def set_copy_on_write(self, copy_on_write): self.copy_on_write = copy_on_write
+    def get_filesystem_check(self): return self.filesystem_check
+    def set_filesystem_check(self, filesystem_check): self.filesystem_check = filesystem_check
     def get_freespace(self): return self.freespace
     def set_freespace(self, freespace): self.freespace = freespace
     def get_mountpoint(self): return self.mountpoint
@@ -4102,6 +4151,9 @@ class volume(GeneratedsSuper):
         if self.copy_on_write is not None and 'copy_on_write' not in already_processed:
             already_processed.add('copy_on_write')
             outfile.write(' copy_on_write="%s"' % self.gds_format_boolean(self.copy_on_write, input_name='copy_on_write'))
+        if self.filesystem_check is not None and 'filesystem_check' not in already_processed:
+            already_processed.add('filesystem_check')
+            outfile.write(' filesystem_check="%s"' % self.gds_format_boolean(self.filesystem_check, input_name='filesystem_check'))
         if self.freespace is not None and 'freespace' not in already_processed:
             already_processed.add('freespace')
             outfile.write(' freespace=%s' % (quote_attrib(self.freespace), ))
@@ -4136,6 +4188,15 @@ class volume(GeneratedsSuper):
                 self.copy_on_write = False
             else:
                 raise_parse_error(node, 'Bad boolean attribute')
+        value = find_attr_value_('filesystem_check', node)
+        if value is not None and 'filesystem_check' not in already_processed:
+            already_processed.add('filesystem_check')
+            if value in ('true', '1'):
+                self.filesystem_check = True
+            elif value in ('false', '0'):
+                self.filesystem_check = False
+            else:
+                raise_parse_error(node, 'Bad boolean attribute')
         value = find_attr_value_('freespace', node)
         if value is not None and 'freespace' not in already_processed:
             already_processed.add('freespace')
@@ -4163,6 +4224,75 @@ class volume(GeneratedsSuper):
     def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
         pass
 # end class volume
+
+
+class include(GeneratedsSuper):
+    subclass = None
+    superclass = None
+    def __init__(self, from_=None):
+        self.original_tagname_ = None
+        self.from_ = _cast(None, from_)
+    def factory(*args_, **kwargs_):
+        if CurrentSubclassModule_ is not None:
+            subclass = getSubclassFromModule_(
+                CurrentSubclassModule_, include)
+            if subclass is not None:
+                return subclass(*args_, **kwargs_)
+        if include.subclass:
+            return include.subclass(*args_, **kwargs_)
+        else:
+            return include(*args_, **kwargs_)
+    factory = staticmethod(factory)
+    def get_from(self): return self.from_
+    def set_from(self, from_): self.from_ = from_
+    def hasContent_(self):
+        if (
+
+        ):
+            return True
+        else:
+            return False
+    def export(self, outfile, level, namespaceprefix_='', name_='include', namespacedef_='', pretty_print=True):
+        imported_ns_def_ = GenerateDSNamespaceDefs_.get('include')
+        if imported_ns_def_ is not None:
+            namespacedef_ = imported_ns_def_
+        if pretty_print:
+            eol_ = '\n'
+        else:
+            eol_ = ''
+        if self.original_tagname_ is not None:
+            name_ = self.original_tagname_
+        showIndent(outfile, level, pretty_print)
+        outfile.write('<%s%s%s' % (namespaceprefix_, name_, namespacedef_ and ' ' + namespacedef_ or '', ))
+        already_processed = set()
+        self.exportAttributes(outfile, level, already_processed, namespaceprefix_, name_='include')
+        if self.hasContent_():
+            outfile.write('>%s' % (eol_, ))
+            self.exportChildren(outfile, level + 1, namespaceprefix_='', name_='include', pretty_print=pretty_print)
+            outfile.write('</%s%s>%s' % (namespaceprefix_, name_, eol_))
+        else:
+            outfile.write('/>%s' % (eol_, ))
+    def exportAttributes(self, outfile, level, already_processed, namespaceprefix_='', name_='include'):
+        if self.from_ is not None and 'from_' not in already_processed:
+            already_processed.add('from_')
+            outfile.write(' from=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.from_), input_name='from')), ))
+    def exportChildren(self, outfile, level, namespaceprefix_='', name_='include', fromsubclass_=False, pretty_print=True):
+        pass
+    def build(self, node):
+        already_processed = set()
+        self.buildAttributes(node, node.attrib, already_processed)
+        for child in node:
+            nodeName_ = Tag_pattern_.match(child.tag).groups()[-1]
+            self.buildChildren(child, node, nodeName_)
+        return self
+    def buildAttributes(self, node, attrs, already_processed):
+        value = find_attr_value_('from', node)
+        if value is not None and 'from' not in already_processed:
+            already_processed.add('from')
+            self.from_ = value
+    def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
+        pass
+# end class include
 
 
 class description(GeneratedsSuper):
@@ -8002,6 +8132,7 @@ __all__ = [
     "history",
     "ignore",
     "image",
+    "include",
     "initrd",
     "installmedia",
     "k_source",

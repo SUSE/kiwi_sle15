@@ -5,11 +5,13 @@ import kiwi
 
 from ..test_helper import argv_kiwi_tests
 
+from kiwi.defaults import Defaults
 from kiwi.tasks.system_update import SystemUpdateTask
 
 
 class TestSystemUpdateTask:
     def setup(self):
+        Defaults.set_platform_name('x86_64')
         sys.argv = [
             sys.argv[0], '--profile', 'vmxFlavour', 'system', 'update',
             '--root', '../data/root-dir'
@@ -43,7 +45,9 @@ class TestSystemUpdateTask:
         self._init_command_args()
         self.task.command_args['update'] = True
         self.task.process()
-        self.task.system.setup_repositories.assert_called_once_with()
+        self.task.system.setup_repositories.assert_called_once_with(
+            target_arch=None
+        )
         self.task.system.update_system.assert_called_once_with(self.manager)
 
     def test_process_system_update_add_package(self):
@@ -51,7 +55,9 @@ class TestSystemUpdateTask:
         self.task.command_args['update'] = True
         self.task.command_args['--add-package'] = ['vim']
         self.task.process()
-        self.task.system.setup_repositories.assert_called_once_with()
+        self.task.system.setup_repositories.assert_called_once_with(
+            target_arch=None
+        )
         self.task.system.install_packages.assert_called_once_with(
             self.manager, ['vim']
         )
@@ -61,7 +67,9 @@ class TestSystemUpdateTask:
         self.task.command_args['update'] = True
         self.task.command_args['--delete-package'] = ['vim']
         self.task.process()
-        self.task.system.setup_repositories.assert_called_once_with()
+        self.task.system.setup_repositories.assert_called_once_with(
+            target_arch=None
+        )
         self.task.system.delete_packages.assert_called_once_with(
             self.manager, ['vim']
         )
