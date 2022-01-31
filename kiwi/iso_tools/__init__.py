@@ -16,6 +16,7 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import importlib
+from typing import Any
 from abc import (
     ABCMeta,
     abstractmethod
@@ -35,10 +36,9 @@ class IsoTools(metaclass=ABCMeta):
         return None  # pragma: no cover
 
     @staticmethod
-    def new(source_dir):
+    def new(source_dir: str) -> Any:
         name_map = {
-            'xorriso': 'XorrIso',
-            'cdrtools': 'CdrTools'
+            'xorriso': 'XorrIso'
         }
         runtime_config = RuntimeConfig()
         tool = runtime_config.get_iso_tool_category()

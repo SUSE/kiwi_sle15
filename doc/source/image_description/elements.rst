@@ -51,7 +51,7 @@ Optional include of XML file content from file
 .. code:: xml
 
    <image schemaversion="{schema_version}" name="{exc_image_base_name}">
-       <include from="description.xml"/>
+       <include from="file://description.xml"/>
    </image> 
 
 with file :file:`description.xml` as follows:
@@ -68,7 +68,11 @@ with file :file:`description.xml` as follows:
 
 This will replace the `include` statement with the contents
 of :file:`description.xml`. The validation of the result happens
-after the inclusion of all `include` references.
+after the inclusion of all `include` references. The value for
+the `from` attribute is interpreted as an URI, as of now only
+local URI types are supported as well as the `this://` resource
+locator which translates into the path to the KIWI image
+description.
 
 .. note::
 
@@ -284,6 +288,22 @@ bootloader has theme support.
 
 Along with the version and the packagemanager at least one image type
 element must be specified to indicate which image type should be build.
+
+<preferences><release-version>
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Specifies the distribution global release version as consumed
+by package managers. Currently the release version is not set or
+set to `0` for package managers which requires a value to operate.
+With the optional `release-version` section, users have an
+opportunity to specify a custom value which is passed along the package
+manager to define the distribution release.
+
+.. note::
+
+   The release version information is currently
+   used in dnf and microdnf package managers only. It might
+   happen that it gets applied to the other package manager
+   backends as well. This will happen on demand though.
 
 <preferences><type>
 ~~~~~~~~~~~~~~~~~~~
@@ -707,8 +727,24 @@ that is being used as a vagrant box. For details see: :ref:`setup_vagrant`
 
 <preferences><type><systemdisk>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Used to describe the geometry, partitions and volumes, in a
-disk image. For details see: :ref:`custom_volumes`
+Used to describe the volumes of the disk area which
+contains the root filesystem. Volumes are either a feature
+of the used filesystem or LVM is used for this purpose.
+For details see: :ref:`custom_volumes`
+
+.. note::
+
+   When both `<partitions>` and `<systemdisk>` are used, `<partitions>`
+   are evaluated first and mount points defined in `<partitions>` cannot
+   be redefined as `<systemdisk>` volumes. The two types define a
+   complete disk setup, so there cannot be any overlapping volumes
+   or mount points. As a result, whatever is written in `<partitions>`
+   cannot be expressed in the same way in `<volumes>`.
+
+<preferences><type><partitions>
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+Used to describe the geometry of the disk on the level of the
+partition table. For details see: :ref:`custom_partitions`
 
 <preferences><type><oemconfig>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -775,7 +811,9 @@ repository_gpgcheck="true|false"
   to run repository signature validation. If not set, no value is
   appended into the repository configuration file. If set the
   relevant key information needs to be provided on the {kiwi}
-  commandline using the `--signing-key` option
+  commandline using the `--signing-key` option or via the `<signing>`
+  element as part of the `<repository><source>` setting in the
+  image description.
 
 customize="/path/to/custom_script"
   Custom script hook which is invoked with the repo file as parameter
@@ -899,6 +937,23 @@ the following location indicators:
   A placeholder for the Open Build Service (OBS) to indicate that all
   repositories are taken from the project configuration in OBS.
 
+A repository `<source>` element can optionally contain one ore more
+signing keys for the packages from this repository like shown in the
+following example:
+
+.. code:: xml
+
+   <repository alias="kiwi">
+     <source path="{exc_kiwi_repo}">
+       <signing key="/path/to/sign_key_a"/>
+       <signing key="/path/to/sign_key_b"/>
+     </source>
+   </repository>
+
+All signing keys from all repositories will be collected and
+incorporated into the keyring as used by the selected package
+manager.
+
 .. _sec.packages:
 
 <packages>
@@ -972,7 +1027,7 @@ any of its required packages and any recommended packages.
 
 .. note:: Collections on SUSE
 
-   On SUSE based distributions collections are names patterns and are
+   On SUSE based distributions collections are called `patterns` and are
    just simple packages. To get the names of the patterns such that
    they can be used in a namedCollection type the following command:
    `$ zypper patterns`. If for some reason the collection name cannot
@@ -984,10 +1039,41 @@ any of its required packages and any recommended packages.
 
 .. note:: Collections on RedHat
 
-   On RedHat based distributions collections are named groups and are
+   On RedHat based distributions collections are called `groups` and are
    extra metadata. To get the names of these groups type the following
    command: `$ dnf group list`. Please note that group names are allowed
    to contain whitespace characters.
+
+<packages><collectionModule>
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+.. code:: xml
+
+   <packages type="bootstrap">
+       <collectionModule name="module" stream="stream" enable="true|false"/>
+   </packages>
+
+In CentOS Stream >= 8 and Red Hat Enterprise Linux >= 8, there are
+Application Streams that are offered in the form of modules
+(using Fedora Modularity technology). To build images that use
+this content {kiwi} offers to enable/disable modules when using
+the `dnf` or `microdnf` package manager backend. Modules are setup
+prior the bootstrap phase and its setup persists as part of the
+image.
+
+There are the following constraints when adding `collectionModule`
+elements:
+
+* `collectionModule` elements can only be specified as part of the
+  `<packages type="bootstrap">` section. This is because the setup of
+  modules must be done once and as early as possible in the process
+  of installing the image root tree.
+
+* Disabling a module can only be done as a whole and therefore the
+  `stream` attribute is not allowed for disabling modules. For
+  enabling modules the stream` attribute is optional
+
+* The `enable` attribute is mandatory because it should be an explicit
+  setting if a module is effectively used or not.
 
 <packages><archive>
 ~~~~~~~~~~~~~~~~~~~

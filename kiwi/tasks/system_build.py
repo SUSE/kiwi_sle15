@@ -137,7 +137,7 @@ class SystemBuildTask(CliTask):
             )
 
         self.load_xml_description(
-            self.command_args['--description']
+            self.command_args['--description'], self.global_args['--kiwi-file']
         )
 
         build_checks = self.checks_before_command_args
@@ -196,7 +196,9 @@ class SystemBuildTask(CliTask):
         )
         manager = system.setup_repositories(
             self.command_args['--clear-cache'],
-            self.command_args['--signing-key'],
+            self.command_args[
+                '--signing-key'
+            ] + self.xml_state.get_repositories_signing_keys(),
             self.global_args['--target-arch']
         )
         system.install_bootstrap(
@@ -281,7 +283,9 @@ class SystemBuildTask(CliTask):
             abs_target_dir_path,
             image_root,
             custom_args={
-                'signing_keys': self.command_args['--signing-key'],
+                'signing_keys': self.command_args[
+                    '--signing-key'
+                ] + self.xml_state.get_repositories_signing_keys(),
                 'xz_options': self.runtime_config.get_xz_options()
             }
         )

@@ -231,27 +231,27 @@ class RuntimeConfig:
 
     def get_container_compression(self):
         """
-        Return compression algorithm to use for compression of container images
+        Return compression for container images
 
         container:
-          - compress: xz|none
+          - compress: xz|none|true|false
 
         if no or invalid configuration data is provided, the default
-        compression algorithm from the Defaults class is returned
+        compression from the Defaults class is returned
 
-        :return: A name
+        :return: True or False
 
-        :rtype: str
+        :rtype: bool
         """
         container_compression = self._get_attribute(
             element='container', attribute='compress'
         )
-        if not container_compression:
+        if container_compression is None:
             return Defaults.get_container_compression()
-        elif 'xz' in container_compression:
-            return container_compression
-        elif 'none' in container_compression:
-            return None
+        elif 'xz' == container_compression or container_compression is True:
+            return True
+        elif 'none' == container_compression or container_compression is False:
+            return False
         else:
             log.warning(
                 'Skipping invalid container compression: {0}'.format(
@@ -265,7 +265,7 @@ class RuntimeConfig:
         Return tool category which should be used to build iso images
 
         iso:
-          - tool_category: cdrtools|xorriso
+          - tool_category: xorriso
 
         if no or invalid configuration exists the default tool category
         from the Defaults class is returned
@@ -279,7 +279,7 @@ class RuntimeConfig:
         )
         if not iso_tool_category:
             return Defaults.get_iso_tool_category()
-        elif 'cdrtools' in iso_tool_category or 'xorriso' in iso_tool_category:
+        elif 'xorriso' in iso_tool_category:
             return iso_tool_category
         else:
             log.warning(

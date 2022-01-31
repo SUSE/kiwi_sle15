@@ -323,7 +323,7 @@ function baseStripFirmware {
     local kernel_module
     local firmware
     mkdir -p /lib/firmware-required
-    find "${base}" \( -name "*.ko" -o -name "*.ko.xz" \) -print0 | \
+    find "${base}" \( -name "*.ko" -o -name "*.ko.xz" -o -name "*.ko.zst" -o -name "*.ko.gz" \) -print0 | \
     while IFS= read -r -d $'\0' kernel_module; do
         firmware=$(modinfo "${kernel_module}" | grep ^firmware || :)
         if [ -z "${firmware}" ];then
@@ -335,10 +335,14 @@ function baseStripFirmware {
         fi
         # could be more than one, loop
         for fname in $name ; do
-            for match in /lib/firmware/"${fname}"      \
-                         /lib/firmware/"${fname}".xz   \
-                         /lib/firmware/*/"${fname}"    \
-                         /lib/firmware/*/"${fname}".xz ;do
+            for match in /lib/firmware/"${fname}"       \
+                         /lib/firmware/"${fname}".xz    \
+                         /lib/firmware/"${fname}".gz    \
+                         /lib/firmware/"${fname}".zst   \
+                         /lib/firmware/*/"${fname}"     \
+                         /lib/firmware/*/"${fname}".xz  \
+                         /lib/firmware/*/"${fname}".gz  \
+                         /lib/firmware/*/"${fname}".zst ;do
                 if [ -e "${match}" ];then
                     match="${match//\/lib\/firmware\//}"
                     bmdir=$(dirname "${match}")
@@ -686,13 +690,13 @@ function baseQuoteFile {
     # create clean input, no empty lines and comments
     grep -v '^$' "${file}" | grep -v '^[ \t]*#' > "${conf}"
     # remove start/stop quoting from values
-    sed -i -e s"#\(^[a-zA-Z0-9_]\+\)=[\"']\(.*\)[\"']#\1=\2#" "${conf}"
+    sed -E -i -e s"#(^[a-zA-Z0-9_]+)=[\"'](.*)[\"']#\1=\2#" "${conf}"
     # remove backslash quotes if any
-    sed -i -e s"#\\\\\(.\)#\1#g" "${conf}"
+    sed -E -i -e s"#\\\\(.)#\1#g" "${conf}"
     # quote simple quotation marks
-    sed -i -e s"#'\+#'\\\\''#g" "${conf}"
+    sed -E -i -e s"#'+#'\\\\''#g" "${conf}"
     # add '...' quoting to values
-    sed -i -e s"#\(^[a-zA-Z0-9_]\+\)=\(.*\)#\1='\2'#" "${conf}"
+    sed -E -i -e s"#(^[a-zA-Z0-9_]+)=(.*)#\1='\2'#" "${conf}"
     mv "${conf}" "${file}"
 }
 

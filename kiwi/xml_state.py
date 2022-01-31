@@ -15,6 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
+import os
 from typing import (
     List, Optional, Any, Dict, NamedTuple
 )
@@ -27,6 +28,7 @@ from textwrap import dedent
 import kiwi.defaults as defaults
 
 from kiwi import xml_parse
+from kiwi.storage.disk import ptable_entry_type
 from kiwi.system.uri import Uri
 from kiwi.defaults import Defaults
 from kiwi.utils.size import StringToSize
@@ -95,6 +97,7 @@ class XMLState:
         self.build_type = self._build_type_section(
             build_type
         )
+        self.resolve_this_path()
 
     def get_preferences_sections(self) -> List:
         """
@@ -305,6 +308,22 @@ class XMLState:
             if package_manager:
                 return package_manager[0]
         return Defaults.get_default_package_manager()
+
+    def get_release_version(self) -> str:
+        """
+        Get configured release version from selected preferences section
+
+        :return: Content of the <release-version> section or ''
+
+        :rtype: str
+        """
+        release_version = ''
+        for preferences in self.get_preferences_sections():
+            release_version = preferences.get_release_version()
+            if release_version:
+                release_version = release_version[0]
+                break
+        return release_version
 
     def get_packages_sections(self, section_types: List) -> List:
         """
@@ -604,6 +623,43 @@ class XMLState:
         """
         return self.get_collection_type('image')
 
+    def get_collection_modules(self) -> Dict[str, List[str]]:
+        """
+        Dict of collection modules to enable and/or disable
+
+        :return:
+            Dict of the form:
+
+            .. code:: python
+
+                {
+                    'enable': [
+                        "module:stream", "module"
+                    ],
+                    'disable': [
+                        "module"
+                    ]
+                }
+
+        :rtype: dict
+        """
+        modules: Dict[str, List[str]] = {
+            'disable': [],
+            'enable': []
+        }
+        for packages in self.get_bootstrap_packages_sections():
+            for collection_module in packages.get_collectionModule():
+                module_name = collection_module.get_name()
+                if collection_module.get_enable() is False:
+                    modules['disable'].append(module_name)
+                else:
+                    stream = collection_module.get_stream()
+                    if stream:
+                        modules['enable'].append(f'{module_name}:{stream}')
+                    else:
+                        modules['enable'].append(module_name)
+        return modules
+
     def get_collections(self, section_type: str = 'image') -> List:
         """
         List of collection names from the packages sections matching
@@ -726,6 +782,19 @@ class XMLState:
             # the image provides a machine section with a guest loader setup
             return True
         return False
+
+    def get_build_type_partitions_section(self) -> Any:
+        """
+        First partitions section from the build type section
+
+        :return: <partitions> section reference
+
+        :rtype: xml_parse::partitions
+        """
+        partitions_sections = self.build_type.get_partitions()
+        if partitions_sections:
+            return partitions_sections[0]
+        return None
 
     def get_build_type_system_disk_section(self) -> Any:
         """
@@ -1332,6 +1401,47 @@ class XMLState:
 
         container_config_section.set_labels(labels)
 
+    def get_partitions(self) -> Dict[str, ptable_entry_type]:
+        """
+        Dictionary of configured partitions.
+
+        Each entry in the dict references a ptable_entry_type
+        Each key in the dict references the name of the
+        partition entry as handled by KIWI
+
+        :return:
+            Contains dict of ptable_entry_type tuples
+
+            .. code:: python
+
+                {
+                    'NAME': ptable_entry_type(
+                        mbsize=int,
+                        partition_name=str,
+                        partition_type=str,
+                        mountpoint=str,
+                        filesystem=str
+                    )
+                }
+
+        :rtype: dict
+        """
+        partitions: Dict[str, ptable_entry_type] = {}
+        partitions_section = self.get_build_type_partitions_section()
+        if not partitions_section:
+            return partitions
+        for partition in partitions_section.get_partition():
+            name = partition.get_name()
+            partition_name = partition.get_partition_name() or f'p.lx{name}'
+            partitions[name] = ptable_entry_type(
+                mbsize=self._to_mega_byte(partition.get_size()),
+                partition_name=partition_name,
+                partition_type=partition.get_partition_type() or 't.linux',
+                mountpoint=partition.get_mountpoint(),
+                filesystem=partition.get_filesystem()
+            )
+        return partitions
+
     def get_volumes(self) -> List[volume_type]:
         """
         List of configured systemdisk volumes.
@@ -1666,6 +1776,16 @@ class XMLState:
             ]
         )
 
+    def get_repositories_signing_keys(self) -> List[str]:
+        """
+        Get list of signing keys specified on the repositories
+        """
+        key_file_list: List[str] = []
+        for repository in self.get_repository_sections() or []:
+            for signing in repository.get_source().get_signing() or []:
+                key_file_list.append(Uri(signing.get_key()).translate())
+        return key_file_list
+
     def set_repository(
         self, repo_source: str, repo_type: str, repo_alias: str,
         repo_prio: str, repo_imageinclude: bool = False,
@@ -1700,7 +1820,8 @@ class XMLState:
     def add_repository(
         self, repo_source: str, repo_type: str, repo_alias: str = None,
         repo_prio: str = '', repo_imageinclude: bool = False,
-        repo_package_gpgcheck: Optional[bool] = None
+        repo_package_gpgcheck: Optional[bool] = None,
+        repo_signing_keys: List[str] = []
     ) -> None:
         """
         Add a new repository section at the end of the list
@@ -1723,11 +1844,37 @@ class XMLState:
                 type_=repo_type,
                 alias=repo_alias,
                 priority=priority_number,
-                source=xml_parse.source(path=repo_source),
+                source=xml_parse.source(
+                    path=repo_source,
+                    signing=[
+                        xml_parse.signing(key=k) for k in repo_signing_keys
+                    ]
+                ),
                 imageinclude=repo_imageinclude,
                 package_gpgcheck=repo_package_gpgcheck
             )
         )
+
+    def resolve_this_path(self) -> None:
+        """
+        Resolve any this:// repo source path into the path
+        representing the target inside of the image description
+        directory
+        """
+        for repository in self.get_repository_sections() or []:
+            repo_source = repository.get_source()
+            repo_path = repo_source.get_path()
+            if repo_path.startswith('this://'):
+                repo_path = repo_path.replace('this://', '')
+                repo_source.set_path(
+                    'dir://{0}'.format(
+                        os.path.realpath(
+                            os.path.join(
+                                self.xml_data.description_dir, repo_path
+                            )
+                        )
+                    )
+                )
 
     def copy_displayname(self, target_state: Any) -> None:
         """
@@ -1893,20 +2040,15 @@ class XMLState:
 
     def copy_bootincluded_packages(self, target_state: Any) -> None:
         """
-        Copy packages marked as bootinclude to the packages type=image
-        (or type=bootstrap if no type=image was found) section in the
-        target xml state. The package will also be removed from the
-        packages type=delete section in the target xml state if
-        present there
+        Copy packages marked as bootinclude to the packages
+        type=bootstrap section in the target xml state. The package
+        will also be removed from the packages type=delete section
+        in the target xml state if present there
 
         :param object target_state: XMLState instance
         """
         target_packages_sections = \
-            target_state.get_image_packages_sections()
-        if not target_packages_sections:
-            # no packages type=image section was found, add to bootstrap
-            target_packages_sections = \
-                target_state.get_bootstrap_packages_sections()
+            target_state.get_bootstrap_packages_sections()
         if target_packages_sections:
             target_packages_section = \
                 target_packages_sections[0]

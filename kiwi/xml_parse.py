@@ -3,7 +3,7 @@
 
 #
 # Generated  by generateDS.py version 2.29.24.
-# Python 3.6.12 (default, Dec 02 2020, 09:44:23) [GCC]
+# Python 3.6.15 (default, Sep 23 2021, 15:41:43) [GCC]
 #
 # Command line options:
 #   ('-f', '')
@@ -1549,6 +1549,130 @@ class namedCollection(GeneratedsSuper):
 # end class namedCollection
 
 
+class collectionModule(GeneratedsSuper):
+    subclass = None
+    superclass = None
+    def __init__(self, name=None, enable=None, stream=None, arch=None):
+        self.original_tagname_ = None
+        self.name = _cast(None, name)
+        self.enable = _cast(bool, enable)
+        self.stream = _cast(None, stream)
+        self.arch = _cast(None, arch)
+    def factory(*args_, **kwargs_):
+        if CurrentSubclassModule_ is not None:
+            subclass = getSubclassFromModule_(
+                CurrentSubclassModule_, collectionModule)
+            if subclass is not None:
+                return subclass(*args_, **kwargs_)
+        if collectionModule.subclass:
+            return collectionModule.subclass(*args_, **kwargs_)
+        else:
+            return collectionModule(*args_, **kwargs_)
+    factory = staticmethod(factory)
+    def get_name(self): return self.name
+    def set_name(self, name): self.name = name
+    def get_enable(self): return self.enable
+    def set_enable(self, enable): self.enable = enable
+    def get_stream(self): return self.stream
+    def set_stream(self, stream): self.stream = stream
+    def get_arch(self): return self.arch
+    def set_arch(self, arch): self.arch = arch
+    def validate_safe_posix_name(self, value):
+        # Validate type safe-posix-name, a restriction on xs:token.
+        if value is not None and Validate_simpletypes_:
+            if not self.gds_validate_simple_patterns(
+                    self.validate_safe_posix_name_patterns_, value):
+                warnings_.warn('Value "%s" does not match xsd pattern restrictions: %s' % (value.encode('utf-8'), self.validate_safe_posix_name_patterns_, ))
+    validate_safe_posix_name_patterns_ = [['^[a-zA-Z0-9_\\-\\.]+$']]
+    def validate_arch_name(self, value):
+        # Validate type arch-name, a restriction on xs:token.
+        if value is not None and Validate_simpletypes_:
+            if not self.gds_validate_simple_patterns(
+                    self.validate_arch_name_patterns_, value):
+                warnings_.warn('Value "%s" does not match xsd pattern restrictions: %s' % (value.encode('utf-8'), self.validate_arch_name_patterns_, ))
+    validate_arch_name_patterns_ = [['^.*$']]
+    def hasContent_(self):
+        if (
+
+        ):
+            return True
+        else:
+            return False
+    def export(self, outfile, level, namespaceprefix_='', name_='collectionModule', namespacedef_='', pretty_print=True):
+        imported_ns_def_ = GenerateDSNamespaceDefs_.get('collectionModule')
+        if imported_ns_def_ is not None:
+            namespacedef_ = imported_ns_def_
+        if pretty_print:
+            eol_ = '\n'
+        else:
+            eol_ = ''
+        if self.original_tagname_ is not None:
+            name_ = self.original_tagname_
+        showIndent(outfile, level, pretty_print)
+        outfile.write('<%s%s%s' % (namespaceprefix_, name_, namespacedef_ and ' ' + namespacedef_ or '', ))
+        already_processed = set()
+        self.exportAttributes(outfile, level, already_processed, namespaceprefix_, name_='collectionModule')
+        if self.hasContent_():
+            outfile.write('>%s' % (eol_, ))
+            self.exportChildren(outfile, level + 1, namespaceprefix_='', name_='collectionModule', pretty_print=pretty_print)
+            outfile.write('</%s%s>%s' % (namespaceprefix_, name_, eol_))
+        else:
+            outfile.write('/>%s' % (eol_, ))
+    def exportAttributes(self, outfile, level, already_processed, namespaceprefix_='', name_='collectionModule'):
+        if self.name is not None and 'name' not in already_processed:
+            already_processed.add('name')
+            outfile.write(' name=%s' % (quote_attrib(self.name), ))
+        if self.enable is not None and 'enable' not in already_processed:
+            already_processed.add('enable')
+            outfile.write(' enable="%s"' % self.gds_format_boolean(self.enable, input_name='enable'))
+        if self.stream is not None and 'stream' not in already_processed:
+            already_processed.add('stream')
+            outfile.write(' stream=%s' % (quote_attrib(self.stream), ))
+        if self.arch is not None and 'arch' not in already_processed:
+            already_processed.add('arch')
+            outfile.write(' arch=%s' % (quote_attrib(self.arch), ))
+    def exportChildren(self, outfile, level, namespaceprefix_='', name_='collectionModule', fromsubclass_=False, pretty_print=True):
+        pass
+    def build(self, node):
+        already_processed = set()
+        self.buildAttributes(node, node.attrib, already_processed)
+        for child in node:
+            nodeName_ = Tag_pattern_.match(child.tag).groups()[-1]
+            self.buildChildren(child, node, nodeName_)
+        return self
+    def buildAttributes(self, node, attrs, already_processed):
+        value = find_attr_value_('name', node)
+        if value is not None and 'name' not in already_processed:
+            already_processed.add('name')
+            self.name = value
+            self.name = ' '.join(self.name.split())
+            self.validate_safe_posix_name(self.name)    # validate type safe-posix-name
+        value = find_attr_value_('enable', node)
+        if value is not None and 'enable' not in already_processed:
+            already_processed.add('enable')
+            if value in ('true', '1'):
+                self.enable = True
+            elif value in ('false', '0'):
+                self.enable = False
+            else:
+                raise_parse_error(node, 'Bad boolean attribute')
+        value = find_attr_value_('stream', node)
+        if value is not None and 'stream' not in already_processed:
+            already_processed.add('stream')
+            self.stream = value
+            self.stream = ' '.join(self.stream.split())
+            self.validate_safe_posix_name(self.stream)    # validate type safe-posix-name
+        value = find_attr_value_('arch', node)
+        if value is not None and 'arch' not in already_processed:
+            already_processed.add('arch')
+            self.arch = value
+            self.arch = ' '.join(self.arch.split())
+            self.validate_arch_name(self.arch)    # validate type arch-name
+    def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
+        pass
+# end class collectionModule
+
+
 class product(GeneratedsSuper):
     """Name of a Product From openSUSE"""
     subclass = None
@@ -1755,130 +1879,6 @@ class package(GeneratedsSuper):
     def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
         pass
 # end class package
-
-
-class partition(GeneratedsSuper):
-    """A Partition"""
-    subclass = None
-    superclass = None
-    def __init__(self, type_=None, number=None, size=None, mountpoint=None, target=None):
-        self.original_tagname_ = None
-        self.type_ = _cast(None, type_)
-        self.number = _cast(None, number)
-        self.size = _cast(None, size)
-        self.mountpoint = _cast(None, mountpoint)
-        self.target = _cast(bool, target)
-    def factory(*args_, **kwargs_):
-        if CurrentSubclassModule_ is not None:
-            subclass = getSubclassFromModule_(
-                CurrentSubclassModule_, partition)
-            if subclass is not None:
-                return subclass(*args_, **kwargs_)
-        if partition.subclass:
-            return partition.subclass(*args_, **kwargs_)
-        else:
-            return partition(*args_, **kwargs_)
-    factory = staticmethod(factory)
-    def get_type(self): return self.type_
-    def set_type(self, type_): self.type_ = type_
-    def get_number(self): return self.number
-    def set_number(self, number): self.number = number
-    def get_size(self): return self.size
-    def set_size(self, size): self.size = size
-    def get_mountpoint(self): return self.mountpoint
-    def set_mountpoint(self, mountpoint): self.mountpoint = mountpoint
-    def get_target(self): return self.target
-    def set_target(self, target): self.target = target
-    def validate_size_type(self, value):
-        # Validate type size-type, a restriction on xs:token.
-        if value is not None and Validate_simpletypes_:
-            if not self.gds_validate_simple_patterns(
-                    self.validate_size_type_patterns_, value):
-                warnings_.warn('Value "%s" does not match xsd pattern restrictions: %s' % (value.encode('utf-8'), self.validate_size_type_patterns_, ))
-    validate_size_type_patterns_ = [['^\\d*|image$']]
-    def hasContent_(self):
-        if (
-
-        ):
-            return True
-        else:
-            return False
-    def export(self, outfile, level, namespaceprefix_='', name_='partition', namespacedef_='', pretty_print=True):
-        imported_ns_def_ = GenerateDSNamespaceDefs_.get('partition')
-        if imported_ns_def_ is not None:
-            namespacedef_ = imported_ns_def_
-        if pretty_print:
-            eol_ = '\n'
-        else:
-            eol_ = ''
-        if self.original_tagname_ is not None:
-            name_ = self.original_tagname_
-        showIndent(outfile, level, pretty_print)
-        outfile.write('<%s%s%s' % (namespaceprefix_, name_, namespacedef_ and ' ' + namespacedef_ or '', ))
-        already_processed = set()
-        self.exportAttributes(outfile, level, already_processed, namespaceprefix_, name_='partition')
-        if self.hasContent_():
-            outfile.write('>%s' % (eol_, ))
-            self.exportChildren(outfile, level + 1, namespaceprefix_='', name_='partition', pretty_print=pretty_print)
-            outfile.write('</%s%s>%s' % (namespaceprefix_, name_, eol_))
-        else:
-            outfile.write('/>%s' % (eol_, ))
-    def exportAttributes(self, outfile, level, already_processed, namespaceprefix_='', name_='partition'):
-        if self.type_ is not None and 'type_' not in already_processed:
-            already_processed.add('type_')
-            outfile.write(' type=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.type_), input_name='type')), ))
-        if self.number is not None and 'number' not in already_processed:
-            already_processed.add('number')
-            outfile.write(' number=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.number), input_name='number')), ))
-        if self.size is not None and 'size' not in already_processed:
-            already_processed.add('size')
-            outfile.write(' size=%s' % (quote_attrib(self.size), ))
-        if self.mountpoint is not None and 'mountpoint' not in already_processed:
-            already_processed.add('mountpoint')
-            outfile.write(' mountpoint=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.mountpoint), input_name='mountpoint')), ))
-        if self.target is not None and 'target' not in already_processed:
-            already_processed.add('target')
-            outfile.write(' target="%s"' % self.gds_format_boolean(self.target, input_name='target'))
-    def exportChildren(self, outfile, level, namespaceprefix_='', name_='partition', fromsubclass_=False, pretty_print=True):
-        pass
-    def build(self, node):
-        already_processed = set()
-        self.buildAttributes(node, node.attrib, already_processed)
-        for child in node:
-            nodeName_ = Tag_pattern_.match(child.tag).groups()[-1]
-            self.buildChildren(child, node, nodeName_)
-        return self
-    def buildAttributes(self, node, attrs, already_processed):
-        value = find_attr_value_('type', node)
-        if value is not None and 'type' not in already_processed:
-            already_processed.add('type')
-            self.type_ = value
-        value = find_attr_value_('number', node)
-        if value is not None and 'number' not in already_processed:
-            already_processed.add('number')
-            self.number = value
-        value = find_attr_value_('size', node)
-        if value is not None and 'size' not in already_processed:
-            already_processed.add('size')
-            self.size = value
-            self.size = ' '.join(self.size.split())
-            self.validate_size_type(self.size)    # validate type size-type
-        value = find_attr_value_('mountpoint', node)
-        if value is not None and 'mountpoint' not in already_processed:
-            already_processed.add('mountpoint')
-            self.mountpoint = value
-        value = find_attr_value_('target', node)
-        if value is not None and 'target' not in already_processed:
-            already_processed.add('target')
-            if value in ('true', '1'):
-                self.target = True
-            elif value in ('false', '0'):
-                self.target = False
-            else:
-                raise_parse_error(node, 'Bad boolean attribute')
-    def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
-        pass
-# end class partition
 
 
 class profile(GeneratedsSuper):
@@ -2332,14 +2332,98 @@ class repository(k_source):
 # end class repository
 
 
+class signing(GeneratedsSuper):
+    """The signing element holds information about repo/package signing
+    keys"""
+    subclass = None
+    superclass = None
+    def __init__(self, key=None):
+        self.original_tagname_ = None
+        self.key = _cast(None, key)
+    def factory(*args_, **kwargs_):
+        if CurrentSubclassModule_ is not None:
+            subclass = getSubclassFromModule_(
+                CurrentSubclassModule_, signing)
+            if subclass is not None:
+                return subclass(*args_, **kwargs_)
+        if signing.subclass:
+            return signing.subclass(*args_, **kwargs_)
+        else:
+            return signing(*args_, **kwargs_)
+    factory = staticmethod(factory)
+    def get_key(self): return self.key
+    def set_key(self, key): self.key = key
+    def validate_simple_uri_type(self, value):
+        # Validate type simple-uri-type, a restriction on xs:token.
+        if value is not None and Validate_simpletypes_:
+            if not self.gds_validate_simple_patterns(
+                    self.validate_simple_uri_type_patterns_, value):
+                warnings_.warn('Value "%s" does not match xsd pattern restrictions: %s' % (value.encode('utf-8'), self.validate_simple_uri_type_patterns_, ))
+    validate_simple_uri_type_patterns_ = [['^(file:|https:|http:|ftp:).*$']]
+    def hasContent_(self):
+        if (
+
+        ):
+            return True
+        else:
+            return False
+    def export(self, outfile, level, namespaceprefix_='', name_='signing', namespacedef_='', pretty_print=True):
+        imported_ns_def_ = GenerateDSNamespaceDefs_.get('signing')
+        if imported_ns_def_ is not None:
+            namespacedef_ = imported_ns_def_
+        if pretty_print:
+            eol_ = '\n'
+        else:
+            eol_ = ''
+        if self.original_tagname_ is not None:
+            name_ = self.original_tagname_
+        showIndent(outfile, level, pretty_print)
+        outfile.write('<%s%s%s' % (namespaceprefix_, name_, namespacedef_ and ' ' + namespacedef_ or '', ))
+        already_processed = set()
+        self.exportAttributes(outfile, level, already_processed, namespaceprefix_, name_='signing')
+        if self.hasContent_():
+            outfile.write('>%s' % (eol_, ))
+            self.exportChildren(outfile, level + 1, namespaceprefix_='', name_='signing', pretty_print=pretty_print)
+            outfile.write('</%s%s>%s' % (namespaceprefix_, name_, eol_))
+        else:
+            outfile.write('/>%s' % (eol_, ))
+    def exportAttributes(self, outfile, level, already_processed, namespaceprefix_='', name_='signing'):
+        if self.key is not None and 'key' not in already_processed:
+            already_processed.add('key')
+            outfile.write(' key=%s' % (quote_attrib(self.key), ))
+    def exportChildren(self, outfile, level, namespaceprefix_='', name_='signing', fromsubclass_=False, pretty_print=True):
+        pass
+    def build(self, node):
+        already_processed = set()
+        self.buildAttributes(node, node.attrib, already_processed)
+        for child in node:
+            nodeName_ = Tag_pattern_.match(child.tag).groups()[-1]
+            self.buildChildren(child, node, nodeName_)
+        return self
+    def buildAttributes(self, node, attrs, already_processed):
+        value = find_attr_value_('key', node)
+        if value is not None and 'key' not in already_processed:
+            already_processed.add('key')
+            self.key = value
+            self.key = ' '.join(self.key.split())
+            self.validate_simple_uri_type(self.key)    # validate type simple-uri-type
+    def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
+        pass
+# end class signing
+
+
 class source(GeneratedsSuper):
     """A Pointer to a data source. This can be a remote location as well as
     a path specification"""
     subclass = None
     superclass = None
-    def __init__(self, path=None):
+    def __init__(self, path=None, signing=None):
         self.original_tagname_ = None
         self.path = _cast(None, path)
+        if signing is None:
+            self.signing = []
+        else:
+            self.signing = signing
     def factory(*args_, **kwargs_):
         if CurrentSubclassModule_ is not None:
             subclass = getSubclassFromModule_(
@@ -2351,11 +2435,16 @@ class source(GeneratedsSuper):
         else:
             return source(*args_, **kwargs_)
     factory = staticmethod(factory)
+    def get_signing(self): return self.signing
+    def set_signing(self, signing): self.signing = signing
+    def add_signing(self, value): self.signing.append(value)
+    def insert_signing_at(self, index, value): self.signing.insert(index, value)
+    def replace_signing_at(self, index, value): self.signing[index] = value
     def get_path(self): return self.path
     def set_path(self, path): self.path = path
     def hasContent_(self):
         if (
-
+            self.signing
         ):
             return True
         else:
@@ -2377,6 +2466,7 @@ class source(GeneratedsSuper):
         if self.hasContent_():
             outfile.write('>%s' % (eol_, ))
             self.exportChildren(outfile, level + 1, namespaceprefix_='', name_='source', pretty_print=pretty_print)
+            showIndent(outfile, level, pretty_print)
             outfile.write('</%s%s>%s' % (namespaceprefix_, name_, eol_))
         else:
             outfile.write('/>%s' % (eol_, ))
@@ -2385,7 +2475,12 @@ class source(GeneratedsSuper):
             already_processed.add('path')
             outfile.write(' path=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.path), input_name='path')), ))
     def exportChildren(self, outfile, level, namespaceprefix_='', name_='source', fromsubclass_=False, pretty_print=True):
-        pass
+        if pretty_print:
+            eol_ = '\n'
+        else:
+            eol_ = ''
+        for signing_ in self.signing:
+            signing_.export(outfile, level, namespaceprefix_, name_='signing', pretty_print=pretty_print)
     def build(self, node):
         already_processed = set()
         self.buildAttributes(node, node.attrib, already_processed)
@@ -2399,7 +2494,11 @@ class source(GeneratedsSuper):
             already_processed.add('path')
             self.path = value
     def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
-        pass
+        if nodeName_ == 'signing':
+            obj_ = signing.factory()
+            obj_.build(child_)
+            self.signing.append(obj_)
+            obj_.original_tagname_ = 'signing'
 # end class source
 
 
@@ -2619,7 +2718,7 @@ class type_(GeneratedsSuper):
     """The Image Type of the Logical Extend"""
     subclass = None
     superclass = None
-    def __init__(self, boot=None, bootfilesystem=None, firmware=None, bootkernel=None, bootpartition=None, bootpartsize=None, efipartsize=None, efiparttable=None, bootprofile=None, btrfs_quota_groups=None, btrfs_root_is_snapshot=None, btrfs_root_is_readonly_snapshot=None, compressed=None, devicepersistency=None, editbootconfig=None, editbootinstall=None, filesystem=None, flags=None, format=None, formatoptions=None, fsmountoptions=None, fscreateoptions=None, squashfscompression=None, gcelicense=None, hybridpersistent=None, hybridpersistent_filesystem=None, gpt_hybrid_mbr=None, force_mbr=None, initrd_system=None, image=None, metadata_path=None, installboot=None, install_continue_on_timeout=None, installprovidefailsafe=None, installiso=None, installstick=None, installpxe=None, mediacheck=None, kernelcmdline=None, luks=None, luksOS=None, mdraid=None, overlayroot=None, primary=None, ramonly=None, rootfs_label=None, spare_part=None, spare_part_mountpoint=None, spare_part_fs=None, spare_part_fs_attributes=None, spare_part_is_last=None, target_blocksize=None, target_removable=None, vga=None, vhdfixedtag=None, volid=None, wwid_wait_timeout=None, derived_from=None, xen_server=None, publisher=None, disk_start_sector=None, bundle_format=None, bootloader=None, containerconfig=None, machine=None, oemconfig=None, size=None, systemdisk=None, vagrantconfig=None, installmedia=None):
+    def __init__(self, boot=None, bootfilesystem=None, firmware=None, bootkernel=None, bootpartition=None, bootpartsize=None, efipartsize=None, efiparttable=None, bootprofile=None, btrfs_quota_groups=None, btrfs_root_is_snapshot=None, btrfs_root_is_readonly_snapshot=None, compressed=None, devicepersistency=None, editbootconfig=None, editbootinstall=None, filesystem=None, flags=None, format=None, formatoptions=None, fsmountoptions=None, fscreateoptions=None, squashfscompression=None, gcelicense=None, hybridpersistent=None, hybridpersistent_filesystem=None, gpt_hybrid_mbr=None, force_mbr=None, initrd_system=None, image=None, metadata_path=None, installboot=None, install_continue_on_timeout=None, installprovidefailsafe=None, installiso=None, installstick=None, installpxe=None, mediacheck=None, kernelcmdline=None, luks=None, luksOS=None, mdraid=None, overlayroot=None, primary=None, ramonly=None, rootfs_label=None, spare_part=None, spare_part_mountpoint=None, spare_part_fs=None, spare_part_fs_attributes=None, spare_part_is_last=None, target_blocksize=None, target_removable=None, vga=None, vhdfixedtag=None, volid=None, wwid_wait_timeout=None, derived_from=None, xen_server=None, publisher=None, disk_start_sector=None, bundle_format=None, bootloader=None, containerconfig=None, machine=None, oemconfig=None, size=None, systemdisk=None, partitions=None, vagrantconfig=None, installmedia=None):
         self.original_tagname_ = None
         self.boot = _cast(None, boot)
         self.bootfilesystem = _cast(None, bootfilesystem)
@@ -2707,6 +2806,10 @@ class type_(GeneratedsSuper):
             self.systemdisk = []
         else:
             self.systemdisk = systemdisk
+        if partitions is None:
+            self.partitions = []
+        else:
+            self.partitions = partitions
         if vagrantconfig is None:
             self.vagrantconfig = []
         else:
@@ -2756,6 +2859,11 @@ class type_(GeneratedsSuper):
     def add_systemdisk(self, value): self.systemdisk.append(value)
     def insert_systemdisk_at(self, index, value): self.systemdisk.insert(index, value)
     def replace_systemdisk_at(self, index, value): self.systemdisk[index] = value
+    def get_partitions(self): return self.partitions
+    def set_partitions(self, partitions): self.partitions = partitions
+    def add_partitions(self, value): self.partitions.append(value)
+    def insert_partitions_at(self, index, value): self.partitions.insert(index, value)
+    def replace_partitions_at(self, index, value): self.partitions[index] = value
     def get_vagrantconfig(self): return self.vagrantconfig
     def set_vagrantconfig(self, vagrantconfig): self.vagrantconfig = vagrantconfig
     def add_vagrantconfig(self, value): self.vagrantconfig.append(value)
@@ -2926,6 +3034,7 @@ class type_(GeneratedsSuper):
             self.oemconfig or
             self.size or
             self.systemdisk or
+            self.partitions or
             self.vagrantconfig or
             self.installmedia
         ):
@@ -3157,6 +3266,8 @@ class type_(GeneratedsSuper):
             size_.export(outfile, level, namespaceprefix_, name_='size', pretty_print=pretty_print)
         for systemdisk_ in self.systemdisk:
             systemdisk_.export(outfile, level, namespaceprefix_, name_='systemdisk', pretty_print=pretty_print)
+        for partitions_ in self.partitions:
+            partitions_.export(outfile, level, namespaceprefix_, name_='partitions', pretty_print=pretty_print)
         for vagrantconfig_ in self.vagrantconfig:
             vagrantconfig_.export(outfile, level, namespaceprefix_, name_='vagrantconfig', pretty_print=pretty_print)
         for installmedia_ in self.installmedia:
@@ -3594,6 +3705,11 @@ class type_(GeneratedsSuper):
             obj_.build(child_)
             self.systemdisk.append(obj_)
             obj_.original_tagname_ = 'systemdisk'
+        elif nodeName_ == 'partitions':
+            obj_ = partitions.factory()
+            obj_.build(child_)
+            self.partitions.append(obj_)
+            obj_.original_tagname_ = 'partitions'
         elif nodeName_ == 'vagrantconfig':
             obj_ = vagrantconfig.factory()
             obj_.build(child_)
@@ -4073,6 +4189,146 @@ class vmnic(GeneratedsSuper):
     def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
         pass
 # end class vmnic
+
+
+class partition(GeneratedsSuper):
+    """Specify custom partition in the partition table"""
+    subclass = None
+    superclass = None
+    def __init__(self, name=None, size=None, partition_name=None, partition_type=None, mountpoint=None, filesystem=None):
+        self.original_tagname_ = None
+        self.name = _cast(None, name)
+        self.size = _cast(None, size)
+        self.partition_name = _cast(None, partition_name)
+        self.partition_type = _cast(None, partition_type)
+        self.mountpoint = _cast(None, mountpoint)
+        self.filesystem = _cast(None, filesystem)
+    def factory(*args_, **kwargs_):
+        if CurrentSubclassModule_ is not None:
+            subclass = getSubclassFromModule_(
+                CurrentSubclassModule_, partition)
+            if subclass is not None:
+                return subclass(*args_, **kwargs_)
+        if partition.subclass:
+            return partition.subclass(*args_, **kwargs_)
+        else:
+            return partition(*args_, **kwargs_)
+    factory = staticmethod(factory)
+    def get_name(self): return self.name
+    def set_name(self, name): self.name = name
+    def get_size(self): return self.size
+    def set_size(self, size): self.size = size
+    def get_partition_name(self): return self.partition_name
+    def set_partition_name(self, partition_name): self.partition_name = partition_name
+    def get_partition_type(self): return self.partition_type
+    def set_partition_type(self, partition_type): self.partition_type = partition_type
+    def get_mountpoint(self): return self.mountpoint
+    def set_mountpoint(self, mountpoint): self.mountpoint = mountpoint
+    def get_filesystem(self): return self.filesystem
+    def set_filesystem(self, filesystem): self.filesystem = filesystem
+    def validate_partition_size_type(self, value):
+        # Validate type partition-size-type, a restriction on xs:token.
+        if value is not None and Validate_simpletypes_:
+            if not self.gds_validate_simple_patterns(
+                    self.validate_partition_size_type_patterns_, value):
+                warnings_.warn('Value "%s" does not match xsd pattern restrictions: %s' % (value.encode('utf-8'), self.validate_partition_size_type_patterns_, ))
+    validate_partition_size_type_patterns_ = [['^(\\d+|\\d+M|\\d+G)$']]
+    def validate_safe_posix_short_name(self, value):
+        # Validate type safe-posix-short-name, a restriction on xs:token.
+        if value is not None and Validate_simpletypes_:
+            if not self.gds_validate_simple_patterns(
+                    self.validate_safe_posix_short_name_patterns_, value):
+                warnings_.warn('Value "%s" does not match xsd pattern restrictions: %s' % (value.encode('utf-8'), self.validate_safe_posix_short_name_patterns_, ))
+    validate_safe_posix_short_name_patterns_ = [['^[a-zA-Z0-9_\\-\\.]{1,32}$']]
+    def hasContent_(self):
+        if (
+
+        ):
+            return True
+        else:
+            return False
+    def export(self, outfile, level, namespaceprefix_='', name_='partition', namespacedef_='', pretty_print=True):
+        imported_ns_def_ = GenerateDSNamespaceDefs_.get('partition')
+        if imported_ns_def_ is not None:
+            namespacedef_ = imported_ns_def_
+        if pretty_print:
+            eol_ = '\n'
+        else:
+            eol_ = ''
+        if self.original_tagname_ is not None:
+            name_ = self.original_tagname_
+        showIndent(outfile, level, pretty_print)
+        outfile.write('<%s%s%s' % (namespaceprefix_, name_, namespacedef_ and ' ' + namespacedef_ or '', ))
+        already_processed = set()
+        self.exportAttributes(outfile, level, already_processed, namespaceprefix_, name_='partition')
+        if self.hasContent_():
+            outfile.write('>%s' % (eol_, ))
+            self.exportChildren(outfile, level + 1, namespaceprefix_='', name_='partition', pretty_print=pretty_print)
+            outfile.write('</%s%s>%s' % (namespaceprefix_, name_, eol_))
+        else:
+            outfile.write('/>%s' % (eol_, ))
+    def exportAttributes(self, outfile, level, already_processed, namespaceprefix_='', name_='partition'):
+        if self.name is not None and 'name' not in already_processed:
+            already_processed.add('name')
+            outfile.write(' name=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.name), input_name='name')), ))
+        if self.size is not None and 'size' not in already_processed:
+            already_processed.add('size')
+            outfile.write(' size=%s' % (quote_attrib(self.size), ))
+        if self.partition_name is not None and 'partition_name' not in already_processed:
+            already_processed.add('partition_name')
+            outfile.write(' partition_name=%s' % (quote_attrib(self.partition_name), ))
+        if self.partition_type is not None and 'partition_type' not in already_processed:
+            already_processed.add('partition_type')
+            outfile.write(' partition_type=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.partition_type), input_name='partition_type')), ))
+        if self.mountpoint is not None and 'mountpoint' not in already_processed:
+            already_processed.add('mountpoint')
+            outfile.write(' mountpoint=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.mountpoint), input_name='mountpoint')), ))
+        if self.filesystem is not None and 'filesystem' not in already_processed:
+            already_processed.add('filesystem')
+            outfile.write(' filesystem=%s' % (self.gds_encode(self.gds_format_string(quote_attrib(self.filesystem), input_name='filesystem')), ))
+    def exportChildren(self, outfile, level, namespaceprefix_='', name_='partition', fromsubclass_=False, pretty_print=True):
+        pass
+    def build(self, node):
+        already_processed = set()
+        self.buildAttributes(node, node.attrib, already_processed)
+        for child in node:
+            nodeName_ = Tag_pattern_.match(child.tag).groups()[-1]
+            self.buildChildren(child, node, nodeName_)
+        return self
+    def buildAttributes(self, node, attrs, already_processed):
+        value = find_attr_value_('name', node)
+        if value is not None and 'name' not in already_processed:
+            already_processed.add('name')
+            self.name = value
+        value = find_attr_value_('size', node)
+        if value is not None and 'size' not in already_processed:
+            already_processed.add('size')
+            self.size = value
+            self.size = ' '.join(self.size.split())
+            self.validate_partition_size_type(self.size)    # validate type partition-size-type
+        value = find_attr_value_('partition_name', node)
+        if value is not None and 'partition_name' not in already_processed:
+            already_processed.add('partition_name')
+            self.partition_name = value
+            self.partition_name = ' '.join(self.partition_name.split())
+            self.validate_safe_posix_short_name(self.partition_name)    # validate type safe-posix-short-name
+        value = find_attr_value_('partition_type', node)
+        if value is not None and 'partition_type' not in already_processed:
+            already_processed.add('partition_type')
+            self.partition_type = value
+            self.partition_type = ' '.join(self.partition_type.split())
+        value = find_attr_value_('mountpoint', node)
+        if value is not None and 'mountpoint' not in already_processed:
+            already_processed.add('mountpoint')
+            self.mountpoint = value
+        value = find_attr_value_('filesystem', node)
+        if value is not None and 'filesystem' not in already_processed:
+            already_processed.add('filesystem')
+            self.filesystem = value
+            self.filesystem = ' '.join(self.filesystem.split())
+    def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
+        pass
+# end class partition
 
 
 class volume(GeneratedsSuper):
@@ -5534,6 +5790,87 @@ class volumes(GeneratedsSuper):
             self.volume.append(obj_)
             obj_.original_tagname_ = 'volume'
 # end class volumes
+
+
+class partitions(GeneratedsSuper):
+    """Partition table entries within the custom area of the storage device"""
+    subclass = None
+    superclass = None
+    def __init__(self, partition=None):
+        self.original_tagname_ = None
+        if partition is None:
+            self.partition = []
+        else:
+            self.partition = partition
+    def factory(*args_, **kwargs_):
+        if CurrentSubclassModule_ is not None:
+            subclass = getSubclassFromModule_(
+                CurrentSubclassModule_, partitions)
+            if subclass is not None:
+                return subclass(*args_, **kwargs_)
+        if partitions.subclass:
+            return partitions.subclass(*args_, **kwargs_)
+        else:
+            return partitions(*args_, **kwargs_)
+    factory = staticmethod(factory)
+    def get_partition(self): return self.partition
+    def set_partition(self, partition): self.partition = partition
+    def add_partition(self, value): self.partition.append(value)
+    def insert_partition_at(self, index, value): self.partition.insert(index, value)
+    def replace_partition_at(self, index, value): self.partition[index] = value
+    def hasContent_(self):
+        if (
+            self.partition
+        ):
+            return True
+        else:
+            return False
+    def export(self, outfile, level, namespaceprefix_='', name_='partitions', namespacedef_='', pretty_print=True):
+        imported_ns_def_ = GenerateDSNamespaceDefs_.get('partitions')
+        if imported_ns_def_ is not None:
+            namespacedef_ = imported_ns_def_
+        if pretty_print:
+            eol_ = '\n'
+        else:
+            eol_ = ''
+        if self.original_tagname_ is not None:
+            name_ = self.original_tagname_
+        showIndent(outfile, level, pretty_print)
+        outfile.write('<%s%s%s' % (namespaceprefix_, name_, namespacedef_ and ' ' + namespacedef_ or '', ))
+        already_processed = set()
+        self.exportAttributes(outfile, level, already_processed, namespaceprefix_, name_='partitions')
+        if self.hasContent_():
+            outfile.write('>%s' % (eol_, ))
+            self.exportChildren(outfile, level + 1, namespaceprefix_='', name_='partitions', pretty_print=pretty_print)
+            showIndent(outfile, level, pretty_print)
+            outfile.write('</%s%s>%s' % (namespaceprefix_, name_, eol_))
+        else:
+            outfile.write('/>%s' % (eol_, ))
+    def exportAttributes(self, outfile, level, already_processed, namespaceprefix_='', name_='partitions'):
+        pass
+    def exportChildren(self, outfile, level, namespaceprefix_='', name_='partitions', fromsubclass_=False, pretty_print=True):
+        if pretty_print:
+            eol_ = '\n'
+        else:
+            eol_ = ''
+        for partition_ in self.partition:
+            partition_.export(outfile, level, namespaceprefix_, name_='partition', pretty_print=pretty_print)
+    def build(self, node):
+        already_processed = set()
+        self.buildAttributes(node, node.attrib, already_processed)
+        for child in node:
+            nodeName_ = Tag_pattern_.match(child.tag).groups()[-1]
+            self.buildChildren(child, node, nodeName_)
+        return self
+    def buildAttributes(self, node, attrs, already_processed):
+        pass
+    def buildChildren(self, child_, node, nodeName_, fromsubclass_=False):
+        if nodeName_ == 'partition':
+            obj_ = partition.factory()
+            obj_.build(child_)
+            self.partition.append(obj_)
+            obj_.original_tagname_ = 'partition'
+# end class partitions
 
 
 class environment(GeneratedsSuper):
@@ -7319,7 +7656,7 @@ class packages(GeneratedsSuper):
     """Specifies Packages/Patterns Used in Different Stages"""
     subclass = None
     superclass = None
-    def __init__(self, type_=None, profiles=None, patternType=None, archive=None, ignore=None, namedCollection=None, product=None, package=None):
+    def __init__(self, type_=None, profiles=None, patternType=None, archive=None, ignore=None, namedCollection=None, collectionModule=None, product=None, package=None):
         self.original_tagname_ = None
         self.type_ = _cast(None, type_)
         self.profiles = _cast(None, profiles)
@@ -7336,6 +7673,10 @@ class packages(GeneratedsSuper):
             self.namedCollection = []
         else:
             self.namedCollection = namedCollection
+        if collectionModule is None:
+            self.collectionModule = []
+        else:
+            self.collectionModule = collectionModule
         if product is None:
             self.product = []
         else:
@@ -7370,6 +7711,11 @@ class packages(GeneratedsSuper):
     def add_namedCollection(self, value): self.namedCollection.append(value)
     def insert_namedCollection_at(self, index, value): self.namedCollection.insert(index, value)
     def replace_namedCollection_at(self, index, value): self.namedCollection[index] = value
+    def get_collectionModule(self): return self.collectionModule
+    def set_collectionModule(self, collectionModule): self.collectionModule = collectionModule
+    def add_collectionModule(self, value): self.collectionModule.append(value)
+    def insert_collectionModule_at(self, index, value): self.collectionModule.insert(index, value)
+    def replace_collectionModule_at(self, index, value): self.collectionModule[index] = value
     def get_product(self): return self.product
     def set_product(self, product): self.product = product
     def add_product(self, value): self.product.append(value)
@@ -7391,6 +7737,7 @@ class packages(GeneratedsSuper):
             self.archive or
             self.ignore or
             self.namedCollection or
+            self.collectionModule or
             self.product or
             self.package
         ):
@@ -7439,6 +7786,8 @@ class packages(GeneratedsSuper):
             ignore_.export(outfile, level, namespaceprefix_, name_='ignore', pretty_print=pretty_print)
         for namedCollection_ in self.namedCollection:
             namedCollection_.export(outfile, level, namespaceprefix_, name_='namedCollection', pretty_print=pretty_print)
+        for collectionModule_ in self.collectionModule:
+            collectionModule_.export(outfile, level, namespaceprefix_, name_='collectionModule', pretty_print=pretty_print)
         for product_ in self.product:
             product_.export(outfile, level, namespaceprefix_, name_='product', pretty_print=pretty_print)
         for package_ in self.package:
@@ -7481,6 +7830,11 @@ class packages(GeneratedsSuper):
             obj_.build(child_)
             self.namedCollection.append(obj_)
             obj_.original_tagname_ = 'namedCollection'
+        elif nodeName_ == 'collectionModule':
+            obj_ = collectionModule.factory()
+            obj_.build(child_)
+            self.collectionModule.append(obj_)
+            obj_.original_tagname_ = 'collectionModule'
         elif nodeName_ == 'product':
             obj_ = product.factory()
             obj_.build(child_)
@@ -7500,7 +7854,7 @@ class preferences(GeneratedsSuper):
     sections based on profiles combine to create on vaild definition"""
     subclass = None
     superclass = None
-    def __init__(self, profiles=None, arch=None, bootsplash_theme=None, bootloader_theme=None, keytable=None, locale=None, packagemanager=None, rpm_locale_filtering=None, rpm_check_signatures=None, rpm_excludedocs=None, showlicense=None, timezone=None, type_=None, version=None):
+    def __init__(self, profiles=None, arch=None, bootsplash_theme=None, bootloader_theme=None, keytable=None, locale=None, packagemanager=None, release_version=None, rpm_locale_filtering=None, rpm_check_signatures=None, rpm_excludedocs=None, showlicense=None, timezone=None, type_=None, version=None):
         self.original_tagname_ = None
         self.profiles = _cast(None, profiles)
         self.arch = _cast(None, arch)
@@ -7524,6 +7878,10 @@ class preferences(GeneratedsSuper):
             self.packagemanager = []
         else:
             self.packagemanager = packagemanager
+        if release_version is None:
+            self.release_version = []
+        else:
+            self.release_version = release_version
         if rpm_locale_filtering is None:
             self.rpm_locale_filtering = []
         else:
@@ -7588,6 +7946,11 @@ class preferences(GeneratedsSuper):
     def add_packagemanager(self, value): self.packagemanager.append(value)
     def insert_packagemanager_at(self, index, value): self.packagemanager.insert(index, value)
     def replace_packagemanager_at(self, index, value): self.packagemanager[index] = value
+    def get_release_version(self): return self.release_version
+    def set_release_version(self, release_version): self.release_version = release_version
+    def add_release_version(self, value): self.release_version.append(value)
+    def insert_release_version_at(self, index, value): self.release_version.insert(index, value)
+    def replace_release_version_at(self, index, value): self.release_version[index] = value
     def get_rpm_locale_filtering(self): return self.rpm_locale_filtering
     def set_rpm_locale_filtering(self, rpm_locale_filtering): self.rpm_locale_filtering = rpm_locale_filtering
     def add_rpm_locale_filtering(self, value): self.rpm_locale_filtering.append(value)
@@ -7641,6 +8004,7 @@ class preferences(GeneratedsSuper):
             self.keytable or
             self.locale or
             self.packagemanager or
+            self.release_version or
             self.rpm_locale_filtering or
             self.rpm_check_signatures or
             self.rpm_excludedocs or
@@ -7700,6 +8064,9 @@ class preferences(GeneratedsSuper):
         for packagemanager_ in self.packagemanager:
             showIndent(outfile, level, pretty_print)
             outfile.write('<packagemanager>%s</packagemanager>%s' % (self.gds_encode(self.gds_format_string(quote_xml(packagemanager_), input_name='packagemanager')), eol_))
+        for release_version_ in self.release_version:
+            showIndent(outfile, level, pretty_print)
+            outfile.write('<release-version>%s</release-version>%s' % (self.gds_encode(self.gds_format_string(quote_xml(release_version_), input_name='release-version')), eol_))
         for rpm_locale_filtering_ in self.rpm_locale_filtering:
             showIndent(outfile, level, pretty_print)
             outfile.write('<rpm-locale-filtering>%s</rpm-locale-filtering>%s' % (self.gds_format_boolean(rpm_locale_filtering_, input_name='rpm-locale-filtering'), eol_))
@@ -7767,6 +8134,10 @@ class preferences(GeneratedsSuper):
                 packagemanager_ = ""
             packagemanager_ = self.gds_validate_string(packagemanager_, node, 'packagemanager')
             self.packagemanager.append(packagemanager_)
+        elif nodeName_ == 'release-version':
+            release_version_ = child_.text
+            release_version_ = self.gds_validate_string(release_version_, node, 'release_version')
+            self.release_version.append(release_version_)
         elif nodeName_ == 'rpm-locale-filtering':
             sval_ = child_.text
             if sval_ in ('true', '1'):
@@ -8119,6 +8490,7 @@ __all__ = [
     "archive",
     "argument",
     "bootloader",
+    "collectionModule",
     "containerconfig",
     "description",
     "dracut",
@@ -8144,6 +8516,7 @@ __all__ = [
     "package",
     "packages",
     "partition",
+    "partitions",
     "port",
     "preferences",
     "product",
@@ -8151,6 +8524,7 @@ __all__ = [
     "profiles",
     "repository",
     "requires",
+    "signing",
     "size",
     "source",
     "strip",

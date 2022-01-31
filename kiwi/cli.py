@@ -22,11 +22,14 @@ usage: kiwi-ng -h | --help
                [--type=<build_type>]
                [--logfile=<filename>]
                [--debug]
+               [--debug-run-scripts-in-screen]
                [--color-output]
                [--config=<configfile>]
+               [--kiwi-file=<kiwifile>]
            image <command> [<args>...]
        kiwi-ng [--logfile=<filename>]
                [--debug]
+               [--debug-run-scripts-in-screen]
                [--color-output]
                [--config=<configfile>]
            result <command> [<args>...]
@@ -37,8 +40,10 @@ usage: kiwi-ng -h | --help
                [--type=<build_type>]
                [--logfile=<filename>]
                [--debug]
+               [--debug-run-scripts-in-screen]
                [--color-output]
                [--config=<configfile>]
+               [--kiwi-file=<kiwifile>]
            system <command> [<args>...]
        kiwi-ng compat <legacy_args>...
        kiwi-ng --compat <legacy_args>...
@@ -59,6 +64,8 @@ global options:
         information to standard out instead of writing to a file
     --debug
         print debug information
+    --debug-run-scripts-in-screen
+        run scripts called by kiwi in a screen session
     -v --version
         show program version
     help
@@ -80,6 +87,10 @@ global options for services: image, system
     --type=<build_type>
         image build type. If not set the default XML specified
         build type will be used
+    --kiwi-file=<kiwifile>
+        Basename of kiwi file which contains the main image
+        configuration elements. If not specified kiwi searches for
+        a file named config.xml or a file matching *.kiwi
 
 global options for services: system
     --target-arch=<name>

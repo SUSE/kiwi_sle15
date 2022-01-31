@@ -37,13 +37,15 @@ class TestCli:
             '<legacy_args>': [],
             '--version': False,
             '--debug': False,
+            '--debug-run-scripts-in-screen': False,
             'result': False,
             '--profile': [],
             '--shared-cache-dir': '/var/cache/kiwi',
             '--temp-dir': '/var/tmp',
             '--target-arch': None,
             '--help': False,
-            '--config': 'config-file'
+            '--config': 'config-file',
+            '--kiwi-file': None
         }
         self.command_args = {
             '--add-repo': [],

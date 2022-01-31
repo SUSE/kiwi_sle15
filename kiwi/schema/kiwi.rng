@@ -91,6 +91,11 @@
       <param name="pattern">(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])(\.(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])){3}</param>
     </data>
   </define>
+  <define name="simple-uri-type">
+    <data type="token">
+      <param name="pattern">(file:|https:|http:|ftp:).*</param>
+    </data>
+  </define>
   <!--
     ==========================================
     start with image description
@@ -616,6 +621,61 @@ file was fetched</a:documentation>
       <element name="namedCollection">
         <a:documentation>Name of a Pattern for SUSE or a Group for RH</a:documentation>
         <ref name="k.namedCollection.attlist"/>
+        <empty/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    common element <collectionModule>
+    
+  -->
+  <div>
+    <sch:pattern id="collection_module_scope">
+      <sch:rule context="collectionModule">
+        <sch:assert test="../@type='bootstrap'">collectionModule is only available in the bootstrap packages section</sch:assert>
+      </sch:rule>
+    </sch:pattern>
+    <sch:pattern id="collection_module_disable_constraint">
+      <sch:rule context="collectionModule">
+        <sch:assert test="@enable='true' or not(@stream)">@stream attribute is not allowed to disable a module</sch:assert>
+      </sch:rule>
+    </sch:pattern>
+    <define name="k.collectionModule.name.attribute">
+      <attribute name="name">
+        <ref name="safe-posix-name"/>
+      </attribute>
+    </define>
+    <define name="k.collectionModule.stream.attribute">
+      <attribute name="stream">
+        <ref name="safe-posix-name"/>
+      </attribute>
+    </define>
+    <define name="k.collectionModule.arch.attribute">
+      <ref name="k.arch.attribute"/>
+    </define>
+    <define name="k.collectionModule.enable.attribute">
+      <attribute name="enable">
+        <a:documentation>Specify the module to become enabled (for the optionally
+given stream) or disabled.</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+    </define>
+    <define name="k.collectionModule.attlist">
+      <interleave>
+        <ref name="k.collectionModule.name.attribute"/>
+        <ref name="k.collectionModule.enable.attribute"/>
+        <optional>
+          <ref name="k.collectionModule.stream.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.collectionModule.arch.attribute"/>
+        </optional>
+      </interleave>
+    </define>
+    <define name="k.collectionModule">
+      <element name="collectionModule">
+        <ref name="k.collectionModule.attlist"/>
         <empty/>
       </element>
     </define>
@@ -1302,55 +1362,21 @@ the device is looked up in /dev/disk/by-* and /dev/mapper/*</a:documentation>
   </div>
   <!--
     ==========================================
-    common element <partition>
+    common element <release-version>
     
   -->
   <div>
-    <define name="k.partition.type.attribute">
-      <attribute name="type">
-        <a:documentation>Partition Type identifier, see parted for details</a:documentation>
-      </attribute>
+    <define name="k.release-version.content">
+      <text/>
     </define>
-    <define name="k.partition.number.attribute">
-      <attribute name="number">
-        <a:documentation>Partition ID</a:documentation>
-      </attribute>
+    <define name="k.release-version.attlist">
+      <empty/>
     </define>
-    <define name="k.partition.size.attribute">
-      <ref name="k.size.attribute"/>
-    </define>
-    <define name="k.partition.mountpoint.attribute">
-      <attribute name="mountpoint">
-        <a:documentation>Mount path for this partition</a:documentation>
-      </attribute>
-    </define>
-    <define name="k.partition.target.attribute">
-      <attribute name="target">
-        <a:documentation>Is a real target or not which means is part of
-the /etc/fstab file or not</a:documentation>
-        <data type="boolean"/>
-      </attribute>
-    </define>
-    <define name="k.partition.attlist">
-      <interleave>
-        <ref name="k.partition.type.attribute"/>
-        <ref name="k.partition.number.attribute"/>
-        <optional>
-          <ref name="k.partition.size.attribute"/>
-        </optional>
-        <optional>
-          <ref name="k.partition.mountpoint.attribute"/>
-        </optional>
-        <optional>
-          <ref name="k.partition.target.attribute"/>
-        </optional>
-      </interleave>
-    </define>
-    <define name="k.partition">
-      <element name="partition">
-        <a:documentation>A Partition</a:documentation>
-        <ref name="k.partition.attlist"/>
-        <empty/>
+    <define name="k.release-version">
+      <element name="release-version">
+        <a:documentation>Name of the Package Manager</a:documentation>
+        <ref name="k.release-version.attlist"/>
+        <ref name="k.release-version.content"/>
       </element>
     </define>
   </div>
@@ -1627,6 +1653,30 @@ last one is picked.</a:documentation>
   </div>
   <!--
     ==========================================
+    common element <signing>
+    
+  -->
+  <div>
+    <define name="k.signing.key.attribute">
+      <attribute name="key">
+        <a:documentation>Specify path to a signing key for this repo</a:documentation>
+        <ref name="simple-uri-type"/>
+      </attribute>
+    </define>
+    <define name="k.signing.attlist">
+      <ref name="k.signing.key.attribute"/>
+    </define>
+    <define name="k.signing">
+      <element name="signing">
+        <a:documentation>The signing element holds information about
+repo/package signing keys</a:documentation>
+        <ref name="k.signing.attlist"/>
+        <empty/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
     common element <source>
     
   -->
@@ -1642,7 +1692,9 @@ last one is picked.</a:documentation>
         <a:documentation>A Pointer to a data source. This can be a remote location
 as well as a path specification</a:documentation>
         <ref name="k.source.attlist"/>
-        <empty/>
+        <zeroOrMore>
+          <ref name="k.signing"/>
+        </zeroOrMore>
       </element>
     </define>
   </div>
@@ -2193,8 +2245,10 @@ uses a standard BIOS but there are also other firmware
 systems like efi, coreboot, etc.. This attribute is
 used to differentiate the image according to the firmware
 which boots up the system. It mostly has an impact on
-the disk layout and the partition table type. By default
-the standard x86 bios firmware setup is used</a:documentation>
+the disk layout and the partition table type. The default
+firmware setting is based on the architecture. If no
+action should be taken on behalf of a firmware setting
+or kiwi's default selection, set the firmware to: custom</a:documentation>
         <choice>
           <value>bios</value>
           <value>ec2</value>
@@ -2202,6 +2256,7 @@ the standard x86 bios firmware setup is used</a:documentation>
           <value>uefi</value>
           <value>ofw</value>
           <value>opal</value>
+          <value>custom</value>
         </choice>
       </attribute>
       <sch:pattern id="firmware" is-a="image_type">
@@ -2887,6 +2942,9 @@ kiwi-ng result bundle ...</a:documentation>
           <optional>
             <ref name="k.systemdisk"/>
           </optional>
+          <optional>
+            <ref name="k.partitions"/>
+          </optional>
           <zeroOrMore>
             <ref name="k.vagrantconfig"/>
           </zeroOrMore>
@@ -3183,6 +3241,95 @@ scsi CD or an ide CD drive</a:documentation>
           <ref name="k.vmnic.attlist"/>
           <empty/>
         </interleave>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    common element <partition>
+    
+  -->
+  <div>
+    <sch:pattern abstract="true" id="partition_name_type">
+      <sch:rule context="partition[@name]">
+        <sch:assert test="not(contains('$reserved', @name))">partition(name) is reserved Reserved names are '$reserved'</sch:assert>
+      </sch:rule>
+    </sch:pattern>
+    <define name="k.partition.name.attribute">
+      <attribute name="name">
+        <a:documentation>Partition map name. The name of the partition as handled
+by KIWI. Note, that there are the following reserved
+names which cannot be used because they are already
+represented by existing KIWI attributes: root, readonly,
+boot, prep, spare, swap, efi_csm and efi. The filesystem
+created on the partition will also use this name in
+uppercase as its label</a:documentation>
+      </attribute>
+      <sch:pattern id="partition_name" is-a="partition_name_type">
+        <sch:param name="reserved" value="root readonly boot prep spare swap efi_csm efi"/>
+      </sch:pattern>
+    </define>
+    <define name="k.partition.size.attribute">
+      <attribute name="size">
+        <a:documentation>Absolute size of the partition.
+The value is used as MB by default but you can
+add "M" and/or "G" as postfix</a:documentation>
+        <ref name="partition-size-type"/>
+      </attribute>
+    </define>
+    <define name="k.partition.partition_type.attribute">
+      <attribute name="partition_type">
+        <a:documentation>Partition type name in the context of kiwi
+Allowed values are: t.linux</a:documentation>
+        <choice>
+          <value>t.linux</value>
+          <value>t.raid</value>
+        </choice>
+      </attribute>
+    </define>
+    <define name="k.partition.partition_name.attribute">
+      <attribute name="partition_name">
+        <a:documentation>Partition name as it appears in the table</a:documentation>
+        <ref name="safe-posix-short-name"/>
+      </attribute>
+    </define>
+    <define name="k.partition.mountpoint.attribute">
+      <attribute name="mountpoint">
+        <a:documentation>Mountpoint below which this partition should be mounted to</a:documentation>
+      </attribute>
+    </define>
+    <define name="k.partition.filesystem.attribute">
+      <attribute name="filesystem">
+        <a:documentation>Filesystem which should be created on the partition</a:documentation>
+        <choice>
+          <value>btrfs</value>
+          <value>ext2</value>
+          <value>ext3</value>
+          <value>ext4</value>
+          <value>squashfs</value>
+          <value>xfs</value>
+        </choice>
+      </attribute>
+    </define>
+    <define name="k.partition.attlist">
+      <interleave>
+        <ref name="k.partition.name.attribute"/>
+        <ref name="k.partition.size.attribute"/>
+        <optional>
+          <ref name="k.partition.partition_name.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.partition.partition_type.attribute"/>
+        </optional>
+        <ref name="k.partition.mountpoint.attribute"/>
+        <ref name="k.partition.filesystem.attribute"/>
+      </interleave>
+    </define>
+    <define name="k.partition">
+      <element name="partition">
+        <a:documentation>Specify custom partition in the partition table</a:documentation>
+        <ref name="k.partition.attlist"/>
+        <empty/>
       </element>
     </define>
   </div>
@@ -3823,6 +3970,28 @@ At least one volume must be configured</a:documentation>
           <ref name="k.volumes.attlist"/>
           <oneOrMore>
             <ref name="k.volume"/>
+          </oneOrMore>
+        </interleave>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    main block: <partitions>
+    
+  -->
+  <div>
+    <define name="k.partitions.attlist">
+      <empty/>
+    </define>
+    <define name="k.partitions">
+      <element name="partitions">
+        <a:documentation>Partition table entries within the custom area
+of the storage device</a:documentation>
+        <interleave>
+          <ref name="k.partitions.attlist"/>
+          <oneOrMore>
+            <ref name="k.partition"/>
           </oneOrMore>
         </interleave>
       </element>
@@ -4482,6 +4651,9 @@ or plusRecommended</a:documentation>
             <ref name="k.namedCollection"/>
           </zeroOrMore>
           <zeroOrMore>
+            <ref name="k.collectionModule"/>
+          </zeroOrMore>
+          <zeroOrMore>
             <ref name="k.product"/>
           </zeroOrMore>
           <zeroOrMore>
@@ -4535,6 +4707,9 @@ definition</a:documentation>
           </optional>
           <optional>
             <ref name="k.packagemanager"/>
+          </optional>
+          <optional>
+            <ref name="k.release-version"/>
           </optional>
           <optional>
             <ref name="k.rpm-locale-filtering"/>

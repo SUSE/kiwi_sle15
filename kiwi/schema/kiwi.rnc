@@ -38,6 +38,7 @@ portnum-type = xsd:token {pattern = "(\d+|\d+/(udp|tcp))"}
 grub_console = xsd:token {pattern = "(console|gfxterm|serial)( (console|gfxterm|serial))*"}
 fs_attributes = xsd:token {pattern = "(no-copy-on-write|synchronous-updates)(,(no-copy-on-write|synchronous-updates))*"}
 package-version-type =  xsd:token {pattern = "(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])(\.(0|[1-9][0-9]{0,3}|[1-5][0-9]{4}|6[0-4][0-9]{3}|65[0-4][0-9]{2}|655[0-2][0-9]|6553[0-5])){3}"}
+simple-uri-type = xsd:token {pattern = "(file:|https:|http:|ftp:).*"}
 
 #==========================================
 # start with image description
@@ -358,6 +359,53 @@ div {
         ## Name of a Pattern for SUSE or a Group for RH
         element namedCollection {
             k.namedCollection.attlist,
+            empty
+        }
+}
+
+
+#==========================================
+# common element <collectionModule>
+#
+div {
+    sch:pattern [
+        id = "collection_module_scope"
+        sch:rule [
+            context = "collectionModule"
+            sch:assert [
+                test = "../@type='bootstrap'"
+                "collectionModule is only available in the bootstrap "~
+                "packages section"
+            ]
+        ]
+    ]
+    sch:pattern [
+        id = "collection_module_disable_constraint"
+        sch:rule [
+            context = "collectionModule"
+            sch:assert [
+                test = "@enable='true' or not(@stream)"
+                "@stream attribute is not allowed to disable a module"
+            ]
+        ]
+    ]
+    k.collectionModule.name.attribute =
+        attribute name { safe-posix-name }
+    k.collectionModule.stream.attribute =
+        attribute stream { safe-posix-name }
+    k.collectionModule.arch.attribute = k.arch.attribute
+    k.collectionModule.enable.attribute =
+        ## Specify the module to become enabled (for the optionally
+        ## given stream) or disabled.
+        attribute enable { xsd:boolean }
+    k.collectionModule.attlist =
+        k.collectionModule.name.attribute &
+        k.collectionModule.enable.attribute &
+        k.collectionModule.stream.attribute? &
+        k.collectionModule.arch.attribute?
+    k.collectionModule =
+        element collectionModule {
+            k.collectionModule.attlist,
             empty
         }
 }
@@ -848,34 +896,16 @@ div {
 }
 
 #==========================================
-# common element <partition>
+# common element <release-version>
 #
 div {
-    k.partition.type.attribute =
-        ## Partition Type identifier, see parted for details
-        attribute type { text }
-    k.partition.number.attribute =
-        ## Partition ID
-        attribute number { text }
-    k.partition.size.attribute = k.size.attribute
-    k.partition.mountpoint.attribute = 
-        ## Mount path for this partition
-        attribute mountpoint { text }
-    k.partition.target.attribute =
-        ## Is a real target or not which means is part of
-        ## the /etc/fstab file or not
-        attribute target { xsd:boolean }
-    k.partition.attlist =
-        k.partition.type.attribute &
-        k.partition.number.attribute & 
-        k.partition.size.attribute? &
-        k.partition.mountpoint.attribute? &
-        k.partition.target.attribute?
-    k.partition =
-        ## A Partition
-        element partition {
-            k.partition.attlist,
-            empty
+    k.release-version.content = text
+    k.release-version.attlist = empty
+    k.release-version =
+        ## Name of the Package Manager
+        element release-version {
+            k.release-version.attlist,
+            k.release-version.content
         }
 }
 
@@ -1059,6 +1089,24 @@ div {
 }
 
 #==========================================
+# common element <signing>
+#
+div {
+    k.signing.key.attribute =
+        ## Specify path to a signing key for this repo
+        attribute key { simple-uri-type }
+    k.signing.attlist =
+        k.signing.key.attribute
+    k.signing =
+        ## The signing element holds information about
+        ## repo/package signing keys
+        element signing {
+            k.signing.attlist,
+            empty
+        }
+}
+
+#==========================================
 # common element <source>
 #
 div {
@@ -1069,7 +1117,7 @@ div {
         ## as well as a path specification
         element source {
             k.source.attlist,
-            empty
+            k.signing*
         }
 }
 
@@ -1495,10 +1543,12 @@ div {
         ## systems like efi, coreboot, etc.. This attribute is
         ## used to differentiate the image according to the firmware
         ## which boots up the system. It mostly has an impact on
-        ## the disk layout and the partition table type. By default
-        ## the standard x86 bios firmware setup is used
+        ## the disk layout and the partition table type. The default
+        ## firmware setting is based on the architecture. If no
+        ## action should be taken on behalf of a firmware setting
+        ## or kiwi's default selection, set the firmware to: custom
         attribute firmware {
-            "bios" | "ec2" | "efi" | "uefi" | "ofw" | "opal"
+            "bios" | "ec2" | "efi" | "uefi" | "ofw" | "opal" | "custom"
         }
         >> sch:pattern [ id = "firmware" is-a = "image_type"
             sch:param [ name = "attr" value = "firmware" ]
@@ -1914,6 +1964,7 @@ div {
             k.oemconfig? &
             k.size? &
             k.systemdisk? &
+            k.partitions? &
             k.vagrantconfig* &
             k.installmedia?
         }
@@ -2083,6 +2134,69 @@ div {
         ## The VM network interface definition
         element vmnic {
             k.vmnic.attlist &
+            empty
+        }
+}
+
+#==========================================
+# common element <partition>
+#
+div {
+    sch:pattern [
+        abstract = "true"
+        id = "partition_name_type"
+        sch:rule [
+            context = "partition[@name]"
+            sch:assert [
+                test = "not(contains('$reserved', @name))"
+                "partition(name) is reserved "
+                "Reserved names are '$reserved'"
+            ]
+        ]
+    ]
+    k.partition.name.attribute =
+        ## Partition map name. The name of the partition as handled
+        ## by KIWI. Note, that there are the following reserved
+        ## names which cannot be used because they are already
+        ## represented by existing KIWI attributes: root, readonly,
+        ## boot, prep, spare, swap, efi_csm and efi. The filesystem
+        ## created on the partition will also use this name in
+        ## uppercase as its label
+        attribute name { text }
+        >> sch:pattern [ id = "partition_name" is-a = "partition_name_type"
+            sch:param [ name = "reserved" value = "root readonly boot prep spare swap efi_csm efi" ]
+        ]
+    k.partition.size.attribute =
+        ## Absolute size of the partition.
+        ## The value is used as MB by default but you can
+        ## add "M" and/or "G" as postfix
+        attribute size { partition-size-type }
+    k.partition.partition_type.attribute =
+        ## Partition type name in the context of kiwi
+        ## Allowed values are: t.linux
+        attribute partition_type { "t.linux" | "t.raid" }
+    k.partition.partition_name.attribute =
+        ## Partition name as it appears in the table
+        attribute partition_name { safe-posix-short-name }
+    k.partition.mountpoint.attribute =
+        ## Mountpoint below which this partition should be mounted to
+        attribute mountpoint { text }
+    k.partition.filesystem.attribute =
+        ## Filesystem which should be created on the partition
+        attribute filesystem {
+            "btrfs" | "ext2" | "ext3" | "ext4" | "squashfs" | "xfs"
+        }
+    k.partition.attlist =
+        k.partition.name.attribute &
+        k.partition.size.attribute &
+        k.partition.partition_name.attribute? &
+        k.partition.partition_type.attribute? &
+        k.partition.mountpoint.attribute &
+        k.partition.filesystem.attribute
+    k.partition =
+        ## Specify custom partition in the partition table
+        element partition {
+            k.partition.attlist,
             empty
         }
 }
@@ -2536,6 +2650,20 @@ div {
 }
 
 #==========================================
+# main block: <partitions>
+#
+div {
+    k.partitions.attlist = empty
+    k.partitions =
+        ## Partition table entries within the custom area
+        ## of the storage device
+        element partitions {
+            k.partitions.attlist &
+            k.partition+
+        }
+}
+
+#==========================================
 # main block: <environment>
 #
 div {
@@ -2920,6 +3048,7 @@ div {
             k.archive* &
             k.ignore* &
             k.namedCollection* &
+            k.collectionModule* &
             k.product* &
             k.package*
         }
@@ -2946,6 +3075,7 @@ div {
             k.keytable? &
             k.locale? &
             k.packagemanager? &
+            k.release-version? &
             k.rpm-locale-filtering? &
             k.rpm-check-signatures? &
             k.rpm-excludedocs? &

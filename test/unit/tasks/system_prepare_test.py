@@ -26,6 +26,9 @@ class TestSystemPrepareTask:
 
         self.abs_root_dir = os.path.abspath('../data/root-dir')
 
+        self.command = mock.Mock()
+        kiwi.tasks.system_prepare.Command = self.command
+
         kiwi.tasks.system_prepare.Privileges = mock.Mock()
 
         self.runtime_checker = mock.Mock()
@@ -86,9 +89,11 @@ class TestSystemPrepareTask:
         self.task.command_args['--set-container-derived-from'] = None
         self.task.command_args['--set-container-tag'] = None
         self.task.command_args['--add-container-label'] = []
-        self.task.command_args['--signing-key'] = None
+        self.task.command_args['--signing-key'] = []
 
-    def test_process_system_prepare(self):
+    @patch('kiwi.xml_state.XMLState.get_repositories_signing_keys')
+    def test_process_system_prepare(self, mock_keys):
+        mock_keys.return_value = ['some_key', 'some_other_key']
         self._init_command_args()
         self.task.command_args['prepare'] = True
         self.task.command_args['--clear-cache'] = True
@@ -141,7 +146,7 @@ class TestSystemPrepareTask:
             check_architecture_supports_iso_firmware_setup.\
             assert_called_once_with()
         self.system_prepare.setup_repositories.assert_called_once_with(
-            True, None, None
+            True, ['some_key', 'some_other_key'], None
         )
         self.system_prepare.install_bootstrap.assert_called_once_with(
             self.manager, []
@@ -172,23 +177,47 @@ class TestSystemPrepareTask:
         )
         assert self.system_prepare.clean_package_manager_leftovers.called
 
-    def test_process_system_prepare_add_package(self):
+    @patch('kiwi.xml_state.XMLState.get_package_manager')
+    def test_process_system_prepare_run_debootstrap_only_once(
+        self, mock_get_package_manager
+    ):
+        self._init_command_args()
+        mock_get_package_manager.return_value = 'apt'
+        self.task.command_args['--allow-existing-root'] = True
+
+        # debootstrap must be called if chroot with apt-get failed
+        self.command.run.side_effect = Exception
+        self.task.process()
+        assert self.system_prepare.install_bootstrap.called
+
+        # debootstrap must not be called if chroot looks good
+        self.command.run.side_effect = None
+        self.system_prepare.install_bootstrap.reset_mock()
+        with self._caplog.at_level(logging.WARNING):
+            self.task.process()
+        assert not self.system_prepare.install_bootstrap.called
+
+    @patch('kiwi.xml_state.XMLState.get_repositories_signing_keys')
+    def test_process_system_prepare_add_package(self, mock_keys):
+        mock_keys.return_value = ['some_key', 'some_other_key']
         self._init_command_args()
         self.task.command_args['--add-package'] = ['vim']
         self.task.process()
         self.system_prepare.setup_repositories.assert_called_once_with(
-            False, None, None
+            False, ['some_key', 'some_other_key'], None
         )
         self.system_prepare.install_packages.assert_called_once_with(
             self.manager, ['vim']
         )
 
-    def test_process_system_prepare_delete_package(self):
+    @patch('kiwi.xml_state.XMLState.get_repositories_signing_keys')
+    def test_process_system_prepare_delete_package(self, mock_keys):
+        mock_keys.return_value = ['some_key', 'some_other_key']
         self._init_command_args()
         self.task.command_args['--delete-package'] = ['vim']
         self.task.process()
         self.system_prepare.setup_repositories.assert_called_once_with(
-            False, None, None
+            False, ['some_key', 'some_other_key'], None
         )
         self.system_prepare.delete_packages.assert_called_once_with(
             self.manager, ['vim']

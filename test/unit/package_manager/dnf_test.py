@@ -1,4 +1,6 @@
-from mock import patch
+from mock import (
+    patch, call
+)
 from pytest import raises
 import mock
 
@@ -36,6 +38,46 @@ class TestPackageManagerDnf:
         self.manager.request_package_exclusion('name')
         assert self.manager.exclude_requests == ['name']
 
+    @patch('kiwi.command.Command.run')
+    def test_setup_repository_modules(self, mock_run):
+        self.manager.setup_repository_modules(
+            {
+                'disable': ['mod_c'],
+                'enable': ['mod_a:stream', 'mod_b']
+            }
+        )
+        dnf_call_args = [
+            'dnf', '--config', '/root-dir/dnf.conf',
+            '-y', '--installroot', '/root-dir', '--releasever=0'
+        ]
+        assert mock_run.call_args_list == [
+            call(
+                dnf_call_args + [
+                    'module', 'disable', 'mod_c'
+                ], ['env']
+            ),
+            call(
+                dnf_call_args + [
+                    'module', 'reset', 'mod_a'
+                ], ['env']
+            ),
+            call(
+                dnf_call_args + [
+                    'module', 'enable', 'mod_a:stream'
+                ], ['env']
+            ),
+            call(
+                dnf_call_args + [
+                    'module', 'reset', 'mod_b'
+                ], ['env']
+            ),
+            call(
+                dnf_call_args + [
+                    'module', 'enable', 'mod_b'
+                ], ['env']
+            )
+        ]
+
     @patch('kiwi.command.Command.call')
     @patch('kiwi.command.Command.run')
     def test_process_install_requests_bootstrap(self, mock_run, mock_call):
@@ -43,12 +85,16 @@ class TestPackageManagerDnf:
         self.manager.request_collection('collection')
         self.manager.process_install_requests_bootstrap()
         mock_run.assert_called_once_with(
-            ['dnf', '--config', '/root-dir/dnf.conf', '-y', 'makecache']
+            [
+                'dnf', '--config', '/root-dir/dnf.conf', '-y',
+                '--releasever=0', 'makecache'
+            ]
         )
         mock_call.assert_called_once_with(
             [
                 'dnf', '--config', '/root-dir/dnf.conf', '-y',
-                '--installroot', '/root-dir', 'install', 'vim', '@collection'
+                '--installroot', '/root-dir', '--releasever=0',
+                'install', 'vim', '@collection'
             ], ['env']
         )
 
@@ -61,7 +107,8 @@ class TestPackageManagerDnf:
         mock_call.assert_called_once_with(
             [
                 'chroot', '/root-dir', 'dnf', '--config', '/dnf.conf', '-y',
-                '--exclude=skipme', 'install', 'vim', '@collection'
+                '--releasever=0', '--exclude=skipme',
+                'install', 'vim', '@collection'
             ], ['env']
         )
 
@@ -88,7 +135,8 @@ class TestPackageManagerDnf:
         mock_call.assert_called_once_with(
             [
                 'chroot', '/root-dir', 'dnf',
-                '--config', '/dnf.conf', '-y', 'autoremove', 'vim'
+                '--config', '/dnf.conf', '-y',
+                '--releasever=0', 'autoremove', 'vim'
             ],
             ['env']
         )
@@ -112,7 +160,8 @@ class TestPackageManagerDnf:
         mock_call.assert_called_once_with(
             [
                 'chroot', '/root-dir', 'dnf',
-                '--config', '/dnf.conf', '-y', 'upgrade'
+                '--config', '/dnf.conf', '-y',
+                '--releasever=0', 'upgrade'
             ], ['env']
         )
 

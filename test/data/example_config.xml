@@ -41,6 +41,7 @@
     <preferences>
         <locale>en_US,de_DE</locale>
         <rpm-locale-filtering>true</rpm-locale-filtering>
+        <release-version>15.3</release-version>
     </preferences>
     <preferences>
         <version>1.13.2</version>
@@ -167,13 +168,17 @@
         <user groups="kiwi,admin,users" pwdformat="plain" password="mypwd" name="kiwi"/>
     </users>
     <repository priority="42" sourcetype="baseurl">
-        <source path="iso:///image/CDs/dvd.iso"/>
+        <source path="iso:///image/CDs/dvd.iso">
+            <signing key="file:key_a"/>
+        </source>
     </repository>
     <repository type="rpm-md" imageinclude="true" customize="script">
         <source path="obs://Devel:PubCloud:AmazonEC2/SLE_12_GA"/>
     </repository>
     <repository type="rpm-md" imageonly="true">
-        <source path="obs://Devel:Docker:Images:SLE12SP2/SLE_12_SP2_Docker"/>
+        <source path="obs://Devel:Docker:Images:SLE12SP2/SLE_12_SP2_Docker">
+            <signing key="file:key_b"/>
+        </source>
     </repository>
     <packages type="image" patternType="plusRecommended">
         <namedCollection name="base"/>
@@ -210,6 +215,9 @@
         <ignore name="baz"/>
     </packages>
     <packages type="bootstrap">
+        <collectionModule name="mod_a" stream="stream" enable="true"/>
+        <collectionModule name="mod_b" enable="true"/>
+        <collectionModule name="mod_c" enable="false"/>
         <package name="filesystem"/>
         <namedCollection name="bootstrap-collection"/>
         <product name="kiwi"/>

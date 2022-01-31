@@ -31,8 +31,7 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
-    'sphinx.ext.autodoc',
-    'sphinx.ext.intersphinx',
+    'sphinx.ext.autodoc'
 ]
 
 docopt_ignore = [
@@ -140,7 +139,7 @@ author = 'Marcus Schäfer'
 # built documents.
 #
 # The short X.Y version.
-version = '9.24.2'
+version = '9.24.16'
 # The full version, including alpha/beta/rc tags.
 release = version
 
@@ -291,8 +290,6 @@ man_pages = [
         8
     )
 ]
-
-intersphinx_mapping = {'python': ('https://docs.python.org/3', None)}
 
 # If true, show URL addresses after external links.
 #man_show_urls = False

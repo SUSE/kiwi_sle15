@@ -16,7 +16,9 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import re
-from typing import List
+from typing import (
+    List, Dict
+)
 
 # project
 from kiwi.command import command_call_type
@@ -86,6 +88,52 @@ class PackageManagerDnf(PackageManagerBase):
         """
         self.exclude_requests.append(name)
 
+    def setup_repository_modules(
+        self, collection_modules: Dict[str, List[str]]
+    ) -> None:
+        """
+        Setup repository modules and streams
+
+        :param dict collection_modules:
+            Expect dict of the form:
+
+            .. code:: python
+
+                {
+                    'enable': [
+                        "module:stream", "module"
+                    ],
+                    'disable': [
+                        "module"
+                    ]
+                }
+        """
+        dnf_module_command = [
+            'dnf'
+        ] + self.dnf_args + [
+            '--installroot', self.root_dir,
+            f'--releasever={self.release_version}'
+        ] + self.custom_args + [
+            'module'
+        ]
+        for disable_module in collection_modules['disable']:
+            Command.run(
+                dnf_module_command + [
+                    'disable', disable_module
+                ], self.command_env
+            )
+        for enable_module in collection_modules['enable']:
+            Command.run(
+                dnf_module_command + [
+                    'reset', enable_module.split(':')[0]
+                ], self.command_env
+            )
+            Command.run(
+                dnf_module_command + [
+                    'enable', enable_module
+                ], self.command_env
+            )
+
     def process_install_requests_bootstrap(
         self, root_bind: RootBind = None
     ) -> command_call_type:
@@ -99,12 +147,15 @@ class PackageManagerDnf(PackageManagerBase):
         :rtype: namedtuple
         """
         Command.run(
-            ['dnf'] + self.dnf_args + ['makecache']
+            ['dnf'] + self.dnf_args + [
+                f'--releasever={self.release_version}'
+            ] + ['makecache']
         )
         dnf_command = [
             'dnf'
         ] + self.dnf_args + [
-            '--installroot', self.root_dir
+            '--installroot', self.root_dir,
+            f'--releasever={self.release_version}'
         ] + self.custom_args + [
             'install'
         ] + self.package_requests + self.collection_requests
@@ -134,7 +185,9 @@ class PackageManagerDnf(PackageManagerBase):
         )
         dnf_command = [
             'chroot', self.root_dir, 'dnf'
-        ] + chroot_dnf_args + self.custom_args + exclude_args + [
+        ] + chroot_dnf_args + [
+            f'--releasever={self.release_version}'
+        ] + self.custom_args + exclude_args + [
             'install'
         ] + self.package_requests + self.collection_requests
         self.cleanup_requests()
@@ -181,7 +234,9 @@ class PackageManagerDnf(PackageManagerBase):
             chroot_dnf_args = Path.move_to_root(self.root_dir, self.dnf_args)
             dnf_command = [
                 'chroot', self.root_dir, 'dnf'
-            ] + chroot_dnf_args + self.custom_args + [
+            ] + chroot_dnf_args + [
+                f'--releasever={self.release_version}'
+            ] + self.custom_args + [
                 'autoremove'
             ] + self.package_requests
             self.cleanup_requests()
@@ -201,7 +256,9 @@ class PackageManagerDnf(PackageManagerBase):
         return Command.call(
             [
                 'chroot', self.root_dir, 'dnf'
-            ] + chroot_dnf_args + self.custom_args + [
+            ] + chroot_dnf_args + [
+                f'--releasever={self.release_version}'
+            ] + self.custom_args + [
                 'upgrade'
             ],
             self.command_env

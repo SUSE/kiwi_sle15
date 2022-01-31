@@ -16,10 +16,13 @@ SYNOPSIS
            [--type=<build_type>]
            [--logfile=<filename>]
            [--debug]
+           [--debug-run-scripts-in-screen]
            [--color-output]
            [--config=<configfile>]
+           [--kiwi-file=<kiwifile>]
        image <command> [<args>...]
    kiwi-ng [--debug]
+           [--debug-run-scripts-in-screen]
            [--color-output]
            [--config=<configfile>]
        result <command> [<args>...]
@@ -30,8 +33,10 @@ SYNOPSIS
            [--type=<build_type>]
            [--logfile=<filename>]
            [--debug]
+           [--debug-run-scripts-in-screen]
            [--color-output]
            [--config=<configfile>]
+           [--kiwi-file=<kiwifile>]
        system <command> [<args>...]
    kiwi-ng compat <legacy_args>...
    kiwi-ng -v | --version
@@ -98,6 +103,10 @@ GLOBAL OPTIONS
 
   Print debug information on the commandline.
 
+--debug-run-scripts-in-screen
+
+  Run scripts called by kiwi in a screen session.
+
 --logfile=<filename>
 
   Specify log file. the logfile contains detailed information about
@@ -138,6 +147,12 @@ GLOBAL OPTIONS
 
   Select image build type. The specified build type must be configured
   as part of the XML description.
+
+--kiwi-file=<kiwifile>
+
+  Basename of kiwi file which contains the main image
+  configuration elements. If not specified kiwi searches for
+  a file named `config.xml` or a file matching `*.kiwi`
 
 --version
 

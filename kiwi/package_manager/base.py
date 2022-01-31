@@ -15,7 +15,9 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
-from typing import List
+from typing import (
+    List, Dict
+)
 
 from kiwi.api_helper import decommissioned
 from kiwi.command import command_call_type
@@ -34,7 +36,8 @@ class PackageManagerBase:
     :param list product_requests: list of products to install
     """
     def __init__(
-        self, repository: RepositoryBase, custom_args: List = []
+        self, repository: RepositoryBase, custom_args: List = [],
+        release_version: str = ''
     ) -> None:
         self.repository = repository
         self.root_dir = repository.root_dir
@@ -42,6 +45,7 @@ class PackageManagerBase:
         self.collection_requests: List[str] = []
         self.product_requests: List[str] = []
         self.exclude_requests: List[str] = []
+        self.release_version = release_version or '0'
 
         self.post_init(custom_args or [])
 
@@ -96,6 +100,18 @@ class PackageManagerBase:
         Implementation in specialized package manager class
 
         :param str name: unused
+        """
+        raise NotImplementedError
+
+    def setup_repository_modules(
+        self, collection_modules: Dict[str, List[str]]
+    ) -> None:
+        """
+        Setup repository modules and streams
+
+        Implementation in specialized package manager class
+
+        :param dict collection_modules: unused
         """
         raise NotImplementedError
 

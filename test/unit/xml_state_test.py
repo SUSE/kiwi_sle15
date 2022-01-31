@@ -1,3 +1,4 @@
+import os
 import logging
 from collections import namedtuple
 from mock import (
@@ -9,6 +10,7 @@ from pytest import (
 
 from kiwi.defaults import Defaults
 from kiwi.xml_state import XMLState
+from kiwi.storage.disk import ptable_entry_type
 from kiwi.xml_description import XMLDescription
 
 from kiwi.exceptions import (
@@ -96,6 +98,9 @@ class TestXMLState:
 
     def test_get_package_manager(self):
         assert self.state.get_package_manager() == 'zypper'
+
+    def get_release_version(self):
+        assert self.state.get_release_version() == '15.3'
 
     @patch('kiwi.xml_state.XMLState.get_preferences_sections')
     def test_get_default_package_manager(self, mock_preferences):
@@ -310,6 +315,22 @@ class TestXMLState:
         assert xml_state.profiles == [
             'composedProfile', 'vmxSimpleFlavour', 'xenDomUFlavour'
         ]
+
+    def test_get_partitions(self):
+        description = XMLDescription(
+            '../data/example_partitions_config.xml'
+        )
+        xml_data = description.load()
+        state = XMLState(xml_data)
+        assert state.get_partitions() == {
+            'var': ptable_entry_type(
+                mbsize=100,
+                partition_name='p.lxvar',
+                partition_type='t.linux',
+                mountpoint='/var',
+                filesystem='ext3'
+            )
+        }
 
     def test_get_volumes_custom_root_volume_name(self):
         description = XMLDescription(
@@ -648,10 +669,14 @@ class TestXMLState:
         )
         boot_state = XMLState(boot_description.load(), ['std'])
         self.state.copy_bootincluded_packages(boot_state)
-        image_packages = boot_state.get_system_packages()
-        assert 'plymouth-branding-openSUSE' in image_packages
-        assert 'grub2-branding-openSUSE' in image_packages
-        assert 'gfxboot-branding-openSUSE' in image_packages
+        image_packages = boot_state.get_image_packages_sections()
+        bootstrap_packages = boot_state.get_bootstrap_packages()
+        assert 'plymouth-branding-openSUSE' in bootstrap_packages
+        assert 'grub2-branding-openSUSE' in bootstrap_packages
+        assert 'gfxboot-branding-openSUSE' in bootstrap_packages
+        assert 'plymouth-branding-openSUSE' not in image_packages
+        assert 'grub2-branding-openSUSE' not in image_packages
+        assert 'gfxboot-branding-openSUSE' not in image_packages
         to_delete_packages = boot_state.get_to_become_deleted_packages()
         assert 'gfxboot-branding-openSUSE' not in to_delete_packages
 
@@ -989,3 +1014,23 @@ class TestXMLState:
         xml_data = self.description.load()
         state = XMLState(xml_data, ['vmxSimpleFlavour'], 'oem')
         state.get_installmedia_initrd_modules('add') == []
+
+    @patch('kiwi.system.uri.os.path.abspath')
+    def test_get_repositories_signing_keys(self, mock_root_path):
+        mock_root_path.side_effect = lambda x: f'/some/path/{x}'
+        assert self.state.get_repositories_signing_keys() == [
+            '/some/path/key_a', '/some/path/key_b'
+        ]
+
+    def test_this_path_resolver(self):
+        description = XMLDescription('../data/example_this_path_config.xml')
+        xml_data = description.load()
+        state = XMLState(xml_data)
+        assert state.xml_data.get_repository()[0].get_source().get_path() \
+            == 'dir://{0}/my_repo'.format(os.path.realpath('../data'))
+
+    def test_get_collection_modules(self):
+        assert self.state.get_collection_modules() == {
+            'disable': ['mod_c'],
+            'enable': ['mod_a:stream', 'mod_b']
+        }
