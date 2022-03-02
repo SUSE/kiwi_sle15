@@ -847,7 +847,6 @@ function deprecated {
         cat
         echo "]"
     } >&2
-    exit 0
 }
 
 
