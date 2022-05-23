@@ -53,7 +53,7 @@ class DiskSetup:
         self.bootpart_mbytes = xml_state.build_type.get_bootpartsize()
         self.spare_part_mbytes = xml_state.get_build_type_spare_part_size()
         self.mdraid = xml_state.build_type.get_mdraid()
-        self.luks = xml_state.build_type.get_luks()
+        self.luks = xml_state.get_luks_credentials()
         self.volume_manager = xml_state.get_volume_management()
         self.bootloader = xml_state.get_build_type_bootloader_name()
         self.oemconfig = xml_state.get_build_type_oemconfig_section()
@@ -70,9 +70,16 @@ class DiskSetup:
         self.root_dir = root_dir
         self.xml_state = xml_state
 
-    def get_disksize_mbytes(self) -> int:
+    def get_disksize_mbytes(
+        self, root_clone: int = 0, boot_clone: int = 0
+    ) -> int:
         """
         Precalculate disk size requirements in mbytes
+
+        :param int root_clone:
+            root partition gets cloned, N+1 times the size is needed
+        :param int boot_clone:
+            boot partition gets cloned, N+1 times the size is needed
 
         :return: disk size mbytes
 
@@ -83,6 +90,14 @@ class DiskSetup:
         root_filesystem_mbytes = self.rootsize.customize(
             self.rootsize.accumulate_mbyte_file_sizes(), self.filesystem
         )
+        if root_clone:
+            root_clone += 1
+            log.info(
+                '--> root partition is clone: {0}*{1} MB'.format(
+                    root_clone, root_filesystem_mbytes
+                )
+            )
+            root_filesystem_mbytes *= root_clone
         calculated_disk_mbytes += root_filesystem_mbytes
         log.info(
             '--> system data with filesystem overhead needs %s MB',
@@ -125,6 +140,14 @@ class DiskSetup:
 
         boot_mbytes = self.boot_partition_size()
         if boot_mbytes:
+            if boot_clone:
+                boot_clone += 1
+                log.info(
+                    '--> boot partition is clone: {0}*{1} MB'.format(
+                        boot_clone, boot_mbytes
+                    )
+                )
+                boot_mbytes *= boot_clone
             calculated_disk_mbytes += boot_mbytes
             log.info(
                 '--> boot partition adding %s MB', boot_mbytes
@@ -287,24 +310,34 @@ class DiskSetup:
         data_partition_mbytes = self._calculate_partition_mbytes()
         for map_name in sorted(self.custom_partitions.keys()):
             partition_mount_path = self.custom_partitions[map_name].mountpoint
-            partition_mbsize = self.custom_partitions[map_name].mbsize
-            disk_add_mbytes = int(partition_mbsize) - \
-                data_partition_mbytes.partition[partition_mount_path]
-            if disk_add_mbytes > 0:
-                disk_partition_mbytes += disk_add_mbytes
-            else:
-                message = dedent('''\n
-                    Requested partition size {0}MB for {1!r} is too small
+            partition_clone = self.custom_partitions[map_name].clone
+            if partition_mount_path:
+                partition_mbsize = self.custom_partitions[map_name].mbsize
+                disk_add_mbytes = int(partition_mbsize) - \
+                    data_partition_mbytes.partition[partition_mount_path]
+                if disk_add_mbytes > 0:
+                    if partition_clone:
+                        partition_clone += 1
+                        log.info(
+                            '--> {0} partition is clone: {1}*{2} MB'.format(
+                                map_name, partition_clone, disk_add_mbytes
+                            )
+                        )
+                        disk_add_mbytes *= partition_clone
+                    disk_partition_mbytes += disk_add_mbytes
+                else:
+                    message = dedent('''\n
+                        Requested partition size {0}MB for {1!r} is too small
 
-                    The minimum byte value to store the data below
-                    the {1!r} path was calculated to be {2}MB
-                ''')
-                raise KiwiPartitionTooSmallError(
-                    message.format(
-                        partition_mbsize, partition_mount_path,
-                        data_partition_mbytes.partition[partition_mount_path]
+                        The minimum byte value to store the data below
+                        the {1!r} path was calculated to be {2}MB
+                    ''')
+                    raise KiwiPartitionTooSmallError(
+                        message.format(
+                            partition_mbsize, partition_mount_path,
+                            data_partition_mbytes.partition[partition_mount_path]
+                        )
                     )
-                )
         return disk_partition_mbytes
 
     def _accumulate_volume_size(self, root_mbytes):
@@ -428,18 +461,19 @@ class DiskSetup:
         partition_mbytes = {}
         for map_name in sorted(self.custom_partitions.keys()):
             partition_mount_path = self.custom_partitions[map_name].mountpoint
-            partition_filesystem = self.custom_partitions[map_name].filesystem
-            path_to_partition = os.path.normpath(
-                os.sep.join([self.root_dir, partition_mount_path])
-            )
-            if os.path.exists(path_to_partition):
-                partition_size = SystemSize(path_to_partition)
-                partition_mbytes[partition_mount_path] = partition_size.customize(
-                    partition_size.accumulate_mbyte_file_sizes(),
-                    partition_filesystem
+            if partition_mount_path:
+                partition_filesystem = self.custom_partitions[map_name].filesystem
+                path_to_partition = os.path.normpath(
+                    os.sep.join([self.root_dir, partition_mount_path])
                 )
-            else:
-                partition_mbytes[partition_mount_path] = 0
+                if os.path.exists(path_to_partition):
+                    partition_size = SystemSize(path_to_partition)
+                    partition_mbytes[partition_mount_path] = partition_size.customize(
+                        partition_size.accumulate_mbyte_file_sizes(),
+                        partition_filesystem
+                    )
+                else:
+                    partition_mbytes[partition_mount_path] = 0
         return partition_mbytes_type(
             partition=partition_mbytes
         )

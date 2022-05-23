@@ -36,7 +36,8 @@ from kiwi.utils.size import StringToSize
 from kiwi.exceptions import (
     KiwiProfileNotFound,
     KiwiTypeNotFound,
-    KiwiDistributionNameError
+    KiwiDistributionNameError,
+    KiwiFileAccessError
 )
 
 log = logging.getLogger('kiwi')
@@ -577,6 +578,24 @@ class XMLState:
                 if self.package_matches_host_architecture(package):
                     result.append(package.get_name().strip())
         return sorted(result)
+
+    def get_bootstrap_package_name(self) -> str:
+        """
+        bootstrap_package name from type="bootstrap" packages section
+
+        :return: bootstrap_package name
+
+        :rtype: str
+        """
+        typed_packages_sections = self.get_packages_sections(
+            ['bootstrap', self.get_build_type_name()]
+        )
+        bootstrap_package = ''
+        for packages in typed_packages_sections:
+            bootstrap_package = packages.get_bootstrap_package()
+            if bootstrap_package:
+                break
+        return bootstrap_package
 
     def get_collection_type(self, section_type: str = 'image') -> str:
         """
@@ -1417,6 +1436,7 @@ class XMLState:
                 {
                     'NAME': ptable_entry_type(
                         mbsize=int,
+                        clone=int,
                         partition_name=str,
                         partition_type=str,
                         mountpoint=str,
@@ -1435,6 +1455,7 @@ class XMLState:
             partition_name = partition.get_partition_name() or f'p.lx{name}'
             partitions[name] = ptable_entry_type(
                 mbsize=self._to_mega_byte(partition.get_size()),
+                clone=int(partition.get_clone()) if partition.get_clone() else 0,
                 partition_name=partition_name,
                 partition_type=partition.get_partition_type() or 't.linux',
                 mountpoint=partition.get_mountpoint(),
@@ -1789,7 +1810,9 @@ class XMLState:
     def set_repository(
         self, repo_source: str, repo_type: str, repo_alias: str,
         repo_prio: str, repo_imageinclude: bool = False,
-        repo_package_gpgcheck: Optional[bool] = None
+        repo_package_gpgcheck: Optional[bool] = None,
+        repo_signing_keys: List[str] = [], components: str = None,
+        distribution: str = None, repo_gpgcheck: Optional[bool] = None
     ) -> None:
         """
         Overwrite repository data of the first repository
@@ -1800,6 +1823,10 @@ class XMLState:
         :param str repo_prio: priority number, package manager specific
         :param bool repo_imageinclude: setup repository inside of the image
         :param bool repo_package_gpgcheck: enable/disable package gpg checks
+        :param list repo_signing_keys: list of signing key file names
+        :param str components: component names for debian repos
+        :param str distribution: base distribution name for debian repos
+        :param bool repo_gpgcheck: enable/disable repo gpg checks
         """
         repository_sections = self.get_repository_sections()
         if repository_sections:
@@ -1816,12 +1843,23 @@ class XMLState:
                 repository.set_imageinclude(repo_imageinclude)
             if repo_package_gpgcheck is not None:
                 repository.set_package_gpgcheck(repo_package_gpgcheck)
+            if repo_signing_keys:
+                repository.get_source().set_signing(
+                    [xml_parse.signing(key=k) for k in repo_signing_keys]
+                )
+            if components:
+                repository.set_components(components)
+            if distribution:
+                repository.set_distribution(distribution)
+            if repo_gpgcheck is not None:
+                repository.set_repository_gpgcheck(repo_gpgcheck)
 
     def add_repository(
         self, repo_source: str, repo_type: str, repo_alias: str = None,
         repo_prio: str = '', repo_imageinclude: bool = False,
         repo_package_gpgcheck: Optional[bool] = None,
-        repo_signing_keys: List[str] = []
+        repo_signing_keys: List[str] = [], components: str = None,
+        distribution: str = None, repo_gpgcheck: Optional[bool] = None
     ) -> None:
         """
         Add a new repository section at the end of the list
@@ -1832,6 +1870,10 @@ class XMLState:
         :param str repo_prio: priority number, package manager specific
         :param bool repo_imageinclude: setup repository inside of the image
         :param bool repo_package_gpgcheck: enable/disable package gpg checks
+        :param list repo_signing_keys: list of signing key file names
+        :param str components: component names for debian repos
+        :param str distribution: base distribution name for debian repos
+        :param bool repo_gpgcheck: enable/disable repo gpg checks
         """
         priority_number: Optional[int] = None
         try:
@@ -1851,7 +1893,10 @@ class XMLState:
                     ]
                 ),
                 imageinclude=repo_imageinclude,
-                package_gpgcheck=repo_package_gpgcheck
+                package_gpgcheck=repo_package_gpgcheck,
+                repository_gpgcheck=repo_gpgcheck,
+                components=components,
+                distribution=distribution
             )
         )
 
@@ -2212,6 +2257,56 @@ class XMLState:
 
         return option_list
 
+    def get_luks_credentials(self) -> Optional[str]:
+        """
+        Return key or passphrase credentials to open the luks pool
+
+        :return: data
+
+        :rtype: str
+        """
+        data = self.build_type.get_luks()
+        if data:
+            keyfile_name = None
+            try:
+                # try to interpret data as an URI
+                uri = Uri(data)
+                if not uri.is_remote():
+                    keyfile_name = uri.translate()
+            except Exception:
+                # this doesn't look like a valid URI, continue as just data
+                pass
+            if keyfile_name:
+                try:
+                    with open(keyfile_name) as keyfile:
+                        return keyfile.read()
+                except Exception as issue:
+                    raise KiwiFileAccessError(
+                        f'Failed to read from {keyfile_name!r}: {issue}'
+                    )
+        return data
+
+    def get_luks_format_options(self) -> List[str]:
+        """
+        Return list of luks format options
+
+        :return: list of options
+
+        :rtype: list
+        """
+        result = []
+        luksversion = self.build_type.get_luks_version()
+        luksformat = self.build_type.get_luksformat()
+        if luksversion:
+            result.append('--type')
+            result.append(luksversion)
+        if luksformat:
+            for option in luksformat[0].get_option():
+                result.append(option.get_name())
+                if option.get_value():
+                    result.append(option.get_value())
+        return result
+
     def get_derived_from_image_uri(self) -> Optional[Uri]:
         """
         Uri object of derived image if configured
@@ -2368,15 +2463,15 @@ class XMLState:
             maintainer = container_config_section.get_maintainer()
             user = container_config_section.get_user()
             workingdir = container_config_section.get_workingdir()
-            additional_tags = container_config_section.get_additionaltags()
+            additional_names = container_config_section.get_additionalnames()
             if name:
                 container_base['container_name'] = name
 
             if tag:
                 container_base['container_tag'] = tag
 
-            if additional_tags:
-                container_base['additional_tags'] = additional_tags.split(',')
+            if additional_names:
+                container_base['additional_names'] = additional_names.split(',')
 
             if maintainer:
                 container_base['maintainer'] = maintainer

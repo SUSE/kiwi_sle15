@@ -38,8 +38,14 @@ class TestRootBind:
         self.bind_root.mount_stack = [self.mount_manager]
         self.bind_root.dir_stack = ['/mountpoint']
 
+    def setup_method(self, cls):
+        self.setup()
+
     def teardown(self):
         sys.argv = argv_kiwi_tests
+
+    def teardown_method(self, cls):
+        self.teardown()
 
     @patch('kiwi.system.root_bind.MountManager.bind_mount')
     @patch('kiwi.system.root_bind.RootBind.cleanup')
@@ -89,10 +95,13 @@ class TestRootBind:
         shared_mount = Mock()
         mock_mount.return_value = shared_mount
         assert self.bind_root.mount_kernel_file_systems() is None
-        mock_mount.assert_called_once_with(
-            device='/proc', mountpoint='root-dir/proc'
-        )
-        shared_mount.bind_mount.assert_called_once_with()
+        assert mock_mount.call_args_list == [
+            call(device='root-dir', mountpoint='root-dir'),
+            call(device='/proc', mountpoint='root-dir/proc')
+        ]
+        assert shared_mount.bind_mount.call_args_list == [
+            call(), call()
+        ]
 
     @patch('kiwi.system.root_bind.MountManager')
     def test_umount_kernel_file_systems(self, mock_mount):

@@ -18,7 +18,9 @@ class TestContainerImageOCI:
         self._caplog = caplog
 
     @patch('kiwi.oci_tools.umoci.CommandCapabilities.has_option_in_help')
-    def setup(self, mock_cmd_caps):
+    @patch('kiwi.defaults.Defaults.is_buildservice_worker')
+    def setup(self, mock_is_buildservice_worker, mock_cmd_caps):
+        mock_is_buildservice_worker.return_value = False
         mock_cmd_caps.return_value = True
         self.runtime_config = mock.Mock()
         self.runtime_config.get_container_compression = mock.Mock(
@@ -30,17 +32,24 @@ class TestContainerImageOCI:
         self.oci = ContainerImageOCI(
             'root_dir', 'docker-archive', {
                 'container_name': 'foo/bar',
-                'additional_tags': ['current', 'foobar']
+                'additional_names': [':current', 'name:foobar', 'newname']
             }
         )
 
     @patch('kiwi.oci_tools.umoci.CommandCapabilities.has_option_in_help')
-    def test_init_custom_args(self, mock_cmd_caps):
+    @patch('kiwi.defaults.Defaults.is_buildservice_worker')
+    def setup_method(self, cls, mock_is_buildservice_worker, mock_cmd_caps):
+        self.setup()
+
+    @patch('kiwi.oci_tools.umoci.CommandCapabilities.has_option_in_help')
+    @patch('kiwi.defaults.Defaults.is_buildservice_worker')
+    def test_init_custom_args(self, mock_is_buildservice_worker, mock_cmd_caps):
+        mock_is_buildservice_worker.return_value = False
         mock_cmd_caps.return_value = True
         custom_args = {
             'container_name': 'foo',
             'container_tag': '1.0',
-            'additional_tags': ['current', 'foobar'],
+            'additional_names': ['current', 'foobar'],
             'entry_command': ['/bin/bash', '-x'],
             'entry_subcommand': ['ls', '-l'],
             'maintainer': 'tux',
@@ -57,7 +66,11 @@ class TestContainerImageOCI:
         assert container.oci_config == custom_args
 
     @patch('kiwi.oci_tools.umoci.CommandCapabilities.has_option_in_help')
-    def test_init_without_custom_args(self, mock_cmd_caps):
+    @patch('kiwi.defaults.Defaults.is_buildservice_worker')
+    def test_init_without_custom_args(
+        self, mock_is_buildservice_worker, mock_cmd_caps
+    ):
+        mock_is_buildservice_worker.return_value = False
         mock_cmd_caps.return_value = True
         container = ContainerImageOCI('root_dir', 'oci-archive')
         assert container.oci_config == {
@@ -142,21 +155,21 @@ class TestContainerImageOCI:
         )
         mock_oci.repack.assert_called_once_with({
             'container_name': 'foo/bar',
-            'additional_tags': ['current', 'foobar'],
+            'additional_names': [':current', 'name:foobar', 'newname'],
             'container_tag': 'latest',
             'entry_subcommand': ['/bin/bash'],
             'history': {'created_by': 'KIWI {0}'.format(__version__)}
         })
         mock_oci.set_config.assert_called_once_with({
             'container_name': 'foo/bar',
-            'additional_tags': ['current', 'foobar'],
+            'additional_names': [':current', 'name:foobar', 'newname'],
             'container_tag': 'latest',
             'entry_subcommand': ['/bin/bash'],
             'history': {'created_by': 'KIWI {0}'.format(__version__)}
         })
         mock_oci.post_process.assert_called_once_with()
         mock_oci.export_container_image.assert_called_once_with(
-            'result.tar', 'oci-archive', 'latest', []
+            'result.tar', 'oci-archive', 'foo/bar:latest', []
         )
 
     @patch('kiwi.container.oci.OCI')
@@ -184,18 +197,18 @@ class TestContainerImageOCI:
         )
         mock_oci.repack.assert_called_once_with({
             'container_name': 'foo/bar',
-            'additional_tags': ['current', 'foobar'],
+            'additional_names': [':current', 'name:foobar', 'newname'],
             'container_tag': 'latest',
             'history': {'created_by': 'KIWI {0}'.format(__version__)}
         })
         mock_oci.set_config.assert_called_once_with({
             'container_name': 'foo/bar',
-            'additional_tags': ['current', 'foobar'],
+            'additional_names': [':current', 'name:foobar', 'newname'],
             'container_tag': 'latest',
             'history': {'created_by': 'KIWI {0}'.format(__version__)}
         })
         mock_oci.post_process.assert_called_once_with()
         mock_oci.export_container_image.assert_called_once_with(
             'result.tar', 'docker-archive', 'foo/bar:latest',
-            ['foo/bar:current', 'foo/bar:foobar']
+            ['foo/bar:current', 'name:foobar', 'newname:latest']
         )

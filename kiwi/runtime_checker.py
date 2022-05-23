@@ -187,6 +187,47 @@ class RuntimeChecker:
                         message.format(volume_management)
                     )
 
+    def check_partuuid_persistency_type_used_with_mbr(self) -> None:
+        """
+        The devicepersistency setting by-partuuid can only be
+        used in combination with a partition table type that
+        supports UUIDs. In any other case Linux creates artificial
+        values for PTUUID and PARTUUID from the disk signature
+        which can change without touching the actual partition
+        table. We consider this unsafe and only allow the use
+        of by-partuuid in combination with partition tables that
+        actually supports it properly.
+        """
+        message = dedent('''\n
+            devicepersistency={0!r} used with non UUID capable partition table
+
+            PTUUID and PARTUUID exists in the GUID (GPT) partition table.
+            According to the firmware setting: {1!r}, the selected partition
+            table type is: {2!r}. This table type does not natively support
+            UUIDs. In such a case Linux creates artificial values for PTUUID
+            and PARTUUID from the disk signature which can change without
+            touching the actual partition table. This is considered unsafe
+            and KIWI only allows the use of by-partuuid in combination with
+            partition tables that actually supports UUIDs properly.
+
+            Please make sure to use one of the following firmware settings
+            which leads to an image using an UUID capable partition table
+            and therefore supporting consistent by-partuuid device names:
+
+            <type ... firmware="efi|uefi">
+        ''')
+        persistency_type = self.xml_state.build_type.get_devicepersistency()
+        if persistency_type and persistency_type == 'by-partuuid':
+            supported_table_types = ['gpt']
+            firmware = FirmWare(self.xml_state)
+            table_type = firmware.get_partition_table_type()
+            if table_type not in supported_table_types:
+                raise KiwiRuntimeError(
+                    message.format(
+                        persistency_type, firmware.firmware, table_type
+                    )
+                )
+
     def check_swap_name_used_with_lvm(self) -> None:
         """
         The optional oem-swapname is only effective if used together
@@ -352,12 +393,36 @@ class RuntimeChecker:
             --help').\n
             It is known to be present since v0.1.30
         ''')
-        if 'additional_tags' in self.xml_state.get_container_config():
+        if 'additional_names' in self.xml_state.get_container_config():
             if not CommandCapabilities.has_option_in_help(
                 'skopeo', '--additional-tag', ['copy', '--help'],
                 raise_on_error=False
             ):
                 raise KiwiRuntimeError(message)
+
+    def check_luksformat_options_valid(self) -> None:
+        """
+        Options set via the luksformat element are passed along
+        to the cryptsetup tool. Only options that are known to
+        the tool should be allowed. Thus this runtime check looks
+        up the provided option names if they exist in the cryptsetup
+        version used on the build host
+        """
+        message = dedent('''\n
+            Option {0!r} not found in cryptsetup
+
+            The Option {0!r} could not be found in the help output
+            of the cryptsetup tool.
+        ''')
+        luksformat = self.xml_state.build_type.get_luksformat()
+        if luksformat:
+            for option in luksformat[0].get_option():
+                argument = option.get_name()
+                if not CommandCapabilities.has_option_in_help(
+                    'cryptsetup', argument, ['--help'],
+                    raise_on_error=False
+                ):
+                    raise KiwiRuntimeError(message.format(argument))
 
     def check_appx_naming_conventions_valid(self) -> None:
         """
@@ -821,8 +886,10 @@ class RuntimeChecker:
 
             <package name="{0}"/>
         ''')
+        initrd_system = self.xml_state.get_initrd_system()
         required_dracut_package = 'dracut-kiwi-overlay'
-        if self.xml_state.build_type.get_overlayroot():
+        if initrd_system == 'dracut' and \
+           self.xml_state.build_type.get_overlayroot():
             package_names = \
                 self.xml_state.get_bootstrap_packages() + \
                 self.xml_state.get_system_packages()

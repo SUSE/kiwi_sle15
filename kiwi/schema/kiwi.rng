@@ -43,7 +43,17 @@
   </define>
   <define name="size-type">
     <data type="token">
-      <param name="pattern">\d*|image</param>
+      <param name="pattern">(\d*|image)</param>
+    </data>
+  </define>
+  <define name="number-type">
+    <data type="token">
+      <param name="pattern">\d+</param>
+    </data>
+  </define>
+  <define name="blocks-type">
+    <data type="token">
+      <param name="pattern">(\d*|all)</param>
     </data>
   </define>
   <define name="volume-size-type">
@@ -135,7 +145,7 @@ second the location of the XSD Schema
     <define name="k.image.schemaversion.attribute">
       <attribute name="schemaversion">
         <a:documentation>The allowed Schema version (fixed value)</a:documentation>
-        <value>7.4</value>
+        <value>7.5</value>
       </attribute>
     </define>
     <define name="k.image.id">
@@ -1296,6 +1306,34 @@ the device is looked up in /dev/disk/by-* and /dev/mapper/*</a:documentation>
   </div>
   <!--
     ==========================================
+    common element <option>
+    
+  -->
+  <div>
+    <define name="k.option.name.attribute">
+      <attribute name="name"/>
+    </define>
+    <define name="k.option.value.attribute">
+      <attribute name="value"/>
+    </define>
+    <define name="k.option.attlist">
+      <interleave>
+        <ref name="k.option.name.attribute"/>
+        <optional>
+          <ref name="k.option.value.attribute"/>
+        </optional>
+      </interleave>
+    </define>
+    <define name="k.option">
+      <element name="option">
+        <a:documentation>A commandline option specification</a:documentation>
+        <ref name="k.option.attlist"/>
+        <empty/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
     common element <package>
     
   -->
@@ -1917,6 +1955,16 @@ volume management system</a:documentation>
         <sch:assert test="oemconfig/oem-resize[contains(text(), 'false')]">$attr attribute also needs the setting: &lt;oem-resize&gt;false&lt;/oem-resize&gt; in the &lt;oemconfig&gt; section of the selected &lt;type&gt;</sch:assert>
       </sch:rule>
     </sch:pattern>
+    <sch:pattern abstract="true" id="image_verity_requirement">
+      <sch:rule context="type[@embed_verity_metadata]">
+        <sch:assert test="@$attr">$attr attribute must be set for embed_verity_metadata</sch:assert>
+      </sch:rule>
+    </sch:pattern>
+    <sch:pattern abstract="true" id="image_integrity_requirement">
+      <sch:rule context="type[@embed_integrity_metadata]">
+        <sch:assert test="@$attr">$attr attribute must be set for embed_integrity_metadata</sch:assert>
+      </sch:rule>
+    </sch:pattern>
     <define name="k.type.boot.attribute">
       <attribute name="boot">
         <a:documentation>Specifies the path of the boot image (initrd) description
@@ -2114,6 +2162,22 @@ size is set to 20 MB</a:documentation>
         <sch:param name="types" value="oem"/>
       </sch:pattern>
     </define>
+    <define name="k.type.dosparttable_extended_layout.attribute">
+      <attribute name="dosparttable_extended_layout">
+        <a:documentation>Specify to make use of logical partitions inside of an
+extended one. If set to true and if the msdos table type
+is active, this will cause the fourth partition to be an
+extended partition and all following partitions will be
+placed as logical partitions inside of that extended
+partition. This setting is useful if more than 4 primary
+partitions needs to be created in an msdos table</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="dosparttable_extended_layout" is-a="image_type">
+        <sch:param name="attr" value="dosparttable_extended_layout"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
     <define name="k.type.efiparttable.attribute">
       <attribute name="efiparttable">
         <a:documentation>For images with an EFI firmware specifies the partition
@@ -2159,6 +2223,7 @@ storage device names. By default by-uuid is used.</a:documentation>
         <choice>
           <value>by-uuid</value>
           <value>by-label</value>
+          <value>by-partuuid</value>
         </choice>
       </attribute>
     </define>
@@ -2224,6 +2289,86 @@ structure</a:documentation>
         <sch:param name="types" value="oem pxe kis iso"/>
       </sch:pattern>
     </define>
+    <define name="k.type.verity_blocks.attribute">
+      <attribute name="verity_blocks">
+        <a:documentation>Specifies to create a dm verity hash from the number of
+given blocks and placed at the end of the root filesystem
+If the verity hash should be calculated from the complete
+file the value 'all' can be specified.</a:documentation>
+        <ref name="blocks-type"/>
+      </attribute>
+      <sch:pattern id="verity_blocks" is-a="image_type">
+        <sch:param name="attr" value="verity_blocks"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.embed_verity_metadata.attribute">
+      <attribute name="embed_verity_metadata">
+        <a:documentation>In combination with the verity_blocks attribute, embed
+a verification metadata block at the end of the partition
+serving the root filesystem</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="embed_verity_metadata" is-a="image_type">
+        <sch:param name="attr" value="embed_verity_metadata"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+      <sch:pattern id="verity_blocks_mandatory" is-a="image_verity_requirement">
+        <sch:param name="attr" value="verity_blocks"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.standalone_integrity.attribute">
+      <attribute name="standalone_integrity">
+        <a:documentation>Specifies to create a standalone dm integrity layer on
+top of the root filesystem</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="standalone_integrity" is-a="image_type">
+        <sch:param name="attr" value="standalone_integrity"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.embed_integrity_metadata.attribute">
+      <attribute name="embed_integrity_metadata">
+        <a:documentation>In combination with the standalone_integrity attribute, embed
+an integrity metadata block at the end of the partition
+serving the root filesystem</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="embed_integrity_metadata" is-a="image_type">
+        <sch:param name="attr" value="embed_integrity_metadata"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+      <sch:pattern id="standalone_integrity_mandatory" is-a="image_integrity_requirement">
+        <sch:param name="attr" value="standalone_integrity"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.integrity_keyfile.attribute">
+      <attribute name="integrity_keyfile">
+        <a:documentation>In combination with the standalone_integrity attribute,
+protect access to the integrity map using the given key.</a:documentation>
+      </attribute>
+      <sch:pattern id="integrity_keyfile" is-a="image_type">
+        <sch:param name="attr" value="integrity_keyfile"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.integrity_metadata_key_description">
+      <attribute name="integrity_metadata_key_description">
+        <a:documentation>In combination with the embed_integrity_metadata attribute,
+allows to specify a custom description of an integrity key
+as it is expected to be present in the kernel keyring. The
+information is placed in the integrity metadata block. If
+not specified kiwi creates a key argument string instead
+which is based on the given integrity_keyfile filename.
+The format of this key argument is:
+':basename_of_integrity_keyfile_no_file_extension'</a:documentation>
+      </attribute>
+      <sch:pattern id="integrity_metadata_key_description" is-a="image_type">
+        <sch:param name="attr" value="integrity_metadata_key_description"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
     <define name="k.type.overlayroot.attribute">
       <attribute name="overlayroot">
         <a:documentation>Specifies to use an overlay root system consisting
@@ -2235,6 +2380,43 @@ image type oem</a:documentation>
       </attribute>
       <sch:pattern id="overlayroot" is-a="image_type">
         <sch:param name="attr" value="overlayroot"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.overlayroot_write_partition.attribute">
+      <attribute name="overlayroot_write_partition">
+        <a:documentation>Specifies to create an extra read-write partition
+in combination with the overlayroot attribute on the
+target disk. By default the partition is created
+and the kiwi-overlay dracut module also expect it
+to be present. However, the overlayroot feature could
+also be used without dracut (initrd_system="none")
+and under certain circumstances it is handy to
+configure if the partition table should contain
+the read-write partition or not. Available for
+the disk image type oem</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="overlayroot_write_partition" is-a="image_type">
+        <sch:param name="attr" value="overlayroot_write_partition"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.overlayroot_readonly_partsize.attribute">
+      <attribute name="overlayroot_readonly_partsize">
+        <a:documentation>Specifies the size in MB of the partition which stores the
+squashfs compressed read-only root filesystem in an
+overlayroot setup. If not specified kiwi calculates
+the needed size by a preliminary creation of the
+squashfs compressed file. However this is only accurate
+if no changes to the root filesystem data happens
+after this calculation, which cannot be guaranteed as
+there is at least one optional script hook which is
+allowed and applied after the calculation.</a:documentation>
+        <data type="nonNegativeInteger"/>
+      </attribute>
+      <sch:pattern id="overlayroot_readonly_partsize" is-a="image_type">
+        <sch:param name="attr" value="overlayroot_readonly_partsize"/>
         <sch:param name="types" value="oem"/>
       </sch:pattern>
     </define>
@@ -2282,9 +2464,11 @@ specify which filesystem should be used for it. The
 type of the bootloader might overwrite this setting
 e.g for the syslinux loader fat is required</a:documentation>
         <choice>
+          <value>btrfs</value>
           <value>ext2</value>
           <value>ext3</value>
           <value>ext4</value>
+          <value>xfs</value>
           <value>fat32</value>
           <value>fat16</value>
         </choice>
@@ -2556,12 +2740,31 @@ kernel command line options</a:documentation>
         <sch:param name="types" value="oem iso pxe kis"/>
       </sch:pattern>
     </define>
+    <define name="k.type.luks_version.attribute">
+      <attribute name="luks_version">
+        <a:documentation>Specify LUKS version. This can be either set to "luks", "luks1"
+or "luks2". By default "luks" is used.</a:documentation>
+        <choice>
+          <value>luks</value>
+          <value>luks1</value>
+          <value>luks2</value>
+        </choice>
+      </attribute>
+      <sch:pattern id="luksversion" is-a="image_type">
+        <sch:param name="attr" value="luksversion"/>
+        <sch:param name="types" value="oem iso pxe kis"/>
+      </sch:pattern>
+    </define>
     <define name="k.type.luks.attribute">
       <attribute name="luks">
         <a:documentation>Setup cryptographic volume along with the given filesystem
 using the LUKS extension. The value of this attribute
-represents the password string used to be able to
-mount that filesystem while booting</a:documentation>
+represents either the password string or the location of
+a key file if specified as file:// resource. When using
+a key file it is in the responsibility of the user how
+this key file is actually being used. By default any
+distribution will just open an interactive dialog asking
+for credentials at boot time.</a:documentation>
       </attribute>
       <sch:pattern id="luks" is-a="image_type">
         <sch:param name="attr" value="luks"/>
@@ -2574,7 +2777,7 @@ mount that filesystem while booting</a:documentation>
 and hash format options is passed to the cryptsetup call
 in order to create a format compatible to the specified
 distribution</a:documentation>
-        <value>sle11</value>
+        <value>sle12</value>
       </attribute>
       <sch:pattern id="luksOS" is-a="image_type">
         <sch:param name="attr" value="luksOS"/>
@@ -2686,6 +2889,17 @@ to work on.</a:documentation>
         <sch:param name="types" value="docker oci"/>
       </sch:pattern>
     </define>
+    <define name="k.type.ensure_empty_tmpdirs.attribute">
+      <attribute name="ensure_empty_tmpdirs">
+        <a:documentation>Whether to ensure /run and /tmp directories are empty in the
+container image created by Kiwi.  Default is true.</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="ensure_empty_tmpdirs" is-a="image_type">
+        <sch:param name="attr" value="ensure_empty_tmpdirs"/>
+        <sch:param name="types" value="docker oci"/>
+      </sch:pattern>
+    </define>
     <define name="k.type.publisher.attribute">
       <attribute name="publisher">
         <a:documentation>Specifies the publisher name of the ISO.</a:documentation>
@@ -2706,6 +2920,31 @@ default.</a:documentation>
       </attribute>
       <sch:pattern id="disk_start_sector" is-a="image_type">
         <sch:param name="attr" value="disk_start_sector"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.root_clone.attribute">
+      <attribute name="root_clone">
+        <a:documentation>Clone root partition N times</a:documentation>
+        <ref name="number-type"/>
+      </attribute>
+      <sch:pattern id="root_clone" is-a="image_type">
+        <sch:param name="attr" value="root_clone"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.boot_clone.attribute">
+      <attribute name="boot_clone">
+        <a:documentation>Clone boot partition N times. If no boot partition is
+used, the attribute has no effect. The use of a boot
+partition can be enforced through the bootpartition
+attribute or is implicitly activated according to the
+combination of type settings that makes the use of an
+extra boot partition a requirement</a:documentation>
+        <ref name="number-type"/>
+      </attribute>
+      <sch:pattern id="boot_clone" is-a="image_type">
+        <sch:param name="attr" value="boot_clone"/>
         <sch:param name="types" value="oem"/>
       </sch:pattern>
     </define>
@@ -2756,6 +2995,9 @@ kiwi-ng result bundle ...</a:documentation>
         </optional>
         <optional>
           <ref name="k.type.efiparttable.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.dosparttable_extended_layout.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.bootprofile.attribute"/>
@@ -2852,6 +3094,9 @@ kiwi-ng result bundle ...</a:documentation>
           <ref name="k.type.luks.attribute"/>
         </optional>
         <optional>
+          <ref name="k.type.luks_version.attribute"/>
+        </optional>
+        <optional>
           <ref name="k.type.luksOS.attribute"/>
         </optional>
         <optional>
@@ -2859,6 +3104,30 @@ kiwi-ng result bundle ...</a:documentation>
         </optional>
         <optional>
           <ref name="k.type.overlayroot.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.overlayroot_write_partition.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.overlayroot_readonly_partsize.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.verity_blocks.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.embed_verity_metadata.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.standalone_integrity.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.embed_integrity_metadata.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.integrity_metadata_key_description"/>
+        </optional>
+        <optional>
+          <ref name="k.type.integrity_keyfile.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.primary.attribute"/>
@@ -2906,6 +3175,9 @@ kiwi-ng result bundle ...</a:documentation>
           <ref name="k.type.derived_from.attribute"/>
         </optional>
         <optional>
+          <ref name="k.type.ensure_empty_tmpdirs.attribute"/>
+        </optional>
+        <optional>
           <ref name="k.type.xen_server.attribute"/>
         </optional>
         <optional>
@@ -2913,6 +3185,12 @@ kiwi-ng result bundle ...</a:documentation>
         </optional>
         <optional>
           <ref name="k.type.disk_start_sector.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.root_clone.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.boot_clone.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.bundle_format.attribute"/>
@@ -2950,6 +3228,9 @@ kiwi-ng result bundle ...</a:documentation>
           </zeroOrMore>
           <optional>
             <ref name="k.installmedia"/>
+          </optional>
+          <optional>
+            <ref name="k.luksformat"/>
           </optional>
         </interleave>
       </element>
@@ -3311,6 +3592,12 @@ Allowed values are: t.linux</a:documentation>
         </choice>
       </attribute>
     </define>
+    <define name="k.partition.clone.attribute">
+      <attribute name="clone">
+        <a:documentation>Clone this partition N times</a:documentation>
+        <ref name="number-type"/>
+      </attribute>
+    </define>
     <define name="k.partition.attlist">
       <interleave>
         <ref name="k.partition.name.attribute"/>
@@ -3321,8 +3608,15 @@ Allowed values are: t.linux</a:documentation>
         <optional>
           <ref name="k.partition.partition_type.attribute"/>
         </optional>
-        <ref name="k.partition.mountpoint.attribute"/>
-        <ref name="k.partition.filesystem.attribute"/>
+        <optional>
+          <ref name="k.partition.mountpoint.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.partition.filesystem.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.partition.clone.attribute"/>
+        </optional>
       </interleave>
     </define>
     <define name="k.partition">
@@ -3590,6 +3884,20 @@ editbootconfig custom scripts</a:documentation>
         <sch:param name="types" value="oem iso"/>
       </sch:pattern>
     </define>
+    <define name="k.bootloader.grub_template.attribute">
+      <attribute name="grub_template">
+        <a:documentation>Specifies a custom grub bootloader template file which will be used
+instead of the one provided with Kiwi. A static bootloader template to
+create the grub config file is only used in Kiwi if the native method
+via the grub mkconfig toolchain does not work properly. As of today,
+this is only the case for live and install ISO images. Thus, this
+setting only affects the oem and iso image types.</a:documentation>
+      </attribute>
+      <sch:pattern id="loader_grub_template" is-a="bootloader_image_type">
+        <sch:param name="attr" value="grub_template"/>
+        <sch:param name="types" value="oem iso"/>
+      </sch:pattern>
+    </define>
     <define name="k.bootloader.console.attribute">
       <attribute name="console">
         <a:documentation>Specifies the bootloader console.
@@ -3677,6 +3985,9 @@ for 4k DASD devices use CDL</a:documentation>
         <optional>
           <ref name="k.bootloader.targettype.attribute"/>
         </optional>
+        <optional>
+          <ref name="k.bootloader.grub_template.attribute"/>
+        </optional>
       </interleave>
     </define>
     <define name="k.bootloader">
@@ -3723,13 +4034,16 @@ image is imported via the docker load command</a:documentation>
         <sch:param name="types" value="docker oci"/>
       </sch:pattern>
     </define>
-    <define name="k.containerconfig.additionaltags.attribute">
-      <attribute name="additionaltags">
-        <a:documentation>Specifies additional tags for the container using a comma
-separated values string</a:documentation>
+    <define name="k.containerconfig.additionalnames.attribute">
+      <attribute name="additionalnames">
+        <a:documentation>Specifies additional names for the container using a comma
+separated values string. It supports '&lt;repo1&gt;:&lt;tag2&gt;,&lt;repo2:tag2&gt;'
+format. If any of the names does not include the repository or tag
+in that case `name` or `tag` attribute values from containerconfig
+will be used to build a complete image referrence.</a:documentation>
       </attribute>
-      <sch:pattern id="additionaltags" is-a="container_type">
-        <sch:param name="attr" value="additionaltags"/>
+      <sch:pattern id="additionalnames" is-a="container_type">
+        <sch:param name="attr" value="additionalnames"/>
         <sch:param name="types" value="docker oci"/>
       </sch:pattern>
     </define>
@@ -3767,7 +4081,7 @@ separated values string</a:documentation>
           <ref name="k.containerconfig.tag.attribute"/>
         </optional>
         <optional>
-          <ref name="k.containerconfig.additionaltags.attribute"/>
+          <ref name="k.containerconfig.additionalnames.attribute"/>
         </optional>
         <optional>
           <ref name="k.containerconfig.maintainer.attribute"/>
@@ -3992,6 +4306,32 @@ of the storage device</a:documentation>
           <ref name="k.partitions.attlist"/>
           <oneOrMore>
             <ref name="k.partition"/>
+          </oneOrMore>
+        </interleave>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    main block: <luksformat>
+    
+  -->
+  <div>
+    <sch:pattern id="luks_requirement">
+      <sch:rule context="luksformat">
+        <sch:assert test="../@luks">luks attribute must be set when using luksformat option(s)</sch:assert>
+      </sch:rule>
+    </sch:pattern>
+    <define name="k.luksformat.attlist">
+      <empty/>
+    </define>
+    <define name="k.luksformat">
+      <element name="luksformat">
+        <a:documentation>luksFormat option settings</a:documentation>
+        <interleave>
+          <ref name="k.luksformat.attlist"/>
+          <oneOrMore>
+            <ref name="k.option"/>
           </oneOrMore>
         </interleave>
       </element>
@@ -4589,6 +4929,11 @@ running the image.</a:documentation>
     
   -->
   <div>
+    <sch:pattern abstract="true" id="packages_type">
+      <sch:rule context="packages[@$attr]">
+        <sch:assert test="contains('$types', @type)">$attr attribute is only available for the following packages type(s): $types</sch:assert>
+      </sch:rule>
+    </sch:pattern>
     <define name="k.packages.type.attribute">
       <attribute name="type">
         <a:documentation>Specifies package collection type. `bootstrap` packages
@@ -4625,6 +4970,25 @@ or plusRecommended</a:documentation>
         </choice>
       </attribute>
     </define>
+    <define name="k.packages.bootstrap_package.attribute">
+      <attribute name="bootstrap_package">
+        <a:documentation>Specify bootstrap package providing a bootstrap tarball
+in /var/cache/kiwi/bootstrap/PACKAGE_NAME.ARCH.tar.xz
+The tarball will be unpacked and used as the bootstrap
+rootfs to begin with. The feature is currently only
+available with the apt package manager to allow an
+alternative bootstrap method for debootstrap</a:documentation>
+      </attribute>
+      <sch:pattern id="bootstrap_package" is-a="packages_type">
+        <sch:param name="attr" value="bootstrap_package"/>
+        <sch:param name="types" value="bootstrap"/>
+      </sch:pattern>
+    </define>
+    <sch:pattern id="bootstrap_package_validation">
+      <sch:rule context="packages">
+        <sch:assert test="../preferences/packagemanager[text()='apt'] or not(@bootstrap_package)">bootstrap_package attribute only available for the apt packagemanager</sch:assert>
+      </sch:rule>
+    </sch:pattern>
     <define name="k.packages.attlist">
       <interleave>
         <ref name="k.packages.type.attribute"/>
@@ -4633,6 +4997,9 @@ or plusRecommended</a:documentation>
         </optional>
         <optional>
           <ref name="k.packages.patternType.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.packages.bootstrap_package.attribute"/>
         </optional>
       </interleave>
     </define>

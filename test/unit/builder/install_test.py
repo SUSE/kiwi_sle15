@@ -92,6 +92,9 @@ class TestInstallImageBuilder:
             self.xml_state, 'root_dir', 'target_dir', self.boot_image_task
         )
 
+    def setup_method(self, cls):
+        self.setup()
+
     @patch('kiwi.builder.install.BootImage')
     def test_init_dracut_based(self, mock_boot_image):
         InstallImageBuilder(
@@ -128,8 +131,9 @@ class TestInstallImageBuilder:
     @patch('kiwi.builder.install.Temporary')
     @patch('kiwi.builder.install.Command.run')
     @patch('kiwi.builder.install.Defaults.get_grub_boot_directory_name')
+    @patch('kiwi.builder.install.Iso')
     def test_create_install_iso(
-        self, mock_grub_dir, mock_command, mock_Temporary, mock_copy,
+        self, mock_Iso, mock_grub_dir, mock_command, mock_Temporary, mock_copy,
         mock_setup_media_loader_directory, mock_BootLoaderConfig,
         mock_DeviceProvider
     ):
@@ -139,14 +143,19 @@ class TestInstallImageBuilder:
         temp_media_dir = Mock()
         temp_media_dir.new_dir.return_value.name = 'temp_media_dir'
 
-        tmpdir_name = [temp_squashfs, temp_media_dir]
+        temp_esp_file = Mock()
+        temp_esp_file.new_file.return_value.name = 'temp_esp'
+
+        tmp_names = [temp_esp_file, temp_squashfs, temp_media_dir]
 
         def side_effect(prefix, path):
-            return tmpdir_name.pop()
+            return tmp_names.pop()
 
         bootloader_config = mock.Mock()
         mock_BootLoaderConfig.return_value = bootloader_config
         mock_Temporary.side_effect = side_effect
+
+        self.firmware.bios_mode.return_value = False
 
         m_open = mock_open()
         with patch('builtins.open', m_open, create=True):
@@ -195,6 +204,9 @@ class TestInstallImageBuilder:
             mbrid=self.mbrid
         )
         bootloader_config.write.assert_called_once_with()
+        bootloader_config._create_embedded_fat_efi_image.assert_called_once_with(
+            'temp_esp'
+        )
         self.boot_image_task.create_initrd.assert_called_once_with(
             self.mbrid, 'initrd_kiwi_install', install_initrd=True
         )
@@ -222,7 +234,7 @@ class TestInstallImageBuilder:
             'target_dir/result-image.x86_64-1.2.3.install.iso'
         )
 
-        tmpdir_name = [temp_squashfs, temp_media_dir]
+        tmp_names = [temp_esp_file, temp_squashfs, temp_media_dir]
         self.install_image.initrd_system = 'dracut'
 
         m_open.reset_mock()
@@ -249,16 +261,19 @@ class TestInstallImageBuilder:
         ]
 
         mock_BootLoaderConfig.reset_mock()
-        tmpdir_name = [temp_squashfs, temp_media_dir]
+        tmp_names = [temp_esp_file, temp_squashfs, temp_media_dir]
         self.firmware.efi_mode.return_value = None
+        self.firmware.bios_mode.return_value = True
 
         with patch('builtins.open', m_open, create=True):
             self.install_image.create_install_iso()
 
+        mock_Iso.return_value.setup_isolinux_boot_path.assert_called_once_with()
         mock_BootLoaderConfig.assert_called_once_with(
             'isolinux', self.xml_state, root_dir='root_dir',
             boot_dir='temp_media_dir'
         )
+        bootloader_config._create_embedded_fat_efi_image.assert_not_called()
 
     @patch('kiwi.builder.install.IsoToolsBase.setup_media_loader_directory')
     @patch('kiwi.builder.install.Temporary')
@@ -266,6 +281,7 @@ class TestInstallImageBuilder:
     def test_create_install_iso_no_kernel_found(
         self, mock_command, mock_Temporary, mock_setup_media_loader_directory
     ):
+        self.firmware.bios_mode.return_value = False
         self.kernel.get_kernel.return_value = False
         with patch('builtins.open'):
             with raises(KiwiInstallBootImageError):
@@ -277,6 +293,7 @@ class TestInstallImageBuilder:
     def test_create_install_iso_no_hypervisor_found(
         self, mock_command, mock_Temporary, mock_setup_media_loader_directory
     ):
+        self.firmware.bios_mode.return_value = False
         self.kernel.get_xen_hypervisor.return_value = False
         with patch('builtins.open'):
             with raises(KiwiInstallBootImageError):
@@ -289,6 +306,7 @@ class TestInstallImageBuilder:
     def test_create_install_pxe_no_kernel_found(
         self, mock_compress, mock_md5, mock_command, mock_Temporary
     ):
+        self.firmware.bios_mode.return_value = False
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
         self.kernel.get_kernel.return_value = False
         with patch('builtins.open'):
@@ -304,6 +322,7 @@ class TestInstallImageBuilder:
         self, mock_symlink, mock_compress, mock_md5, mock_command,
         mock_Temporary
     ):
+        self.firmware.bios_mode.return_value = False
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
         self.kernel.get_xen_hypervisor.return_value = False
         with patch('builtins.open'):

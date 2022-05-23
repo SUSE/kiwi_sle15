@@ -18,9 +18,24 @@ class TestFileSystemFat32:
             return_value='some-mount-point'
         )
 
+    @patch('os.path.exists')
+    def setup_method(self, cls, mock_exists):
+        self.setup()
+
     @patch('kiwi.filesystem.fat32.Command.run')
     def test_create_on_device(self, mock_command):
-        self.fat32.create_on_device('label')
+        self.fat32.create_on_device('label', 100, uuid='uuid')
         call = mock_command.call_args_list[0]
-        assert mock_command.call_args_list[0] == \
-            call(['mkdosfs', '-F32', '-I', '-n', 'label', '/dev/foo'])
+        assert mock_command.call_args_list[0] == call(
+            [
+                'mkdosfs', '-F32', '-I', '-n', 'label',
+                '-i', 'uuid', '/dev/foo', '100'
+            ]
+        )
+
+    @patch('kiwi.filesystem.fat32.Command.run')
+    def test_set_uuid(self, mock_command):
+        self.fat32.set_uuid()
+        mock_command.assert_called_once_with(
+            ['mlabel', '-n', '-i', '/dev/foo', '::']
+        )

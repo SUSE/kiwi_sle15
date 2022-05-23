@@ -55,6 +55,7 @@ class ContainerBuilder:
         self.requested_container_type = xml_state.get_build_type_name()
         self.base_image = None
         self.base_image_md5 = None
+        self.ensure_empty_tmpdirs = True
 
         self.container_config['xz_options'] = \
             self.custom_args.get('xz_options')
@@ -83,6 +84,9 @@ class ContainerBuilder:
                         self.base_image_md5
                     )
                 )
+
+        if xml_state.build_type.get_ensure_empty_tmpdirs() is False:
+            self.ensure_empty_tmpdirs = False
 
         self.system_setup = SystemSetup(
             xml_state=xml_state, root_dir=self.root_dir
@@ -140,7 +144,7 @@ class ContainerBuilder:
             self.requested_container_type, self.root_dir, self.container_config
         )
         self.filename = container_image.create(
-            self.filename, self.base_image
+            self.filename, self.base_image, self.ensure_empty_tmpdirs
         )
         Result.verify_image_size(
             self.runtime_config.get_max_size_constraint(),
@@ -148,11 +152,15 @@ class ContainerBuilder:
         )
         if self.bundle_format:
             self.result.add_bundle_format(self.bundle_format)
+        compress = False
+        # appx handles compression in container_image.create
+        if self.requested_container_type != 'appx':
+            compress = self.runtime_config.get_container_compression()
         self.result.add(
             key='container',
             filename=self.filename,
             use_for_bundle=True,
-            compress=self.runtime_config.get_container_compression(),
+            compress=compress,
             shasum=True
         )
         self.result.add(

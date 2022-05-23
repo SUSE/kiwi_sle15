@@ -16,6 +16,7 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 from collections import namedtuple
+from typing import Optional
 import logging
 import os
 
@@ -344,6 +345,20 @@ class VolumeManagerBase(DeviceProvider):
             data.sync_data(
                 options=Defaults.get_sync_options(), exclude=exclude
             )
+
+    def create_verity_layer(
+        self, blocks: Optional[int] = None, filename: str = None
+    ):
+        """
+        veritysetup on LVM devices is not supported
+        """
+        raise NotImplementedError
+
+    def create_verification_metadata(self, device_node: str = '') -> None:
+        """
+        Write verification block on LVM devices is not supported
+        """
+        raise NotImplementedError
 
     def set_property_readonly_root(self):
         """

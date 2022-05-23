@@ -12,6 +12,9 @@ class TestIsoToolsXorrIso:
         Defaults.set_platform_name('x86_64')
         self.iso_tool = IsoToolsXorrIso('source-dir')
 
+    def setup_method(self, cls):
+        self.setup()
+
     @patch('kiwi.iso_tools.xorriso.Path.which')
     def test_get_tool_name(self, mock_which):
         mock_which.return_value = 'tool_found'
@@ -98,12 +101,10 @@ class TestIsoToolsXorrIso:
             '-boot_image', 'any', 'load_size=2048'
         ]
 
-    @patch('os.path.exists')
-    def test_add_efi_loader_parameters(self, mock_exists):
-        mock_exists.return_value = True
-        self.iso_tool.add_efi_loader_parameters()
+    def test_add_efi_loader_parameters(self):
+        self.iso_tool.add_efi_loader_parameters('target_dir/efi-loader')
         assert self.iso_tool.iso_loaders == [
-            '-append_partition', '2', '0xef', 'source-dir/boot/x86_64/efi',
+            '-append_partition', '2', '0xef', 'target_dir/efi-loader',
             '-boot_image', 'any', 'next',
             '-boot_image', 'any',
             'efi_path=--interval:appended_partition_2:all::',

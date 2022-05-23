@@ -1,8 +1,9 @@
 import os
+import io
 import logging
 from collections import namedtuple
 from mock import (
-    patch, Mock
+    patch, Mock, MagicMock
 )
 from pytest import (
     raises, fixture
@@ -16,7 +17,8 @@ from kiwi.xml_description import XMLDescription
 from kiwi.exceptions import (
     KiwiTypeNotFound,
     KiwiDistributionNameError,
-    KiwiProfileNotFound
+    KiwiProfileNotFound,
+    KiwiFileAccessError
 )
 
 
@@ -32,6 +34,12 @@ class TestXMLState:
         )
         self.state = XMLState(
             self.description.load()
+        )
+        apt_description = XMLDescription(
+            '../data/example_apt_config.xml'
+        )
+        self.apt_state = XMLState(
+            apt_description.load()
         )
         boot_description = XMLDescription(
             '../data/isoboot/example-distribution/config.xml'
@@ -52,6 +60,9 @@ class TestXMLState:
         self.bootloader.get_targettype.return_value = 'some-target'
         self.bootloader.get_console.return_value = 'some-console'
         self.bootloader.get_serial_line.return_value = 'some-serial'
+
+    def setup_method(self, cls):
+        self.setup()
 
     def test_get_description_section(self):
         description = self.state.get_description_section()
@@ -197,7 +208,10 @@ class TestXMLState:
         assert self.state.get_bootstrap_collection_type() == 'onlyRequired'
 
     def test_set_repository(self):
-        self.state.set_repository('repo', 'type', 'alias', 1, True, False)
+        self.state.set_repository(
+            'repo', 'type', 'alias', 1, True, False, ['key_a', 'key_b'],
+            'main universe', 'jammy', False
+        )
         assert self.state.xml_data.get_repository()[0].get_source().get_path() \
             == 'repo'
         assert self.state.xml_data.get_repository()[0].get_type() == 'type'
@@ -207,9 +221,22 @@ class TestXMLState:
             .get_imageinclude() is True
         assert self.state.xml_data.get_repository()[0] \
             .get_package_gpgcheck() is False
+        assert self.state.xml_data.get_repository()[0] \
+            .get_source().get_signing()[0].get_key() == 'key_a'
+        assert self.state.xml_data.get_repository()[0] \
+            .get_source().get_signing()[1].get_key() == 'key_b'
+        assert self.state.xml_data.get_repository()[0].get_components() \
+            == 'main universe'
+        assert self.state.xml_data.get_repository()[0].get_distribution() \
+            == 'jammy'
+        assert self.state.xml_data.get_repository()[0] \
+            .get_repository_gpgcheck() is False
 
     def test_add_repository(self):
-        self.state.add_repository('repo', 'type', 'alias', 1, True)
+        self.state.add_repository(
+            'repo', 'type', 'alias', 1, True, None, ['key_a', 'key_b'],
+            'main universe', 'jammy', False
+        )
         assert self.state.xml_data.get_repository()[3].get_source().get_path() \
             == 'repo'
         assert self.state.xml_data.get_repository()[3].get_type() == 'type'
@@ -217,6 +244,16 @@ class TestXMLState:
         assert self.state.xml_data.get_repository()[3].get_priority() == 1
         assert self.state.xml_data.get_repository()[3] \
             .get_imageinclude() is True
+        assert self.state.xml_data.get_repository()[3] \
+            .get_source().get_signing()[0].get_key() == 'key_a'
+        assert self.state.xml_data.get_repository()[3] \
+            .get_source().get_signing()[1].get_key() == 'key_b'
+        assert self.state.xml_data.get_repository()[3].get_components() \
+            == 'main universe'
+        assert self.state.xml_data.get_repository()[3].get_distribution() \
+            == 'jammy'
+        assert self.state.xml_data.get_repository()[3] \
+            .get_repository_gpgcheck() is False
 
     def test_add_repository_with_empty_values(self):
         self.state.add_repository('repo', 'type', '', '', True)
@@ -325,6 +362,7 @@ class TestXMLState:
         assert state.get_partitions() == {
             'var': ptable_entry_type(
                 mbsize=100,
+                clone=0,
                 partition_name='p.lxvar',
                 partition_type='t.linux',
                 mountpoint='/var',
@@ -842,7 +880,7 @@ class TestXMLState:
             'entry_subcommand': ['ls', '-l'],
             'container_name': 'container_name',
             'container_tag': 'container_tag',
-            'additional_tags': ['current', 'foobar'],
+            'additional_names': ['current', 'foobar'],
             'workingdir': '/root',
             'environment': {
                 'PATH': '/bin:/usr/bin:/home/user/bin',
@@ -1034,3 +1072,30 @@ class TestXMLState:
             'disable': ['mod_c'],
             'enable': ['mod_a:stream', 'mod_b']
         }
+
+    @patch('kiwi.xml_parse.type_.get_luks')
+    def test_get_luks_credentials(self, mock_get_luks):
+        mock_get_luks.return_value = 'data'
+        assert self.state.get_luks_credentials() == 'data'
+        mock_get_luks.return_value = 'file:///some/data-file'
+        with patch('builtins.open', create=True) as mock_open:
+            mock_open.return_value = MagicMock(spec=io.IOBase)
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.return_value = b'data'
+            assert self.state.get_luks_credentials() == b'data'
+        with patch('builtins.open', create=True) as mock_open:
+            mock_open.return_value = MagicMock(spec=io.IOBase)
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.side_effect = Exception
+            with raises(KiwiFileAccessError):
+                self.state.get_luks_credentials()
+
+    def test_get_luks_format_options(self):
+        assert self.state.get_luks_format_options() == [
+            '--type', 'luks2',
+            '--cipher', 'aes-gcm-random',
+            '--integrity', 'aead'
+        ]
+
+    def test_get_bootstrap_package_name(self):
+        assert self.apt_state.get_bootstrap_package_name() == 'bootstrap-me'

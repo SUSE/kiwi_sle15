@@ -10,6 +10,9 @@ class TestPackageManagerBase:
         repository.root_dir = 'root-dir'
         self.manager = PackageManagerBase(repository)
 
+    def setup_method(self, cls):
+        self.setup()
+
     def test_request_package(self):
         with raises(NotImplementedError):
             self.manager.request_package('name')
@@ -40,6 +43,9 @@ class TestPackageManagerBase:
 
     def test_post_process_install_requests_bootstrap(self):
         self.manager.post_process_install_requests_bootstrap()
+
+    def test_post_process_delete_requests(self):
+        self.manager.post_process_delete_requests()
 
     def test_process_install_requests(self):
         with raises(NotImplementedError):
@@ -87,6 +93,9 @@ class TestPackageManagerBase:
         assert self.manager.product_requests == []
         assert self.manager.collection_requests == []
         assert self.manager.exclude_requests == []
+
+    def test_get_error_details(self):
+        assert self.manager.get_error_details() == ''
 
     def test_clean_leftovers(self):
         self.manager.clean_leftovers()

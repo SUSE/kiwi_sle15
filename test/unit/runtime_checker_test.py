@@ -37,6 +37,9 @@ class TestRuntimeChecker:
         )
         self.runtime_checker = RuntimeChecker(self.xml_state)
 
+    def setup_method(self, cls):
+        self.setup()
+
     @patch('kiwi.runtime_checker.Uri')
     def test_check_image_include_repos_publicly_resolvable(self, mock_Uri):
         uri = Mock()
@@ -175,6 +178,20 @@ class TestRuntimeChecker:
     def test_check_volume_setup_has_no_root_definition(self):
         with raises(KiwiRuntimeError):
             self.runtime_checker.check_volume_setup_has_no_root_definition()
+
+    def test_check_partuuid_persistency_type_used_with_mbr(self):
+        xml_state = XMLState(
+            self.description.load(), ['vmxFlavour'], 'iso'
+        )
+        runtime_checker = RuntimeChecker(xml_state)
+        with raises(KiwiRuntimeError):
+            runtime_checker.check_partuuid_persistency_type_used_with_mbr()
+
+    @patch('kiwi.runtime_checker.CommandCapabilities.has_option_in_help')
+    def test_check_luksformat_options_valid(self, mock_has_option_in_help):
+        mock_has_option_in_help.return_value = False
+        with raises(KiwiRuntimeError):
+            self.runtime_checker.check_luksformat_options_valid()
 
     @patch('kiwi.runtime_checker.Path.which')
     def test_check_container_tool_chain_installed(self, mock_which):
@@ -440,3 +457,6 @@ class TestRuntimeChecker:
 
     def teardown(self):
         sys.argv = argv_kiwi_tests
+
+    def teardown_method(self, cls):
+        self.teardown()

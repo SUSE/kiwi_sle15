@@ -394,6 +394,15 @@ efiparttable="msdos|gpt":
   table type to use. If not set defaults to the GPT partition
   table type
 
+dosparttable_extended_layout="true|false":
+  For oem disk images, specifies to make use of logical partitions
+  inside of an extended one. If set to true and if the msdos table type
+  is active, this will cause the fourth partition to be an
+  extended partition and all following partitions will be
+  placed as logical partitions inside of that extended
+  partition. This setting is useful if more than 4 primary
+  partitions needs to be created in an msdos table
+
 btrfs_quota_groups="true|false":
   Boolean parameter to activate filesystem quotas if
   the filesystem is `btrfs`. By default quotas are inactive.
@@ -410,6 +419,15 @@ btrfs_root_is_readonly_snapshot="true|false":
   read-only mode, once all data has been placed to it. The option is only
   effective if `btrfs_root_is_snapshot` is also set to true. By default the
   root filesystem snapshot is writable.
+
+bootstrap_package="package_name":
+  For use with the `apt` packagemanager only. Specifies the name
+  of a bootstrap package which provides a bootstrap tarball
+  in :file:`/var/lib/bootstrap/PACKAGE_NAME.ARCH.tar.xz`.
+  The tarball will be unpacked and used as the bootstrap
+  rootfs to begin with. This allows for an alternative bootstrap
+  method preventing the use of `debootstrap`. For further details
+  see :ref:`debootstrap_alternative`.
 
 compressed="true|false":
   Specifies whether the image output file should be
@@ -476,11 +494,37 @@ kernelcmdline="string":
   Additional kernel parameters passed to the kernel by the
   bootloader.
 
-luks="passphrase":
-  Supplying a value will trigger the encryption of the partitions
-  using the LUKS extension and using the provided string as the
-  password. Note that the password must be entered when booting the
-  appliance!
+root_clone="number"
+  For oem disk images, this attribute allows to create `number`
+  clone(s) of the root partition, with `number` >= 1. A clone partition
+  is content wise an exact byte for byte copy of the origin root partition.
+  However, to avoid conflicts at boot time the UUID of any
+  cloned partition will be made unique. In the sequence of partitions,
+  the clone(s) will always be created first followed by the
+  partition considered the origin. The origin partition is the
+  one that will be referenced and used by the system.
+  Also see :ref:`clone_partitions`
+
+boot_clone="number"
+  Same as `root_clone` but applied to the boot partition if present
+
+luks="passphrase|file:///path/to/keyfile":
+  Supplying a value will trigger the encryption of the partition
+  serving the root filesystem using the LUKS extension. The supplied
+  value represents either the passphrase string or the location of
+  a key file if specified as `file://...` resource. When using
+  a key file it is in the responsibility of the user how
+  this key file is actually being used. By default any
+  distribution will just open an interactive dialog asking
+  for the credentials at boot time !
+
+luks_version="luks|luks1|luks2":
+  Specify which `LUKS` version should be used. If not set and by
+  default `luks` is used. The interpretation of the default depends
+  on the distribution and could result in either 'luks1' or 'luks2'.
+  The specification of the `LUKS` version allows using a different
+  set of `luksformat` options. To investigate the differences between
+  the two please consult the `cryptsetup` manual page.
 
 target_blocksize="number":
   Specifies the image blocksize in bytes which has to
@@ -545,7 +589,110 @@ devicepersistency="by-uuid|by-label":
 squashfscompression="uncompressed|gzip|lzo|lz4|xz|zstd":
   Specifies the compression type for mksquashfs
 
-overlayroot="true|false"
+standalone_integrity="true|false":
+  For the `oem` type only, specifies to create a standalone
+  `dm_integrity` layer on top of the root filesystem
+
+integrity_keyfile="filepath":
+  For the `oem` type only and in combination with the `standalone_integrity`
+  attribute, protects access to the integrity map using the given keyfile.
+
+integrity_metadata_key_description="string":
+  For the `oem` type only and in combination with
+  the `embed_integrity_metadata` attribute, specifies a custom
+  description of an integrity key as it is expected to be present
+  in the kernel keyring. The information is placed in the integrity
+  metadata block. If not specified kiwi creates a key argument
+  string instead which is based on the given `integrity_keyfile`
+  filename. The format of this key argument is:
+
+  .. code:: bash
+    
+     :BASENAME_OF_integrity_keyfile_WITHOUT_FILE_EXTENSION
+
+embed_integrity_metadata="true|false":
+  For the `oem` type only, and in combination with the
+  `standalone_integrity` attribute, specifies to write a binary
+  block at the end of the partition serving the root filesystem,
+  containing information to create the `dm_integrity` device map
+  in the following format:
+
+  .. code:: bash
+
+     |header|0xFF|dm_integrity_meta|0xFF|0x0|
+
+  header:
+    Is a string of the following information separated by spaces
+
+    * **version**: currently set to `1`
+    * **fstype**: name of `filesystem` attribute
+    * **access**: either `ro` or `rw` depending on the filesystem capabilities
+    * `integrity`: fixed identifier value
+
+  dm_integrity_meta:
+    Is a string of the following information separated by spaces
+
+    * **provided_data_sectors**: number of data sectors
+    * **sector_size**: sector size in byte, defaults to 512
+    * **parameter_count**:
+      number of parameters needed to construct the integrity device map.
+      After the `parameter_count` a list of space separated parameters
+      follows and the `parameter_count` specifies the quantity of these
+      parameters
+    * **parameters**:
+      The first element of the parameter list contains information about
+      the used hash algorithm which is not part of the superblock and
+      provided according to the parameters passed along when {kiwi}
+      calls `integritysetup`. As of now this defaults to:
+
+      - internal_hash:sha256
+
+      All subsequent parameters are taken from the `flags` field of the
+      dm-integrity superblock. see the dm-integrity documentation on the
+      web for possible flag values.
+
+verity_blocks="number|all":
+  For the `oem` type only, specifies to create a dm verity hash
+  from the number of given blocks (or all) placed at the end of the
+  root filesystem For later verification of the device,
+  the credentials information produced by `veritysetup` from the
+  cryptsetup tools are needed. This data as of now is only printed
+  as debugging information to the build log file. A concept to
+  persistently store the verification metadata as part of the
+  partition(s) will be a next step.
+
+embed_verity_metadata="true|false":
+  For the `oem` type only, and in combination with the `verity_blocks`
+  attribute, specifies to write a binary block at the end of the
+  partition serving the root filesystem, containing information
+  for `dm_verity` verification in the following format:
+
+  .. code:: bash
+
+     |header|0xFF|dm_verity_credentials|0xFF|0x0|
+
+  header:
+    Is a string of the following information separated by spaces
+
+    * **version**: currently set to `1`
+    * **fstype**: name of `filesystem` attribute
+    * **access**: either `ro` or `rw` depending on the filesystem capabilities
+    * `verity`: fixed identifier value
+
+  dm_verity_credentials:
+    Is a string of the following information separated by spaces
+
+    * **hash_type**: hash type name as returned by `veritysetup`
+    * **data_blksize**: data blocksize as returned by `veritysetup`
+    * **hash_blksize**: hash blocksize as returned by `veritysetup`
+    * **data_blocks**: number of data blocks as returned by `veritysetup`
+    * **hash_start_block**:
+      hash start block as required by the kernel to construct the device map
+    * **algorithm**: hash algorithm as returned by `veritysetup`
+    * **root_hash**: root hash as returned by `veritysetup`
+    * **salt**: salt hash as returned by `veritysetup`
+
+overlayroot="true|false":
   For the `oem` type only, specifies to use an `overlayfs` based root
   filesystem consisting out of a squashfs compressed read-only root
   filesystem combined with a write-partition or tmpfs.
@@ -572,13 +719,36 @@ overlayroot="true|false"
   will not have any effect because the write partition will be
   resized on first boot to the available disk space.
 
-bootfilesystem="ext2|ext3|ext4|fat32|fat16":
+overlayroot_write_partition="true|false":
+  For the `oem` type only, allows to specify if the extra read-write
+  partition in an `overlayroot` setup should be created or not.
+  By default the partition is created and the kiwi-overlay dracut
+  module also expect it to be present. However, the overlayroot
+  feature can also be used without dracut (`initrd_system="none"`)
+  and under certain circumstances it is handy to configure if the
+  partition table should contain the read-write partition or not.
+
+overlayroot_readonly_partsize="mbsize":
+  Specifies the size in MB of the partition which stores the
+  squashfs compressed read-only root filesystem in an
+  overlayroot setup. If not specified kiwi calculates
+  the needed size by a preliminary creation of the
+  squashfs compressed file. However this is only accurate
+  if no changes to the root filesystem data happens
+  after this calculation, which cannot be guaranteed as
+  there is at least one optional script hook which is
+  allowed and applied after the calculation. In addition the
+  pre-calculation requires some time in the build process.
+  If the value can be provided beforehand this also speeds
+  up the build process significantly
+
+bootfilesystem="btrfs|ext2|ext3|ext4|xfs|fat32|fat16":
   If an extra boot partition is required this attribute
   specify which filesystem should be used for it. The
   type of the selected bootloader might overwrite this
   setting if there is no alternative possible though.
 
-flags="overlay|dmsquash"
+flags="overlay|dmsquash":
   For the iso image type specifies the live iso technology and
   dracut module to use. If set to overlay the kiwi-live dracut
   module will be used to support a live iso system based on
@@ -703,21 +873,141 @@ derived_from="string":
   The image created by {kiwi} will use the specified container as the
   base root to work on.
 
+ensure_empty_tmpdirs="true|false":
+  For OCI container images, specifies whether to ensure /run and /tmp
+  directories are empty in the container image created by Kiwi.
+  Default is true.
+
 publisher="string":
   For ISO images, specifies the publisher name of the ISO.
 
 The following sections shows the supported child elements of the `type`
 element including references to their usage in a detailed type setup:
 
+.. _preferences-type-luksformat:
+
+<preferences><type><luksformat>
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+The `luksformat` element is used to specify additional luks options
+passed on to the `cryptsetup luksFormat` call. The element requires
+the attribute `luks` to be set in the `<type>` section referring to
+`luksformat`. Several custom settings related to the LUKS and LUKS2
+format features can be setup. For example the setup of
+the `dm_integrity` feature:
+
+.. code:: xml
+
+   <luksformat>
+     <option name="--cipher" value="aes-gcm-random"/>
+     <option name="--integrity" value="aead"/>
+   </luksformat>
+
+.. _preferences-type-bootloader:
+
 <preferences><type><bootloader>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-Used to describe the bootloader setup in the oem disk image type.
-For details see: :ref:`disk-bootloader`
+The `bootloader` element is used to select the bootloader. At the moment,
+`grub2`, `isolinux`, `zipl` and `grub2_s390x_emu` (a combination of zipl
+and a userspace GRUB2) are supported. The special `custom` entry allows
+to skip the bootloader configuration and installation and leaves this up
+to the user, which can be done by using the `editbootinstall` and
+`editbootconfig` custom scripts.
+
+In addition to the mandatory name attribute, the following optional
+attributes are supported:
+
+console="console|gfxterm|serial":
+  Specifies the bootloader console. The attribute is available for the
+  grub and isolinux bootloader types. By default, a graphics console
+  setup is used.
+
+grub_template="filename":
+  Specifies a custom grub bootloader template file which will be used
+  instead of the one provided with Kiwi. A static bootloader template to
+  create the grub config file is only used in Kiwi if the native method
+  via the grub mkconfig toolchain does not work properly. As of today,
+  this is only the case for live and install ISO images. Thus, this
+  setting only affects the oem and iso image types.
+
+  The template file should contain a `Template string
+  <https://docs.python.org/3.4/library/string.html#template-strings>`_
+  and can use the following variables:
+
+  +-----------------------+----------------------------------------------+
+  | Variable              | Description                                  |
+  +=======================+==============================================+
+  | search_params         | parameters needed for grub's `search`        |
+  |                       | command to locate the root volume            |
+  +-----------------------+----------------------------------------------+
+  | default_boot          | number of the default menu item to boot      |
+  +-----------------------+----------------------------------------------+
+  | kernel_file           | the name of the kernel file                  |
+  +-----------------------+----------------------------------------------+
+  | initrd_file           | the name of the initial ramdisk file         |
+  +-----------------------+----------------------------------------------+
+  | boot_options          | kernel command line options for booting      |
+  |                       | normally                                     |
+  +-----------------------+----------------------------------------------+
+  | failsafe_boot_options | kernel command line options for booting in   |
+  |                       | failsafe mode                                |
+  +-----------------------+----------------------------------------------+
+  | gfxmode               | the resolution to use for the bootloader;    |
+  |                       | passed to grub's `gfxmode` command           |
+  +-----------------------+----------------------------------------------+
+  | theme                 | the name of a graphical theme to use         |
+  +-----------------------+----------------------------------------------+
+  | boot_timeout          | the boot menu timeout, set by the `timeout`  |
+  |                       | attribute                                    |
+  +-----------------------+----------------------------------------------+
+  | boot_timeout_style    | the boot timeout style, set by the           |
+  |                       | `timeout_style` attribute                    |
+  +-----------------------+----------------------------------------------+
+  | serial_line_setup     | directives used to initialize the serial     |
+  |                       | port, set by the `serial_line` attribute     |
+  +-----------------------+----------------------------------------------+
+  | title                 | a title for the image: this will be the      |
+  |                       | `<image>` tag's `displayname` attribute or   |
+  |                       | its `name` attribute if `displayname` is not |
+  |                       | set; see: :ref:`sec.image`                   |
+  +-----------------------+----------------------------------------------+
+  | bootpath              | the bootloader lookup path                   |
+  +-----------------------+----------------------------------------------+
+  | boot_directory_name   | the name of the grub directory               |
+  +-----------------------+----------------------------------------------+
+  | efi_image_name        | architecture-specific EFI boot binary name   |
+  +-----------------------+----------------------------------------------+
+  | terminal_setup        | the bootloader console mode, set by the      |
+  |                       | `console` attribute                          |
+  +-----------------------+----------------------------------------------+
+
+serial_line="string":
+  Specifies the bootloader serial line setup. The setup is effective if
+  the bootloader console is set to use the serial line. The attribute is
+  available for the grub bootloader only.
+
+timeout="number":
+  Specifies the boot timeout in seconds prior to launching the default
+  boot option. By default, the timeout is set to 10 seconds. It makes
+  sense to set this value to `0` for images intended to be started
+  non-interactively (e.g. virtual machines).
+
+timeout_style="countdown|hidden":
+  Specifies the boot timeout style to control the way in which the timeout
+  interacts with displaying the menu. If set, the display of the
+  bootloader menu is delayed after the timeout expired. In countdown mode,
+  an indication of the remaining time is displayed. The attribute is
+  available for the grub loader only.
+
+targettype="CDL|LDL|FBA|SCSI":
+  Specifies the device type of the disk zipl should boot.
+  On zFCP devices, use `SCSI`; on DASD devices, use `CDL` or `LDL`; on
+  emulated DASD devices, use `FBA`. The attribute is available for the
+  zipl loader only.
 
 <preferences><type><containerconfig>
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 Used to describe the container configuration metadata in docker or wsl
-image types. For details see: :ref:`building_docker_build` and:
+image types. For details see: :ref:`building_container_build` and:
 :ref:`building_wsl_build`
 
 <preferences><type><vagrantconfig>

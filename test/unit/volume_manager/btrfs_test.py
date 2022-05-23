@@ -61,6 +61,10 @@ class TestVolumeManagerBtrfs:
             self.device_map, 'root_dir', self.volumes
         )
 
+    @patch('os.path.exists')
+    def setup_method(self, cls, mock_path):
+        self.setup()
+
     def test_post_init(self):
         self.volume_manager.post_init({'some-arg': 'some-val'})
         assert self.volume_manager.custom_args['some-arg'] == 'some-val'
@@ -96,6 +100,7 @@ class TestVolumeManagerBtrfs:
             call(['btrfs', 'subvolume', 'set-default', '256', 'tmpdir'])
         ]
 
+    @patch('os.chmod')
     @patch('os.path.exists')
     @patch('kiwi.volume_manager.btrfs.Command.run')
     @patch('kiwi.volume_manager.btrfs.FileSystem.new')
@@ -104,7 +109,7 @@ class TestVolumeManagerBtrfs:
     @patch('kiwi.volume_manager.base.Temporary')
     def test_setup_with_snapshot(
         self, mock_Temporary, mock_mount, mock_mapped_device, mock_fs,
-        mock_command, mock_os_exists
+        mock_command, mock_os_exists, mock_os_chmod
     ):
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
         toplevel_mount = Mock()
@@ -137,6 +142,7 @@ class TestVolumeManagerBtrfs:
             call(['btrfs', 'subvolume', 'list', 'tmpdir']),
             call(['btrfs', 'subvolume', 'set-default', '258', 'tmpdir'])
         ]
+        mock_os_chmod.assert_called_once_with('tmpdir/@/.snapshots', 0o700)
 
     @patch('os.path.exists')
     @patch('kiwi.volume_manager.btrfs.Command.run')
@@ -294,6 +300,7 @@ class TestVolumeManagerBtrfs:
             options=['subvol=@/var/tmp']
         )
 
+    @patch('os.chmod')
     @patch('os.path.exists')
     @patch('kiwi.volume_manager.btrfs.Command.run')
     @patch('kiwi.volume_manager.btrfs.FileSystem.new')
@@ -302,7 +309,7 @@ class TestVolumeManagerBtrfs:
     @patch('kiwi.volume_manager.base.Temporary')
     def test_remount_volumes(
         self, mock_Temporary, mock_mount, mock_mapped_device, mock_fs,
-        mock_command, mock_os_exists
+        mock_command, mock_os_exists, mock_os_chmod
     ):
         mock_Temporary.return_value.new_dir.return_value.name = \
             '/var/tmp/kiwi_volumes.xx'
@@ -320,7 +327,9 @@ class TestVolumeManagerBtrfs:
         self.volume_manager.custom_args['root_is_snapshot'] = True
 
         self.volume_manager.setup()
-
+        mock_os_chmod.assert_called_once_with(
+            '/var/tmp/kiwi_volumes.xx/@/.snapshots', 0o700
+        )
         mock_os_exists.return_value = True
         volume_mount = Mock()
         volume_mount.mountpoint = \
@@ -432,7 +441,10 @@ class TestVolumeManagerBtrfs:
         )
         sync.sync_data.assert_called_once_with(
             exclude=['exclude_me'],
-            options=['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
+            options=[
+                '--archive', '--hard-links', '--xattrs',
+                '--acls', '--one-file-system', '--inplace'
+            ]
         )
         assert m_open.call_args_list == [
             call('tmpdir/@/.snapshots/1/info.xml', 'w'),
@@ -491,7 +503,10 @@ class TestVolumeManagerBtrfs:
         )
         sync.sync_data.assert_called_once_with(
             exclude=['exclude_me'],
-            options=['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
+            options=[
+                '--archive', '--hard-links', '--xattrs', '--acls',
+                '--one-file-system', '--inplace'
+            ]
         )
         assert m_open.call_args_list == [
             call('tmpdir/@/.snapshots/1/info.xml', 'w'),
@@ -525,7 +540,10 @@ class TestVolumeManagerBtrfs:
         )
         sync.sync_data.assert_called_once_with(
             exclude=['exclude_me'],
-            options=['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
+            options=[
+                '--archive', '--hard-links', '--xattrs', '--acls',
+                '--one-file-system', '--inplace'
+            ]
         )
 
     @patch('kiwi.volume_manager.btrfs.Command.run')

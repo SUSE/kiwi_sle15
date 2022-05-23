@@ -110,8 +110,14 @@ class TestLiveImageBuilder:
         self.result = Mock()
         self.live_image.result = self.result
 
+    def setup_method(self, cls):
+        self.setup()
+
     def teardown(self):
         sys.argv = argv_kiwi_tests
+
+    def teardown_method(self, cls):
+        self.teardown()
 
     def test_init_for_ix86_platform(self):
         Defaults.set_platform_name('i686')
@@ -132,6 +138,7 @@ class TestLiveImageBuilder:
     @patch('kiwi.builder.live.Temporary')
     @patch('kiwi.builder.live.shutil')
     @patch('kiwi.builder.live.Iso.set_media_tag')
+    @patch('kiwi.builder.live.Iso')
     @patch('kiwi.builder.live.FileSystemIsoFs')
     @patch('kiwi.builder.live.FileSystem.new')
     @patch('kiwi.builder.live.SystemSize')
@@ -139,8 +146,8 @@ class TestLiveImageBuilder:
     @patch('os.path.exists')
     def test_create_overlay_structure(
         self, mock_exists, mock_grub_dir, mock_size, mock_filesystem,
-        mock_isofs, mock_tag, mock_shutil, mock_Temporary,
-        mock_setup_media_loader_directory, mock_DeviceProvider
+        mock_isofs, mock_Iso, mock_tag, mock_shutil,
+        mock_Temporary, mock_setup_media_loader_directory, mock_DeviceProvider
     ):
         mock_exists.return_value = True
         mock_grub_dir.return_value = 'grub2'
@@ -178,6 +185,7 @@ class TestLiveImageBuilder:
         self.setup.export_package_verification.return_value = '.verified'
         self.setup.export_package_list.return_value = '.packages'
 
+        self.firmware.bios_mode.return_value = False
         self.live_image.create()
 
         self.setup.import_cdroot_files.assert_called_once_with('temp_media_dir')
@@ -272,6 +280,7 @@ class TestLiveImageBuilder:
                     'publisher': 'Custom publisher',
                     'volume_id': 'volid',
                     'efi_mode': 'uefi',
+                    'efi_loader': 'kiwi-tmpfile',
                     'udf': True
                 }
             },
@@ -319,9 +328,11 @@ class TestLiveImageBuilder:
         )
 
         self.firmware.efi_mode.return_value = None
+        self.firmware.bios_mode.return_value = True
         tmpdir_name = [temp_squashfs, temp_media_dir]
         kiwi.builder.live.BootLoaderConfig.new.reset_mock()
         self.live_image.create()
+        mock_Iso.return_value.setup_isolinux_boot_path.assert_called_once_with()
         kiwi.builder.live.BootLoaderConfig.new.assert_called_once_with(
             'isolinux', self.xml_state, root_dir='root_dir',
             boot_dir='temp_media_dir'
@@ -334,6 +345,7 @@ class TestLiveImageBuilder:
         self, mock_shutil, mock_Temporary,
         mock_setup_media_loader_directory
     ):
+        self.firmware.bios_mode.return_value = False
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
         self.kernel.get_kernel.return_value = False
         with raises(KiwiLiveBootImageError):
@@ -346,6 +358,7 @@ class TestLiveImageBuilder:
         self, mock_shutil, mock_Temporary,
         mock_setup_media_loader_directory
     ):
+        self.firmware.bios_mode.return_value = False
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
         self.kernel.get_xen_hypervisor.return_value = False
         with raises(KiwiLiveBootImageError):
@@ -359,6 +372,7 @@ class TestLiveImageBuilder:
         self, mock_exists, mock_shutil, mock_Temporary,
         mock_setup_media_loader_directory
     ):
+        self.firmware.bios_mode.return_value = False
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
         mock_exists.return_value = False
         with raises(KiwiLiveBootImageError):

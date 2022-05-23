@@ -25,6 +25,37 @@ export LC_ALL=C
 #======================================
 # Common Functions
 #--------------------------------------
+function mountCgroups {
+    mount -t tmpfs cgroup_root /sys/fs/cgroup
+    for group in devices blkio cpuset pids; do
+        mkdir -p /sys/fs/cgroup/"${group}"
+        mount -t cgroup "${group}" -o "${group}" /sys/fs/cgroup/"${group}"
+    done
+}
+
+function umountCgroups {
+    for group in devices blkio cpuset pids; do
+        umount /sys/fs/cgroup/"${group}"
+    done
+    umount /sys/fs/cgroup
+}
+
+function setupContainerRuntime {
+    cat >/etc/containers/containers.conf <<- EOF
+	[engine]
+	no_pivot_root = true
+	events_logger = "none"
+	cgroup_manager = "cgroupfs"
+	EOF
+
+    cat >/etc/containers/storage.conf <<- EOF
+	[storage]
+	driver = "vfs"
+	graphroot = "/var/lib/containers/storage"
+	runroot = "/var/run/containers/storage"
+	EOF
+}
+
 function baseSystemdServiceInstalled {
     local service=$1
     local sd_dirs="
@@ -555,7 +586,7 @@ function baseVagrantSetup {
     chown -R vagrant:vagrant /home/vagrant/
 
     # apply recommended ssh settings for vagrant boxes
-    SSHD_CONFIG=/etc/ssh/sshd_config.d/99-vagrant.conf
+    SSHD_CONFIG=/etc/ssh/sshd_config.d/00-vagrant.conf
     if [[ ! -d "$(dirname ${SSHD_CONFIG})" ]]; then
         SSHD_CONFIG=/etc/ssh/sshd_config
         # prepend the settings, so that they take precedence

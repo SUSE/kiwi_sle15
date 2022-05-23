@@ -75,8 +75,14 @@ class TestSystemBuildTask:
 
         self.task = SystemBuildTask()
 
+    def setup_method(self, cls):
+        self.setup()
+
     def teardown(self):
         sys.argv = argv_kiwi_tests
+
+    def teardown_method(self, cls):
+        self.teardown()
 
     def _init_command_args(self):
         self.task.command_args = {}
@@ -279,7 +285,8 @@ class TestSystemBuildTask:
         self.task.command_args['--set-repo'] = 'http://example.com,yast2,alias'
         self.task.process()
         mock_set_repo.assert_called_once_with(
-            'http://example.com', 'yast2', 'alias', None, None, None
+            'http://example.com', 'yast2', 'alias',
+            None, None, None, [], None, None, None
         )
 
     @patch('kiwi.xml_state.XMLState.add_repository')
@@ -293,7 +300,8 @@ class TestSystemBuildTask:
         ]
         self.task.process()
         mock_add_repo.assert_called_once_with(
-            'http://example.com', 'yast2', 'alias', '99', False, True
+            'http://example.com', 'yast2', 'alias', '99',
+            False, True, [], None, None, None
         )
 
     def test_process_system_build_help(self):

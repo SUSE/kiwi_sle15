@@ -15,6 +15,9 @@ class TestDataSync:
     def setup(self):
         self.sync = DataSync('source_dir', 'target_dir')
 
+    def setup_method(self, cls):
+        self.setup()
+
     @patch('kiwi.utils.sync.Command.run')
     @patch('kiwi.utils.sync.DataSync.target_supports_extended_attributes')
     @patch('os.chmod')
@@ -26,12 +29,15 @@ class TestDataSync:
         mock_xattr_support.return_value = False
         with self._caplog.at_level(logging.WARNING):
             self.sync.sync_data(
-                options=['-a', '-H', '-X', '-A', '--one-file-system'],
+                options=[
+                    '--archive', '--hard-links', '--xattrs',
+                    '--acls', '--one-file-system'
+                ],
                 exclude=['exclude_me']
             )
             mock_command.assert_called_once_with(
                 [
-                    'rsync', '-a', '-H', '--one-file-system',
+                    'rsync', '--archive', '--hard-links', '--one-file-system',
                     '--exclude', '/exclude_me', 'source_dir', 'target_dir'
                 ]
             )

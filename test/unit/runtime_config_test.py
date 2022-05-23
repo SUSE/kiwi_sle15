@@ -17,6 +17,9 @@ class TestRuntimeConfig:
     def setup(self):
         Defaults.set_custom_runtime_config_file(None)
 
+    def setup_method(self, cls):
+        self.setup()
+
     @fixture(autouse=True)
     def inject_fixtures(self, caplog):
         self._caplog = caplog
@@ -48,7 +51,9 @@ class TestRuntimeConfig:
             RuntimeConfig(reread=True)
             m_open.assert_called_once_with('/etc/kiwi.yml', 'r')
 
-    def test_config_sections_from_home_base_config(self):
+    @patch('kiwi.runtime_checker.Defaults.is_buildservice_worker')
+    def test_config_sections_from_home_base_config(self, mock_is_buildservice_worker):
+        mock_is_buildservice_worker.return_value = False
         with patch.dict('os.environ', {'HOME': '../data/kiwi_config/ok'}):
             runtime_config = RuntimeConfig(reread=True)
 
@@ -88,6 +93,8 @@ class TestRuntimeConfig:
         assert runtime_config.get_iso_tool_category() == 'xorriso'
         assert runtime_config.get_oci_archive_tool() == 'umoci'
         assert runtime_config.get_package_changes() is False
+        assert runtime_config.\
+            get_credentials_verification_metadata_signing_key_file() == ''
 
     def test_config_sections_invalid(self):
         with patch.dict('os.environ', {'HOME': '../data/kiwi_config/invalid'}):

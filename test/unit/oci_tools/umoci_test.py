@@ -19,6 +19,12 @@ class TestOCIUmoci:
         )
         self.oci = OCIUmoci()
 
+    @patch('kiwi.oci_tools.umoci.CommandCapabilities.has_option_in_help')
+    @patch('kiwi.oci_tools.base.datetime')
+    @patch('kiwi.oci_tools.umoci.Temporary')
+    def setup_method(self, cls, mock_Temporary, mock_datetime, mock_cmd_caps):
+        self.setup()
+
     @patch('kiwi.oci_tools.umoci.Command.run')
     def test_init_container(self, mock_Command_run):
         self.oci.init_container()
@@ -51,8 +57,12 @@ class TestOCIUmoci:
         sync.sync_data.assert_called_once_with(
             exclude=['/dev', '/proc'],
             options=[
-                '-a', '-H', '-X', '-A', '--one-file-system',
-                '--inplace', '--delete'
+                '--archive', '--hard-links', '--xattrs', '--acls',
+                '--one-file-system', '--inplace',
+                '--filter', '-x! user.*',
+                '--filter', '-x! security.ima*',
+                '--filter', '-x! security.capability*',
+                '--delete'
             ]
         )
 
@@ -67,7 +77,10 @@ class TestOCIUmoci:
         )
         sync.sync_data.assert_called_once_with(
             exclude=['/dev', '/proc'],
-            options=['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
+            options=[
+                '--archive', '--hard-links', '--xattrs', '--acls',
+                '--one-file-system', '--inplace'
+            ]
         )
 
     @patch('kiwi.oci_tools.umoci.Temporary')

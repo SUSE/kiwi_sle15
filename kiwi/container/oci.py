@@ -41,7 +41,7 @@ class ContainerImageOCI:
         {
             'container_name': 'name',
             'container_tag': '1.0',
-            'additional_tags': ['current', 'foobar'],
+            'additional_names': ['current', 'foobar'],
             'entry_command': ['/bin/bash', '-x'],
             'entry_subcommand': ['ls', '-l'],
             'maintainer': 'tux',
@@ -97,7 +97,7 @@ class ContainerImageOCI:
             self.oci_config['history']['created_by'] = \
                 Defaults.get_default_container_created_by()
 
-    def create(self, filename, base_image):
+    def create(self, filename, base_image, ensure_empty_tmpdirs=True):
         """
         Create compressed oci system container tar archive
 
@@ -105,7 +105,7 @@ class ContainerImageOCI:
         :param string base_image: archive used as a base image
         """
         exclude_list = Defaults.\
-            get_exclude_list_for_root_data_sync() + Defaults.\
+            get_exclude_list_for_root_data_sync(ensure_empty_tmpdirs) + Defaults.\
             get_exclude_list_from_custom_exclude_files(self.root_dir)
         exclude_list.append('dev/*')
         exclude_list.append('sys/*')
@@ -136,21 +136,28 @@ class ContainerImageOCI:
         oci.set_config(self.oci_config)
         oci.post_process()
 
+        image_ref = '{0}:{1}'.format(
+            self.oci_config['container_name'],
+            self.oci_config['container_tag']
+        )
+        additional_refs = []
         if self.archive_transport == 'docker-archive':
-            image_ref = '{0}:{1}'.format(
-                self.oci_config['container_name'],
-                self.oci_config['container_tag']
-            )
-            additional_refs = []
-            if 'additional_tags' in self.oci_config:
+            if 'additional_names' in self.oci_config:
                 additional_refs = []
-                for tag in self.oci_config['additional_tags']:
-                    additional_refs.append('{0}:{1}'.format(
-                        self.oci_config['container_name'], tag
-                    ))
-        else:
-            image_ref = self.oci_config['container_tag']
-            additional_refs = []
+                for name in self.oci_config['additional_names']:
+                    name_parts = name.partition(':')
+                    if not name_parts[0]:
+                        additional_refs.append('{0}:{1}'.format(
+                            self.oci_config['container_name'], name_parts[2]
+                        ))
+                    elif not name_parts[2]:
+                        additional_refs.append('{0}:{1}'.format(
+                            name_parts[0], self.oci_config['container_tag']
+                        ))
+                    else:
+                        additional_refs.append('{0}:{1}'.format(
+                            name_parts[0], name_parts[2]
+                        ))
 
         oci.export_container_image(
             filename, self.archive_transport, image_ref, additional_refs

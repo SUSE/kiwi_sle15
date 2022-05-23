@@ -167,6 +167,8 @@ class LiveImageBuilder:
             self.boot_image.boot_root_directory, self.media_dir.name,
             bootloader_config.get_boot_theme()
         )
+        if self.firmware.bios_mode():
+            Iso(self.media_dir.name).setup_isolinux_boot_path()
         bootloader_config.write_meta_data()
         bootloader_config.setup_live_image_config(
             mbrid=self.mbrid
@@ -178,6 +180,13 @@ class LiveImageBuilder:
             filesystem='iso:{0}'.format(self.media_dir.name), boot_part_id=1,
             working_directory=self.root_dir
         )
+
+        if self.firmware.efi_mode():
+            efi_loader = Temporary(
+                prefix='efi-loader.', path=self.target_dir
+            ).new_file()
+            bootloader_config._create_embedded_fat_efi_image(efi_loader.name)
+            custom_iso_args['meta_data']['efi_loader'] = efi_loader.name
 
         # prepare dracut initrd call
         self.boot_image.prepare()

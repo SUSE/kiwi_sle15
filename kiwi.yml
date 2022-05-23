@@ -10,6 +10,11 @@
 # to your needs
 #
 
+# Setup access to security keys
+#credentials:
+#  # Specify private key(s) used for signing operations
+#  - verification_metadata_signing_key_file: /path/to/private.pem
+
 # Setup access options for the Open BuildService
 #obs:
 #  # Specify the URL of the Open BuildService download server
@@ -23,7 +28,13 @@
 # Setup behaviour of the kiwi result bundle command
 #bundle:
 #  # Specify if the bundle tarball should contain compressed results.
-#  # Note: already compressed result information will not be touched
+#  # Note: Already compressed result information will not be touched.
+#  # Build results that generate an encrypted filesystem, i.e.
+#  # luks setup, will not be compressed. The intention for result compression
+#  # is to produce a smaller representation of the original. Encrypted data
+#  # generally grows when an attempt is made to compress the data. This is
+#  # due to the nature of compression algorithms. Therefore this setting is
+#  # ignored when encryption is enabled.
 #  - compress: false
 #  # Specify if the image build result and bundle should contain
 #  # a .changes file. The .changes file contains the package changelog
@@ -135,3 +146,9 @@
 
 #      # check for unresolved include statements in the XML description
 #      - check_include_references_unresolvable
+
+#      # validate options passed to cryptsetup via luksformat element
+#      - check_luksformat_options_valid
+
+#      # check devicepersistency compatible with partition table type
+#      - check_partuuid_persistency_type_used_with_mbr

@@ -250,8 +250,9 @@ class SystemPrepare:
             self.xml_state.get_collection_modules()
         )
         process = CommandProcess(
-            command=manager.process_install_requests_bootstrap(self.root_bind),
-            log_topic='bootstrap'
+            command=manager.process_install_requests_bootstrap(
+                self.root_bind, self.xml_state.get_bootstrap_package_name()
+            ), log_topic='bootstrap'
         )
         try:
             process.poll_show_progress(
@@ -265,7 +266,7 @@ class SystemPrepare:
                 raise KiwiBootStrapPhaseFailed(
                     self.issue_message.format(
                         headline='Bootstrap package installation failed',
-                        reason=issue
+                        reason=f'{issue}: {manager.get_error_details()}'
                     )
                 )
         manager.post_process_install_requests_bootstrap(self.root_bind)
@@ -469,6 +470,7 @@ class SystemPrepare:
                         manager.match_package_deleted
                     )
                 )
+                manager.post_process_delete_requests(self.root_bind)
             except Exception as issue:
                 raise KiwiSystemDeletePackagesFailed(
                     self.issue_message.format(

@@ -18,9 +18,24 @@ class TestFileSystemBtrfs:
             return_value='some-mount-point'
         )
 
+    @patch('os.path.exists')
+    def setup_method(self, cls, mock_exists):
+        self.setup()
+
     @patch('kiwi.filesystem.btrfs.Command.run')
     def test_create_on_device(self, mock_command):
-        self.btrfs.create_on_device('label')
+        self.btrfs.create_on_device('label', 100, uuid='uuid')
         call = mock_command.call_args_list[0]
-        assert mock_command.call_args_list[0] == \
-            call(['mkfs.btrfs', '-L', 'label', '/dev/foo'])
+        assert mock_command.call_args_list[0] == call(
+            [
+                'mkfs.btrfs', '-L', 'label', '-U', 'uuid',
+                '--byte-count', '102400', '/dev/foo'
+            ]
+        )
+
+    @patch('kiwi.filesystem.btrfs.Command.run')
+    def test_set_uuid(self, mock_command):
+        self.btrfs.set_uuid()
+        mock_command.assert_called_once_with(
+            ['btrfstune', '-u', '/dev/foo']
+        )

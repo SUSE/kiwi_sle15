@@ -90,20 +90,19 @@ class OCIBuildah(OCIBase):
         )
 
     def export_container_image(
-        self, filename, transport, image_ref, additional_refs=None
+        self, filename, transport, image_ref, additional_names=None
     ):
         """
         Exports the working container to a container image archive
 
         :param str filename: The resulting filename
         :param str transport: The archive format
-        :param str image_name: Name of the exported image
-        :param str image_tag: Tag of the exported image
-        :param list additional_tags: List of additional references
+        :param str image_ref: Reference of the exported image
+        :param list additional_names: List of additional references
         """
         extra_tags_opt = []
-        if additional_refs:
-            for ref in additional_refs:
+        if additional_names:
+            for ref in additional_names:
                 extra_tags_opt.extend(['--additional-tag', ref])
 
         # make sure the target tar file does not exist
@@ -161,7 +160,12 @@ class OCIBuildah(OCIBase):
         self._sync_data(
             ''.join([root_dir, os.sep]), self.oci_root_dir,
             exclude_list=exclude_list,
-            options=Defaults.get_sync_options() + ['--delete']
+            options=Defaults.get_sync_options() + [
+                '--filter', '-x! user.*',
+                '--filter', '-x! security.ima*',
+                '--filter', '-x! security.capability*',
+                '--delete'
+            ]
         )
 
     def import_rootfs(self, root_dir, exclude_list=None):

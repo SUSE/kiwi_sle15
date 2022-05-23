@@ -25,10 +25,18 @@ class TestOCIBuildah:
         )
         self.oci = OCIBuildah()
 
+    @patch('kiwi.oci_tools.base.datetime')
+    def setup_method(self, cls, mock_datetime):
+        self.setup()
+
     @patch('kiwi.oci_tools.umoci.Command.run')
     def teardown(self, mock_cmd_run):
-        del self.oci
+        self.oci.__del__()
         mock_cmd_run.reset_mock()
+
+    @patch('kiwi.oci_tools.umoci.Command.run')
+    def teardown_method(self, cls, mock_cmd_run):
+        self.teardown()
 
     @patch('kiwi.oci_tools.buildah.random.choice')
     @patch('kiwi.oci_tools.buildah.Command.run')
@@ -67,8 +75,12 @@ class TestOCIBuildah:
         sync.sync_data.assert_called_once_with(
             exclude=['/dev', '/proc'],
             options=[
-                '-a', '-H', '-X', '-A', '--one-file-system',
-                '--inplace', '--delete'
+                '--archive', '--hard-links', '--xattrs', '--acls',
+                '--one-file-system', '--inplace',
+                '--filter', '-x! user.*',
+                '--filter', '-x! security.ima*',
+                '--filter', '-x! security.capability*',
+                '--delete'
             ]
         )
 
@@ -83,7 +95,10 @@ class TestOCIBuildah:
         )
         sync.sync_data.assert_called_once_with(
             exclude=['/dev', '/proc'],
-            options=['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
+            options=[
+                '--archive', '--hard-links', '--xattrs', '--acls',
+                '--one-file-system', '--inplace'
+            ]
         )
 
     @patch('kiwi.oci_tools.umoci.Command.run')

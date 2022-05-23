@@ -8,9 +8,12 @@ from pytest import (
 
 from kiwi.package_manager.apt import PackageManagerApt
 
+import kiwi.defaults as defaults
+
 from kiwi.exceptions import (
     KiwiDebootstrapError,
-    KiwiRequestError
+    KiwiRequestError,
+    KiwiFileNotFound
 )
 
 
@@ -37,6 +40,9 @@ class TestPackageManagerApt:
         )
         self.manager = PackageManagerApt(repository)
 
+    def setup_method(self, cls):
+        self.setup()
+
     def test_request_package(self):
         self.manager.request_package('name')
         assert self.manager.package_requests == ['name']
@@ -59,13 +65,48 @@ class TestPackageManagerApt:
     def test_setup_repository_modules(self):
         self.manager.setup_repository_modules({})
 
-    def test_process_install_requests_bootstrap_no_dist(self):
+    @patch('kiwi.command.Command.run')
+    @patch.object(PackageManagerApt, 'process_install_requests')
+    @patch('os.path.isfile')
+    def test_process_install_requests_bootstrap_prebuild_root(
+        self, mock_os_path_isfile, mock_process_install_requests,
+        mock_Command_run
+    ):
+        mock_os_path_isfile.return_value = True
+        self.manager.process_install_requests_bootstrap(
+            bootstrap_package='bootstrap-package'
+        )
+        assert mock_Command_run.call_args_list == [
+            call(['apt-get', '-c', 'apt.conf', '-y', 'update'], ['env']),
+            call(
+                [
+                    'apt-get', '-c', 'apt.conf', '-y',
+                    'install', 'bootstrap-package'
+                ], ['env']
+            ),
+            call(
+                [
+                    'tar', '-C', 'root-dir', '-xf',
+                    '/var/lib/bootstrap/bootstrap-package.{0}.tar.xz'.format(
+                        defaults.PLATFORM_MACHINE
+                    )
+                ]
+            )
+        ]
+        mock_process_install_requests.assert_called_once_with()
+        mock_os_path_isfile.return_value = False
+        with raises(KiwiFileNotFound):
+            self.manager.process_install_requests_bootstrap(
+                bootstrap_package='bootstrap-package'
+            )
+
+    def test_process_install_requests_bootstrap_debootstrap_no_dist(self):
         self.manager.distribution = None
         with raises(KiwiDebootstrapError):
             self.manager.process_install_requests_bootstrap()
 
     @patch('os.path.exists')
-    def test_process_install_requests_bootstrap_no_debootstrap_script(
+    def test_process_install_requests_bootstrap_debootstrap_no_script(
         self, mock_exists
     ):
         mock_exists.return_value = False
@@ -75,7 +116,7 @@ class TestPackageManagerApt:
     @patch('kiwi.command.Command.call')
     @patch('kiwi.package_manager.apt.os.path.exists')
     @patch('kiwi.package_manager.apt.Path.wipe')
-    def test_process_install_requests_bootstrap_failed_debootstrap(
+    def test_process_install_requests_bootstrap_debootstrap_failed(
         self, mock_wipe, mock_exists, mock_call
     ):
         self.manager.request_package('apt')
@@ -85,10 +126,37 @@ class TestPackageManagerApt:
         with raises(KiwiDebootstrapError):
             self.manager.process_install_requests_bootstrap(mock_root_bind)
 
+    @patch('kiwi.package_manager.apt.os.path.exists')
+    def test_get_error_details(self, mock_exists):
+        mock_exists.return_value = True
+        with patch('builtins.open', create=True) as mock_open:
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.return_value = 'log-data'
+            assert self.manager.get_error_details() == \
+                file_handle.read.return_value
+        mock_open.assert_called_once_with(
+            'root-dir/debootstrap/debootstrap.log'
+        )
+
+    @patch('kiwi.package_manager.apt.os.path.exists')
+    def test_get_error_details_no_log_file(self, mock_exists):
+        mock_exists.return_value = False
+        assert self.manager.get_error_details() == \
+            "logfile 'root-dir/debootstrap/debootstrap.log' does not exist"
+
+    @patch('kiwi.package_manager.apt.os.path.exists')
+    def test_get_error_details_logfile_is_empty(self, mock_exists):
+        mock_exists.return_value = True
+        with patch('builtins.open', create=True) as mock_open:
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.return_value = ''
+            assert self.manager.get_error_details() == \
+                'logfile is empty'
+
     @patch('kiwi.command.Command.call')
     @patch('kiwi.package_manager.apt.Path.wipe')
     @patch('kiwi.package_manager.apt.os.path.exists')
-    def test_process_install_requests_bootstrap(
+    def test_process_install_requests_bootstrap_debootstrap(
         self, mock_exists, mock_wipe, mock_call
     ):
         self.manager.request_package('apt')
@@ -121,7 +189,7 @@ class TestPackageManagerApt:
     @patch('kiwi.command.Command.call')
     @patch('kiwi.package_manager.apt.Path.wipe')
     @patch('kiwi.package_manager.apt.os.path.exists')
-    def test_process_install_requests_bootstrap_no_gpg_check(
+    def test_process_install_requests_bootstrap_debootstrap_no_gpg_check(
         self, mock_exists, mock_wipe, mock_call
     ):
         self.manager.request_package('apt')
@@ -171,13 +239,60 @@ class TestPackageManagerApt:
 
     @patch('kiwi.command.Command.call')
     @patch('kiwi.command.Command.run')
-    def test_process_delete_requests_force(self, mock_run, mock_call):
+    @patch('kiwi.package_manager.apt.Path.wipe')
+    @patch('glob.iglob')
+    def test_process_delete_requests_force(
+        self, mock_iglob, mock_Path_wipe, mock_run, mock_call
+    ):
+        mock_iglob.return_value = ['glob-result']
         self.manager.request_package('vim')
         self.manager.process_delete_requests(True)
+        assert mock_run.call_args_list == [
+            call(
+                [
+                    'chroot', 'root-dir', 'dpkg', '-l', 'vim'
+                ]
+            ),
+            call(
+                [
+                    'cp', 'root-dir/usr/sbin/ldconfig',
+                    'root-dir/usr/sbin/ldconfig.orig'
+                ]
+            ),
+            call(
+                [
+                    'cp', 'root-dir/usr/bin/true',
+                    'root-dir/usr/sbin/ldconfig'
+                ]
+            )
+        ]
         mock_call.assert_called_once_with(
-            ['chroot', 'root-dir', 'dpkg', '--force-all', '-r', 'vim'],
+            [
+                'chroot', 'root-dir', 'dpkg',
+                '--remove', '--force-remove-reinstreq',
+                '--force-remove-essential', '--force-depends', 'vim'
+            ],
             ['env']
         )
+        mock_iglob.call_args_list == [
+            call('root-dir/var/lib/dpkg/info/vim*.pre*'),
+            call('root-dir/var/lib/dpkg/info/vim*.post*')
+        ]
+        mock_Path_wipe.call_args_list == [
+            call('glob-result'), call('glob-result')
+        ]
+
+    @patch('kiwi.command.Command.run')
+    def test_post_process_delete_requests(self, mock_run):
+        self.manager.post_process_delete_requests()
+        assert mock_run.call_args_list == [
+            call(
+                [
+                    'mv', 'root-dir/usr/sbin/ldconfig.orig',
+                    'root-dir/usr/sbin/ldconfig'
+                ]
+            )
+        ]
 
     @patch('kiwi.command.Command.run')
     def test_process_delete_requests_package_missing(self, mock_run):

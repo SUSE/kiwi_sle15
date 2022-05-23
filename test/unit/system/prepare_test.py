@@ -69,6 +69,12 @@ class TestSystemPrepare:
         root_bind.setup_intermediate_config.assert_called_once_with()
         root_bind.mount_kernel_file_systems.assert_called_once_with()
 
+    @patch('kiwi.system.prepare.RootInit')
+    @patch('kiwi.system.prepare.RootBind')
+    @patch('kiwi.logger.Logger.get_logfile')
+    def setup_method(self, cls, mock_get_logfile, mock_root_bind, mock_root_init):
+        self.setup()
+
     @patch('kiwi.system.prepare.RootImport.new')
     @patch('kiwi.system.prepare.RootInit')
     @patch('kiwi.system.prepare.RootBind')
@@ -120,12 +126,13 @@ class TestSystemPrepare:
 
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     def test_install_bootstrap_packages_raises(self, mock_poll):
+        self.manager.get_error_details.return_value = 'error-details'
         mock_poll.side_effect = Exception('some_error')
         with raises(KiwiBootStrapPhaseFailed) as issue:
             self.system.install_bootstrap(self.manager)
         assert issue.value.message == self.system.issue_message.format(
             headline='Bootstrap package installation failed',
-            reason='some_error'
+            reason='some_error: error-details'
         )
 
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
@@ -297,7 +304,7 @@ class TestSystemPrepare:
             {'disable': ['mod_c'], 'enable': ['mod_a:stream', 'mod_b']}
         )
         self.manager.process_install_requests_bootstrap.assert_called_once_with(
-            self.system.root_bind
+            self.system.root_bind, None
         )
         mock_tar.assert_called_once_with(
             '{0}/bootstrap.tgz'.format(self.description_dir)
@@ -402,6 +409,9 @@ class TestSystemPrepare:
         self.system.pinch_system(self.manager, force=True)
         self.manager.process_delete_requests.assert_has_calls(
             [call(False), call(True)]
+        )
+        self.manager.post_process_delete_requests.assert_has_calls(
+            [call(self.system.root_bind), call(self.system.root_bind)]
         )
 
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')

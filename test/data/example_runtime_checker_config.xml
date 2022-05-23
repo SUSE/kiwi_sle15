@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.4" name="LimeJeOS-openSUSE-13.2" displayname="Bob">
+<image schemaversion="7.5" name="LimeJeOS-openSUSE-13.2" displayname="Bob">
     <drivers>
         <file name="crypto/*"/>
         <file name="drivers/acpi/*"/>
@@ -71,7 +71,7 @@
     </preferences>
     <preferences profiles="docker">
         <type image="docker">
-            <containerconfig name="container_name" additionaltags="foo,bar"/>
+            <containerconfig name="container_name" additionalnames="foo,bar"/>
         </type>
     </preferences>
     <preferences profiles="ec2Flavour">
@@ -115,7 +115,10 @@
         </type>
     </preferences>
     <preferences profiles="vmxFlavour">
-        <type image="oem" primary="true" boot="oemboot/example-distribution" firmware="efi" kernelcmdline="splash" vga="0x303" editbootconfig="my_edit_boot_script" editbootinstall="my_edit_boot_install" filesystem="btrfs" initrd_system="dracut" installiso="true">
+        <type image="oem" primary="true" boot="oemboot/example-distribution" firmware="efi" kernelcmdline="splash" vga="0x303" editbootconfig="my_edit_boot_script" editbootinstall="my_edit_boot_install" filesystem="btrfs" initrd_system="dracut" installiso="true" luks="">
+            <luksformat>
+                <option name="--bogus-option"/>
+            </luksformat>
             <size unit="G" additive="true">1</size>
             <systemdisk name="mydisk">
                 <volume name="root" size="6G" mountpoint="/" label="foo"/>
@@ -133,7 +136,7 @@
                 <oem-swapname>swap</oem-swapname>
             </oemconfig>
         </type>
-        <type image="iso" mediacheck="true" firmware="bios"/>
+        <type image="iso" mediacheck="true" firmware="bios" devicepersistency="by-partuuid"/>
     </preferences>
     <users>
         <user groups="root" pwdformat="plain" password="mypwd" shell="/bin/bash" id="815" realname="Bob" home="/root" name="root"/>

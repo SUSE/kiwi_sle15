@@ -20,7 +20,6 @@ from typing import List
 
 # project
 from kiwi.filesystem.base import FileSystemBase
-from kiwi.iso_tools.iso import Iso
 from kiwi.iso_tools import IsoTools
 
 log = logging.getLogger('kiwi')
@@ -43,17 +42,14 @@ class FileSystemIsoFs(FileSystemBase):
         :param string label: unused
         :param list exclude: unused
         """
+        self.filename = filename
         meta_data = self.custom_args['meta_data']
-        efi_mode = meta_data.get('efi_mode')
-        ofw_mode = meta_data.get('ofw_mode')
+        efi_loader = meta_data.get('efi_loader')
         iso_tool = IsoTools.new(self.root_dir)
-
-        iso = Iso(self.root_dir)
-        if not efi_mode and not ofw_mode:
-            iso.setup_isolinux_boot_path()
 
         iso_tool.init_iso_creation_parameters(meta_data)
 
-        iso_tool.add_efi_loader_parameters()
+        if efi_loader:
+            iso_tool.add_efi_loader_parameters(efi_loader)
 
-        iso_tool.create_iso(filename)
+        iso_tool.create_iso(self.filename)

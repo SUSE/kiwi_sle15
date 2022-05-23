@@ -35,22 +35,6 @@ from kiwi.version import (
 
 from kiwi.exceptions import KiwiBootLoaderGrubDataError
 
-# Default module variables
-POST_DISK_SYNC_SCRIPT = 'disk.sh'
-POST_BOOTSTRAP_SCRIPT = 'post_bootstrap.sh'
-POST_PREPARE_SCRIPT = 'config.sh'
-PRE_CREATE_SCRIPT = 'images.sh'
-EDIT_BOOT_CONFIG_SCRIPT = 'edit_boot_config.sh'
-EDIT_BOOT_INSTALL_SCRIPT = 'edit_boot_install.sh'
-IMAGE_METADATA_DIR = 'image'
-ROOT_VOLUME_NAME = 'LVRoot'
-SHARED_CACHE_DIR = '/var/cache/kiwi'
-TEMP_DIR = '/var/tmp'
-CUSTOM_RUNTIME_CONFIG_FILE = None
-PLATFORM_MACHINE = platform.machine()
-
-log = logging.getLogger('kiwi')
-
 shim_loader_type = NamedTuple(
     'shim_loader_type', [
         ('filename', str),
@@ -64,6 +48,43 @@ grub_loader_type = NamedTuple(
         ('binaryname', str)
     ]
 )
+
+unit_type = NamedTuple(
+    'unit_type', [
+        ('byte', str),
+        ('kb', str),
+        ('mb', str),
+        ('gb', str)
+    ]
+)
+
+
+# Default module variables
+DM_METADATA_FORMAT_VERSION = '1'
+DM_METADATA_OFFSET = 4096  # 4kb
+VERITY_DATA_BLOCKSIZE = 4096  # 4kb
+VERITY_HASH_BLOCKSIZE = 4096  # 4kb
+INTEGRITY_SECTOR_SIZE = 512
+
+INTEGRITY_ALGORITHM = 'sha256'
+INTEGRITY_KEY_ALGORITHM = 'hmac-sha256'
+
+UNIT = unit_type(byte='b', kb='k', mb='m', gb='g')
+POST_DISK_SYNC_SCRIPT = 'disk.sh'
+PRE_DISK_SYNC_SCRIPT = 'pre_disk_sync.sh'
+POST_BOOTSTRAP_SCRIPT = 'post_bootstrap.sh'
+POST_PREPARE_SCRIPT = 'config.sh'
+PRE_CREATE_SCRIPT = 'images.sh'
+EDIT_BOOT_CONFIG_SCRIPT = 'edit_boot_config.sh'
+EDIT_BOOT_INSTALL_SCRIPT = 'edit_boot_install.sh'
+IMAGE_METADATA_DIR = 'image'
+ROOT_VOLUME_NAME = 'LVRoot'
+SHARED_CACHE_DIR = '/var/cache/kiwi'
+TEMP_DIR = '/var/tmp'
+CUSTOM_RUNTIME_CONFIG_FILE = None
+PLATFORM_MACHINE = platform.machine()
+
+log = logging.getLogger('kiwi')
 
 
 class Defaults:
@@ -314,10 +335,13 @@ class Defaults:
 
         :rtype: list
         """
-        return ['-a', '-H', '-X', '-A', '--one-file-system', '--inplace']
+        return [
+            '--archive', '--hard-links', '--xattrs', '--acls',
+            '--one-file-system', '--inplace'
+        ]
 
     @staticmethod
-    def get_exclude_list_for_root_data_sync():
+    def get_exclude_list_for_root_data_sync(no_tmpdirs: bool = True):
         """
         Provides the list of files or folders that are created
         by KIWI for its own purposes. Those files should be not
@@ -328,7 +352,11 @@ class Defaults:
         :rtype: list
         """
         exclude_list = [
-            'image', '.profile', '.kconfig', 'run/*', 'tmp/*',
+            'image', '.profile', '.kconfig'
+        ]
+        if no_tmpdirs:
+            exclude_list += ['run/*', 'tmp/*']
+        exclude_list += [
             Defaults.get_buildservice_env_name(),
             Defaults.get_shared_cache_location()
         ]
@@ -1167,6 +1195,7 @@ class Defaults:
             'armv6l': ['efi', 'uefi'],
             'armv7hl': ['efi', 'uefi'],
             'armv7l': ['efi', 'uefi'],
+            'armv8l': ['efi', 'uefi'],
             'ppc': ['ofw'],
             'ppc64': ['ofw', 'opal'],
             'ppc64le': ['ofw', 'opal'],
@@ -1202,6 +1231,7 @@ class Defaults:
             'armv6l': 'efi',
             'armv7hl': 'efi',
             'armv7l': 'efi',
+            'armv8l': 'efi',
             'riscv64': 'efi'
         }
         if arch in default_firmware:
@@ -1259,6 +1289,7 @@ class Defaults:
             'armv5tel': 'arm-efi',
             'armv6l': 'arm-efi',
             'armv7l': 'arm-efi',
+            'armv8l': 'arm-efi',
             'riscv64': 'riscv64-efi'
         }
         if arch in default_module_directory_names:
@@ -1294,6 +1325,7 @@ class Defaults:
             'armv5tel': 'bootarm.efi',
             'armv6l': 'bootarm.efi',
             'armv7l': 'bootarm.efi',
+            'armv8l': 'bootarm.efi',
             'riscv64': 'bootriscv64.efi'
         }
         if arch in default_efi_image_names:

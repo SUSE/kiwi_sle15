@@ -12,6 +12,9 @@ class TestIsoToolsBase:
         Defaults.set_platform_name('x86_64')
         self.iso_tool = IsoToolsBase('source-dir')
 
+    def setup_method(self, cls):
+        self.setup()
+
     def test_create_iso(self):
         with raises(NotImplementedError):
             self.iso_tool.create_iso('filename')
@@ -30,7 +33,7 @@ class TestIsoToolsBase:
 
     def test_add_efi_loader_parameters(self):
         with raises(NotImplementedError):
-            self.iso_tool.add_efi_loader_parameters()
+            self.iso_tool.add_efi_loader_parameters('loader_file')
 
     def test_has_iso_hybrid_capability(self):
         with raises(NotImplementedError):

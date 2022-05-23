@@ -116,7 +116,7 @@ class PackageManagerBase:
         raise NotImplementedError
 
     def process_install_requests_bootstrap(
-        self, root_bind: RootBind = None
+        self, root_bind: RootBind = None, bootstrap_package: str = None
     ) -> command_call_type:
         """
         Process package install requests for bootstrap phase (no chroot)
@@ -219,6 +219,16 @@ class PackageManagerBase:
         """
         pass
 
+    def post_process_delete_requests(
+        self, root_bind: RootBind = None
+    ) -> None:
+        """
+        Process extra code required after deleting packages
+
+        Implementation in specialized package manager class
+        """
+        pass
+
     @staticmethod
     def has_failed(returncode: int) -> bool:
         """
@@ -234,6 +244,20 @@ class PackageManagerBase:
         :rtype: boolean
         """
         return True if returncode != 0 else False
+
+    def get_error_details(self) -> str:
+        """
+        Provide further error details
+
+        In case the package manager call failed this
+        method will return package manager specific error
+        information if there is any
+
+        :return: further error data as str or empty str
+
+        :rtype: str
+        """
+        return ''
 
     def clean_leftovers(self) -> None:
         """

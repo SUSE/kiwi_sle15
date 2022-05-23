@@ -42,6 +42,7 @@ from kiwi.archive.tar import ArchiveTar
 from kiwi.system.setup import SystemSetup
 from kiwi.iso_tools.base import IsoToolsBase
 from kiwi.xml_state import XMLState
+from kiwi.iso_tools.iso import Iso
 
 
 from kiwi.exceptions import (
@@ -231,11 +232,20 @@ class InstallImageBuilder:
             self.boot_image_task.boot_root_directory, self.media_dir.name,
             bootloader_config.get_boot_theme()
         )
+        if self.firmware.bios_mode():
+            Iso(self.media_dir.name).setup_isolinux_boot_path()
         bootloader_config.write_meta_data()
         bootloader_config.setup_install_image_config(
             mbrid=self.mbrid
         )
         bootloader_config.write()
+
+        if self.firmware.efi_mode():
+            efi_loader = Temporary(
+                prefix='efi-loader.', path=self.target_dir
+            ).new_file()
+            bootloader_config._create_embedded_fat_efi_image(efi_loader.name)
+            self.custom_iso_args['meta_data']['efi_loader'] = efi_loader.name
 
         # create initrd for install image
         log.info('Creating install image boot image')

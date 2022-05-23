@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.4" name="TestPartitions">
+<image schemaversion="7.5" name="TestPartitions">
     <description type="system">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.com</contact>
@@ -11,7 +11,7 @@
     <preferences>
         <version>1.1.1</version>
         <packagemanager>zypper</packagemanager>
-        <type image="oem" filesystem="ext3" installiso="true" kernelcmdline="splash" firmware="efi">
+        <type image="oem" filesystem="ext3" installiso="true" kernelcmdline="splash" firmware="efi" bootpartition="true" bootpartsize="10">
             <partitions>
                 <partition name="var" size="100" mountpoint="/var" filesystem="ext3"/>
                 <partition name="var/tmp" size="500" mountpoint="/var/tmp" filesystem="xfs"/>

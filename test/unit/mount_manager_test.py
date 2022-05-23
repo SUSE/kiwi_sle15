@@ -14,10 +14,16 @@ class TestMountManager:
     def inject_fixtures(self, caplog):
         self._caplog = caplog
 
-    def setup(self):
+    @patch('kiwi.mount_manager.Path.create')
+    def setup(self, mock_path_create):
         self.mount_manager = MountManager(
             '/dev/some-device', '/some/mountpoint'
         )
+        mock_path_create.assert_called_once_with('/some/mountpoint')
+
+    @patch('kiwi.mount_manager.Path.create')
+    def setup_method(self, cls, mock_path_create):
+        self.setup()
 
     @patch('kiwi.mount_manager.Temporary')
     def test_setup_empty_mountpoint(self, mock_Temporary):
@@ -32,6 +38,15 @@ class TestMountManager:
         self.mount_manager.bind_mount()
         mock_command.assert_called_once_with(
             ['mount', '-n', '--bind', '/dev/some-device', '/some/mountpoint']
+        )
+
+    @patch('kiwi.mount_manager.Command.run')
+    @patch('kiwi.mount_manager.MountManager.is_mounted')
+    def test_tmpfs_mount(self, mock_mounted, mock_command):
+        mock_mounted.return_value = False
+        self.mount_manager.tmpfs_mount()
+        mock_command.assert_called_once_with(
+            ['mount', '-t', 'tmpfs', 'tmpfs', '/some/mountpoint']
         )
 
     @patch('kiwi.mount_manager.Command.run')
