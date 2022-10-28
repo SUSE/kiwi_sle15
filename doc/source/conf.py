@@ -139,7 +139,7 @@ author = 'Marcus Schäfer'
 # built documents.
 #
 # The short X.Y version.
-version = '9.24.36'
+version = '9.24.43'
 # The full version, including alpha/beta/rc tags.
 release = version
 
@@ -176,13 +176,6 @@ pygments_style = 'sphinx'
 
 # If true, `todo` and `todoList` produce output, else they produce nothing.
 todo_include_todos = True
-
-extlinks = {
-    'issue': ('https://github.com/OSInside/kiwi/issues/%s', '#'),
-    'pr': ('https://github.com/OSInside/kiwi/pull/%s', 'PR #'),
-    'ghkiwi': ('https://github.com/OSInside/kiwi/blob/master/%s', '')
-}
-
 
 autosummary_generate = True
 

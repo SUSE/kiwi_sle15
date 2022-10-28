@@ -73,7 +73,7 @@
   </define>
   <define name="groups-list">
     <data type="token">
-      <param name="pattern">[a-zA-Z0-9_\-\.]+(,[a-zA-Z0-9_\-\.]+)*</param>
+      <param name="pattern">[a-zA-Z0-9_\-\.:]+(,[a-zA-Z0-9_\-\.:]+)*</param>
     </data>
   </define>
   <define name="arch-name">
@@ -2062,6 +2062,17 @@ expected to be non-removable</a:documentation>
         <sch:param name="types" value="oem"/>
       </sch:pattern>
     </define>
+    <define name="k.type.selinux_policy.attribute">
+      <attribute name="selinux_policy">
+        <a:documentation>On systems using selinux use the given policy.
+by default 'targeted' is used</a:documentation>
+        <choice>
+          <value>targeted</value>
+          <value>mls</value>
+          <value>minimum</value>
+        </choice>
+      </attribute>
+    </define>
     <define name="k.type.spare_part.attribute">
       <attribute name="spare_part">
         <a:documentation>Request a spare partition right before the root partition
@@ -3160,6 +3171,9 @@ kiwi-ng result bundle ...</a:documentation>
           <ref name="k.type.target_removable.attribute"/>
         </optional>
         <optional>
+          <ref name="k.type.selinux_policy.attribute"/>
+        </optional>
+        <optional>
           <ref name="k.type.vga.attribute"/>
         </optional>
         <optional>
@@ -3253,8 +3267,8 @@ kiwi-ng result bundle ...</a:documentation>
     </define>
     <define name="k.user.groups.attribute">
       <attribute name="groups">
-        <a:documentation>The list of groups that he user belongs to. The
-frist item in the list is used as the login group.
+        <a:documentation>The list of groups that the user belongs to. The
+first item in the list is used as the login group.
 If 'groups' is not present a default group is assigned
 to the user according to he specifing toolchain behaviour.</a:documentation>
         <ref name="groups-list"/>
