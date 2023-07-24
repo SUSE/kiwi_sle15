@@ -558,7 +558,7 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
         }
         if self.firmware.efi_mode() == 'uefi':
             sysconfig_bootloader_entries['SECURE_BOOT'] = 'yes'
-        if self.firmware.efi_mode() == 'efi':
+        elif self.firmware.efi_mode() == 'efi':
             sysconfig_bootloader_entries['SECURE_BOOT'] = 'no'
         if self.cmdline:
             sysconfig_bootloader_entries['DEFAULT_APPEND'] = '"{0}"'.format(
