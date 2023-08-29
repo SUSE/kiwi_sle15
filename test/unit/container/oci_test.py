@@ -90,7 +90,7 @@ class TestContainerImageOCI:
 
         m_open = mock_open()
         with patch('builtins.open', m_open, create=True):
-            m_open.return_value.__iter__ = lambda _:\
+            m_open.return_value.__iter__ = lambda _: \
                 iter(['BUILD_DISTURL=obs://build.opensuse.org/some:project'])
             container = ContainerImageOCI(
                 'root_dir', 'oci-archive'
@@ -104,7 +104,7 @@ class TestContainerImageOCI:
 
         m_open = mock_open()
         with patch('builtins.open', m_open, create=True):
-            m_open.return_value.__iter__ = lambda _:\
+            m_open.return_value.__iter__ = lambda _: \
                 iter(['BUILD_DISTURL=obs://build.opensuse.org/some:project'])
             container = ContainerImageOCI(
                 'root_dir', 'oci-archive', {'labels': {'label': 'value'}}
