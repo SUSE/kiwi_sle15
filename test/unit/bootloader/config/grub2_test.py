@@ -778,8 +778,7 @@ class TestBootLoaderConfigGrub2:
                 '"some-cmdline root=UUID=foo failsafe-options"'
             ),
             call('LOADER_LOCATION', 'mbr'),
-            call('LOADER_TYPE', 'grub2'),
-            call('TRUSTED_BOOT', 'yes')
+            call('LOADER_TYPE', 'grub2')
         ]
         self.firmware.efi_mode = Mock(
             return_value='efi'
@@ -794,8 +793,7 @@ class TestBootLoaderConfigGrub2:
             ),
             call('LOADER_LOCATION', 'none'),
             call('LOADER_TYPE', 'grub2-efi'),
-            call('SECURE_BOOT', 'no'),
-            call('TRUSTED_BOOT', 'yes')
+            call('SECURE_BOOT', 'no')
         ]
 
     @patch('os.path.exists')
