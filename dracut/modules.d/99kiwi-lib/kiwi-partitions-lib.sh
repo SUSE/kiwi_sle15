@@ -20,7 +20,11 @@ function create_partitions {
             create_dasd_partitions "${disk_device}" "${partition_setup}"
         ;;
     esac
-    partprobe "${disk_device}"
+    if type partprobe &> /dev/null;then
+        partprobe "${disk_device}"
+    else
+        partx -u "${disk_device}"
+    fi
 }
 
 function create_msdos_partitions {
