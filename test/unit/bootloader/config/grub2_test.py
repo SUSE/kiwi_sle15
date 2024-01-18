@@ -562,7 +562,8 @@ class TestBootLoaderConfigGrub2:
         grub_default = MagicMock()
         mock_sysconfig.return_value = grub_default
         mock_exists.return_value = True
-        self.bootloader.terminal = 'serial'
+        self.bootloader.terminal_input = 'serial'
+        self.bootloader.terminal_output = 'gfxterm'
         self.bootloader.theme = 'openSUSE'
         self.bootloader.displayname = 'Bob'
         self.firmware.efi_mode.return_value = 'efi'
@@ -584,7 +585,8 @@ class TestBootLoaderConfigGrub2:
             call(
                 'GRUB_SERIAL_COMMAND', '"serial --speed=38400"'
             ),
-            call('GRUB_TERMINAL', '"serial"'),
+            call('GRUB_TERMINAL_INPUT', '"serial"'),
+            call('GRUB_TERMINAL_OUTPUT', '"gfxterm"'),
             call('GRUB_THEME', '/boot/grub2/themes/openSUSE/theme.txt'),
             call('GRUB_TIMEOUT', 10),
             call('GRUB_TIMEOUT_STYLE', 'countdown'),
@@ -605,7 +607,8 @@ class TestBootLoaderConfigGrub2:
         grub_default = MagicMock()
         mock_sysconfig.return_value = grub_default
         mock_exists.return_value = True
-        self.bootloader.terminal = 'serial'
+        self.bootloader.terminal_input = 'serial'
+        self.bootloader.terminal_output = 'serial'
         self.bootloader.theme = 'openSUSE'
         self.bootloader.displayname = 'Bob'
         self.bootloader.cmdline = 'root=LABEL=some-label'
@@ -629,7 +632,8 @@ class TestBootLoaderConfigGrub2:
             call(
                 'GRUB_SERIAL_COMMAND', '"serial --speed=38400"'
             ),
-            call('GRUB_TERMINAL', '"serial"'),
+            call('GRUB_TERMINAL_INPUT', '"serial"'),
+            call('GRUB_TERMINAL_OUTPUT', '"serial"'),
             call('GRUB_THEME', '/boot/grub2/themes/openSUSE/theme.txt'),
             call('GRUB_TIMEOUT', 10),
             call('GRUB_TIMEOUT_STYLE', 'countdown'),
@@ -649,7 +653,8 @@ class TestBootLoaderConfigGrub2:
         grub_default = MagicMock()
         mock_sysconfig.return_value = grub_default
         mock_exists.return_value = True
-        self.bootloader.terminal = 'serial'
+        self.bootloader.terminal_input = 'serial'
+        self.bootloader.terminal_output = 'serial'
         self.bootloader.theme = 'openSUSE'
         self.bootloader.displayname = 'Bob'
         self.bootloader.cmdline = 'root=UUID=foo'
@@ -671,7 +676,8 @@ class TestBootLoaderConfigGrub2:
             call(
                 'GRUB_SERIAL_COMMAND', '"serial --speed=38400"'
             ),
-            call('GRUB_TERMINAL', '"serial"'),
+            call('GRUB_TERMINAL_INPUT', '"serial"'),
+            call('GRUB_TERMINAL_OUTPUT', '"serial"'),
             call('GRUB_THEME', '/boot/grub2/themes/openSUSE/theme.txt'),
             call('GRUB_TIMEOUT', 10),
             call('GRUB_TIMEOUT_STYLE', 'countdown'),
@@ -690,7 +696,8 @@ class TestBootLoaderConfigGrub2:
         grub_default = MagicMock()
         mock_sysconfig.return_value = grub_default
         mock_exists.return_value = True
-        self.bootloader.terminal = 'serial'
+        self.bootloader.terminal_input = 'serial'
+        self.bootloader.terminal_output = 'serial'
         self.bootloader.theme = 'openSUSE'
         self.bootloader.displayname = 'Bob'
         self.bootloader.cmdline = 'abcd root=LABEL=foo console=tty0'
@@ -714,7 +721,8 @@ class TestBootLoaderConfigGrub2:
             call(
                 'GRUB_SERIAL_COMMAND', '"serial --speed=38400"'
             ),
-            call('GRUB_TERMINAL', '"serial"'),
+            call('GRUB_TERMINAL_INPUT', '"serial"'),
+            call('GRUB_TERMINAL_OUTPUT', '"serial"'),
             call('GRUB_THEME', '/boot/grub2/themes/openSUSE/theme.txt'),
             call('GRUB_TIMEOUT', 10),
             call('GRUB_TIMEOUT_STYLE', 'countdown'),
@@ -832,7 +840,7 @@ class TestBootLoaderConfigGrub2:
         self.bootloader.multiboot = True
         self.bootloader.setup_live_image_config(self.mbrid)
         self.grub2.get_multiboot_iso_template.assert_called_once_with(
-            True, 'gfxterm', None
+            True, False, False, None
         )
 
     @patch.object(BootLoaderConfigGrub2, '_copy_grub_config_to_efi_path')
@@ -842,21 +850,25 @@ class TestBootLoaderConfigGrub2:
         self.firmware.efi_mode = Mock(
             return_value='uefi'
         )
+        self.bootloader.terminal_input = 'serial'
+        self.bootloader.terminal_output = 'gfxterm'
         self.bootloader.early_boot_script_efi = 'earlyboot.cfg'
         self.bootloader.multiboot = False
         self.bootloader.setup_live_image_config(self.mbrid)
         self.grub2.get_iso_template.assert_called_once_with(
-            True, True, 'gfxterm', None
+            True, True, True, True, None
         )
         mock_copy_grub_config_to_efi_path.assert_called_once_with(
             'root_dir', 'earlyboot.cfg'
         )
 
     def test_setup_install_image_config_multiboot(self):
+        self.bootloader.terminal_input = 'serial'
+        self.bootloader.terminal_output = 'gfxterm'
         self.bootloader.multiboot = True
         self.bootloader.setup_install_image_config(self.mbrid)
         self.grub2.get_multiboot_install_template.assert_called_once_with(
-            True, 'gfxterm', True
+            True, True, True, True
         )
 
     @patch.object(BootLoaderConfigGrub2, '_mount_system')
@@ -1041,7 +1053,7 @@ class TestBootLoaderConfigGrub2:
         self.bootloader.multiboot = False
         self.bootloader.setup_install_image_config(self.mbrid)
         self.grub2.get_install_template.assert_called_once_with(
-            True, True, 'gfxterm', True
+            True, True, False, False, True
         )
         mock_copy_grub_config_to_efi_path.assert_called_once_with(
             'root_dir', 'earlyboot.cfg'
@@ -2052,7 +2064,8 @@ class TestBootLoaderConfigGrub2:
         with patch('builtins.open'):
             with self._caplog.at_level(logging.WARNING):
                 self.bootloader.setup_install_boot_images(self.mbrid)
-                assert self.bootloader.terminal == 'console'
+                assert self.bootloader.terminal_input == 'console'
+                assert self.bootloader.terminal_output == 'console'
 
     @patch.object(BootLoaderConfigGrub2, 'setup_install_boot_images')
     def test_setup_live_boot_images(self, mock_setup_install_boot_images):

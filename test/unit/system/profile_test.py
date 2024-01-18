@@ -40,7 +40,7 @@ class TestProfile:
             'kiwi_compressed': None,
             'kiwi_delete': '',
             'kiwi_devicepersistency': None,
-            'kiwi_bootloader_console': None,
+            'kiwi_bootloader_console': 'default:default',
             'kiwi_displayname': 'schäfer',
             'kiwi_drivers': '',
             'kiwi_firmware': 'efi',

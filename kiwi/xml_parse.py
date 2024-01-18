@@ -3,7 +3,7 @@
 
 #
 # Generated  by generateDS.py version 2.29.24.
-# Python 3.6.15 (default, Sep 23 2021, 15:41:43) [GCC]
+# Python 3.11.5 (main, Sep 06 2023, 11:21:05) [GCC]
 #
 # Command line options:
 #   ('-f', '')
@@ -16,10 +16,10 @@
 #   kiwi/schema/kiwi_for_generateDS.xsd
 #
 # Command line:
-#   /home/ms/Project/kiwi/.tox/3.6/bin/generateDS.py -f --external-encoding="utf-8" --no-dates --no-warnings -o "kiwi/xml_parse.py" kiwi/schema/kiwi_for_generateDS.xsd
+#   /home/ms/Project/kiwi_sle15/.tox/unit_py3_11/bin/generateDS.py -f --external-encoding="utf-8" --no-dates --no-warnings -o "kiwi/xml_parse.py" kiwi/schema/kiwi_for_generateDS.xsd
 #
 # Current working directory (os.getcwd()):
-#   kiwi
+#   kiwi_sle15
 #
 
 import sys
@@ -5239,7 +5239,7 @@ class bootloader(GeneratedsSuper):
             if not self.gds_validate_simple_patterns(
                     self.validate_grub_console_patterns_, value):
                 warnings_.warn('Value "%s" does not match xsd pattern restrictions: %s' % (value.encode('utf-8'), self.validate_grub_console_patterns_, ))
-    validate_grub_console_patterns_ = [['^(console|gfxterm|serial)( (console|gfxterm|serial))*$']]
+    validate_grub_console_patterns_ = [['^(none|console|gfxterm|serial|vga_text|mda_text|morse|spkmodem)( (none|console|serial|at_keyboard|usb_keyboard))*$']]
     def hasContent_(self):
         if (
 
