@@ -84,7 +84,7 @@ function get_disk_list {
           disk_device="$(echo "${disk_mpath_child}" | cut -f1 -d:)"
         fi
         disk_size=$(echo "${disk_meta}" | cut -f2 -d:)
-        if [ ${max_disk} -gt 0 ]; then
+        if [ "${max_disk}" -gt 0 ]; then
             local disk_size_bytes
             disk_size_bytes=$(binsize_to_bytesize "${disk_size}") || \
                 disk_size_bytes=0
