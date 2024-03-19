@@ -923,8 +923,24 @@ attributes are supported:
 
 console="console|gfxterm|serial":
   Specifies the bootloader console. The attribute is available for the
-  grub and isolinux bootloader types. By default, a graphics console
-  setup is used.
+  `grub` and `isolinux` bootloader types. The behavior for setting up
+  the console is different per bootloader:
+
+  For `isolinux` the console setting is taken as provided, whereas
+  only the values `serial` and `console` are taken into account.
+
+  For `grub` the console setting is split into the setting for the
+  output and the input console:
+
+  * A single console value is provided. In this case the same value
+    is used for the output and input console and applied if possible.
+    Providing the `none` value will skip the console setup for both.
+
+  * Two values separated by a space are provided. In this case the
+    first value configures the output console and the second value
+    configures the input console. The `none` value can be used to skip
+    one or the other console setup. More than two space separated
+    values will be ignored.
 
 grub_template="filename":
   Specifies a custom grub bootloader template file which will be used
