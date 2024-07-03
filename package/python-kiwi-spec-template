@@ -1,7 +1,7 @@
 #
 # spec file for package kiwi
 #
-# Copyright (c) 2020 SUSE LLC
+# Copyright (c) 2024 SUSE LLC
 #
 # All modifications and additions to the file contributed by third parties
 # remain the property of their copyright owners, unless otherwise agreed
@@ -17,31 +17,7 @@
 #       https://github.com/OSInside/kiwi/issues
 #
 
-# If they aren't provided by a system installed macro, define them
-%{!?_defaultdocdir: %global _defaultdocdir %{_datadir}/doc}
-%{!?__python3: %global __python3 /usr/bin/python3}
-
-%if %{undefined python3_sitelib}
-%global python3_sitelib %(%{__python3} -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())")
-%endif
-
-%if 0%{?el7}
-%global python3_pkgversion 36
-%else
-%{!?python3_pkgversion:%global python3_pkgversion 3}
-%endif
-
-%if 0%{?debian} || 0%{?ubuntu}
-%global is_deb 1
-%global pygroup python
-%global sysgroup admin
-%global develsuffix dev
-%else
-%global pygroup Development/Languages/Python
-%global sysgroup System/Management
-%global develsuffix devel
-%endif
-
+%{?sle15_python_module_pythons}
 Name:           python-kiwi
 Version:        %%VERSION
 Provides:       kiwi-schema = 7.5
@@ -49,26 +25,30 @@ Release:        0
 Url:            https://github.com/OSInside/kiwi
 Summary:        KIWI - Appliance Builder Next Generation
 License:        GPL-3.0-or-later
-%if "%{_vendor}" == "debbuild"
-# Needed to set Maintainer in output debs
-Packager:       Marcus Schaefer <ms@suse.de>
-%endif
 Group:          %{pygroup}
 Source:         %{name}.tar.gz
 Source1:        %{name}-rpmlintrc
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildRequires:  gcc
-BuildRequires:  python%{python3_pkgversion}-%{develsuffix} >= 3.6
-BuildRequires:  python%{python3_pkgversion}-setuptools
-%if 0%{?fedora} || 0%{?suse_version}
 BuildRequires:  fdupes
-%endif
-%if 0%{?suse_version}
 BuildRequires:  shadow
-%endif
-%if 0%{?debian} || 0%{?ubuntu}
-BuildRequires:  passwd
-%endif
+BuildRequires:  python3
+BuildRequires:  %{python_module PyYAML}
+BuildRequires:  %{python_module simplejson}
+BuildRequires:  %{python_module docopt}
+BuildRequires:  %{python_module lxml}
+BuildRequires:  %{python_module requests}
+BuildRequires:  %{python_module setuptools}
+Requires:       python-PyYAML
+Requires:       python-simplejson
+Requires:       python-docopt
+Requires:       python-lxml
+Requires:       python-requests
+Requires:       python-setuptools
+Requires:       screen
+# Only require core dependencies, and allow OBS to pull the rest through magic Provides
+Requires:       kiwi-systemdeps-core = %{version}-%{release}
+%python_subpackages
 
 %description
 The KIWI Image System provides an operating system image builder
@@ -333,50 +313,6 @@ Requires:       kiwi-systemdeps-image-validation = %{version}-%{release}
 Host setup helper to pull in all packages required/useful to
 leverage all functionality in KIWI.
 
-# python3-kiwi
-%package -n python%{python3_pkgversion}-kiwi
-Summary:        KIWI - Appliance Builder Next Generation
-Group:          %{pygroup}
-Obsoletes:      python2-kiwi
-Conflicts:      python2-kiwi
-Conflicts:      kiwi-man-pages < %{version}
-Requires:       screen
-Requires:       python%{python3_pkgversion} >= 3.6
-%if 0%{?ubuntu} || 0%{?debian}
-Requires:       python%{python3_pkgversion}-yaml
-%else
-Requires:       python%{python3_pkgversion}-PyYAML
-%endif
-Requires:       python%{python3_pkgversion}-simplejson
-Requires:       python%{python3_pkgversion}-docopt
-Requires:       python%{python3_pkgversion}-lxml
-Requires:       python%{python3_pkgversion}-requests
-Requires:       python%{python3_pkgversion}-setuptools
-%if (0%{?suse_version} && 0%{?suse_version} < 1550)
-Requires:       python%{python3_pkgversion}-xattr
-%else
-Requires:       python%{python3_pkgversion}-pyxattr
-%endif
-%if ! (0%{?rhel} && 0%{?rhel} < 8)
-Recommends:     kiwi-man-pages
-%endif
-%if "%{_vendor}" == "debbuild"
-# Avoid issues with not being able to use magic Provides
-Requires:       kiwi-systemdeps = %{version}-%{release}
-%else
-# Only require core dependencies, and allow OBS to pull the rest through magic Provides
-Requires:       kiwi-systemdeps-core = %{version}-%{release}
-%if ! 0%{?el7}
-# Retain default expectation for local installations
-Recommends:     kiwi-systemdeps = %{version}-%{release}
-%endif
-%endif
-
-%description -n python%{python3_pkgversion}-kiwi
-Python 3 library of the KIWI Image System. Provides an operating system
-image builder for Linux supported hardware platforms as well as for
-virtualization and cloud systems like Xen, KVM, VMware, EC2 and more.
-
 %package -n kiwi-tools
 Summary:        KIWI - Collection of Boot Helper Tools
 License:        GPL-3.0-or-later
@@ -578,18 +514,14 @@ Provides manual pages to describe the kiwi commands
 # as an independent script
 sed -e "s|#!/usr/bin/env python||" -i kiwi/xml_parse.py
 
-%if 0%{?suse_version} && 0%{?suse_version} < 1550
-# For older SUSE distributions, use the other xattr Python module
-sed -e "s|pyxattr|xattr|" -i setup.py
-%endif
-
 %build
 # Build C-Tools
 make CFLAGS="${RPM_OPT_FLAGS}" tools
+%python_build
 
 %install
-# Install Python 3 version
-python3 setup.py install --prefix=%{_prefix} --root=%{buildroot} %{?is_deb:--install-layout=deb}
+%python_install
+%python_expand %fdupes %{buildroot}%{$python_sitelib}
 
 # Install C-Tools, man-pages, completion and kiwi default configuration
 make buildroot=%{buildroot}/ install
@@ -657,14 +589,14 @@ fi
 %files -n kiwi-systemdeps
 # Empty metapackage
 
-%files -n python%{python3_pkgversion}-kiwi
+%files %{python_files}
 %dir %{_defaultdocdir}/python-kiwi
 %{_bindir}/kiwi
 %{_bindir}/kiwi-ng
 %{_bindir}/kiwicompat
 %{_bindir}/kiwi-ng-3*
 %{_bindir}/kiwicompat-3*
-%{python3_sitelib}/kiwi*
+%{python_sitelib}/*
 %{_usr}/share/bash-completion/completions/kiwi-ng
 %{_defaultdocdir}/python-kiwi/LICENSE
 %{_defaultdocdir}/python-kiwi/README
