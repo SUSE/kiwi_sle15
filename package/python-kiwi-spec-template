@@ -282,7 +282,7 @@ Group:          %{sysgroup}
 Recommends:     jing
 %endif
 %if 0%{?fedora} || 0%{?rhel} >= 8 || 0%{?suse_version}
-Requires:       python%{python3_pkgversion}-solv
+Recommends:     python%{python3_pkgversion}-solv
 %endif
 %if ! (0%{?rhel} && 0%{?rhel} < 8)
 Recommends:     python%{python3_pkgversion}-anymarkup
