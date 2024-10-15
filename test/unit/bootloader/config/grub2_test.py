@@ -1696,7 +1696,7 @@ class TestBootLoaderConfigGrub2:
                 call('set btrfs_relative_path="yes"\n'),
                 call('search --file --set=root /boot/0xffffffff\n'),
                 call('set prefix=($root)/boot/grub2\n'),
-                call('source ($root)/boot/grub2/grub.cfg\n'),
+                call('configfile ($root)/boot/grub2/grub.cfg\n'),
                 call(grub2_test_chrp_boot),
                 call('source /boot/grub2/grub.cfg\n')
             ]

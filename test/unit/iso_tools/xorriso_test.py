@@ -92,7 +92,6 @@ class TestIsoToolsXorrIso:
             '-compliance', 'untranslated_names'
         ]
 
-    @patch('os.path.exists')
     def test_init_iso_creation_parameters_efi(self):
         self.iso_tool.init_iso_creation_parameters(
             {

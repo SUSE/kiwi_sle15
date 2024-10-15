@@ -155,6 +155,7 @@ class TestInstallImageBuilder:
         mock_BootLoaderConfig.return_value = bootloader_config
         mock_Temporary.side_effect = side_effect
 
+        self.firmware.ofw_mode.return_value = False
         self.firmware.bios_mode.return_value = False
 
         m_open = mock_open()
@@ -263,6 +264,7 @@ class TestInstallImageBuilder:
         mock_BootLoaderConfig.reset_mock()
         tmp_names = [temp_esp_file, temp_squashfs, temp_media_dir]
         self.firmware.efi_mode.return_value = None
+        self.firmware.ofw_mode.return_value = False
         self.firmware.bios_mode.return_value = True
 
         with patch('builtins.open', m_open, create=True):
