@@ -56,6 +56,9 @@ Packager:       Marcus Schaefer <ms@suse.de>
 Group:          %{pygroup}
 Source:         %{name}.tar.gz
 Source1:        %{name}-rpmlintrc
+# SUSE-specific patches (1001+)
+## PATCH-FIX-OPENSUSE kiwi-revert-bls-default-for-suse.patch -- temporary until opensuse has bls
+Patch1001:      kiwi-revert-bls-default-for-suse.patch
 BuildRoot:      %{_tmppath}/%{name}-%{version}-build
 BuildRequires:  gcc
 BuildRequires:  python%{python3_pkgversion}-%{develsuffix} >= 3.6
@@ -573,6 +576,11 @@ Provides manual pages to describe the kiwi commands
 
 %prep
 %setup -q -n kiwi-%{version}
+
+%if 0%{?suse_version}
+# Temporarily revert grub-bls default to false for SUSE distributions
+%patch -P 1001 -p1
+%endif
 
 # Drop shebang for kiwi/xml_parse.py, as we don't intend to use it
 # as an independent script
