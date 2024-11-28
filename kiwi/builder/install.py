@@ -204,7 +204,7 @@ class InstallImageBuilder:
         log.info(
             'Setting up install image bootloader configuration'
         )
-        if self.firmware.efi_mode():
+        if self.firmware.efi_mode() or self.firmware.ofw_mode():
             # setup bootloader config to boot the ISO via EFI
             # This also embedds an MBR and the respective BIOS modules
             # for compat boot. The complete bootloader setup will be

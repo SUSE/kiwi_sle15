@@ -68,6 +68,30 @@ class TestIsoToolsXorrIso:
             '-boot_image', 'any', 'load_size=2048'
         ]
 
+    @patch('os.path.exists')
+    def test_init_iso_creation_parameters_ppc(self, mock_os_path_exists):
+        mock_os_path_exists.return_value = True
+        self.iso_tool.arch = 'ppc64le'
+        self.iso_tool.init_iso_creation_parameters(
+            {
+                'mbr_id': 'app_id',
+                'publisher': 'org',
+                'preparer': 'preparer',
+                'volume_id': 'vol_id',
+                'efi_mode': 'ofw',
+                'legacy_bios_mode': False
+            }
+        )
+        assert self.iso_tool.iso_parameters == [
+            '-application_id', 'app_id',
+            '-publisher', 'org',
+            '-preparer_id', 'preparer',
+            '-volid', 'vol_id',
+            '-joliet', 'on',
+            '-padding', '0',
+            '-compliance', 'untranslated_names'
+        ]
+
     def test_init_iso_creation_parameters_efi(self):
         self.iso_tool.init_iso_creation_parameters(
             {

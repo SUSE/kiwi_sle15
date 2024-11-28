@@ -197,6 +197,24 @@ class Defaults:
         return False
 
     @staticmethod
+    def is_ppc64_arch(arch):
+        """
+        Checks if machine architecture is ppc64 based
+
+        Any arch that matches little endian or big endian ppc64 architecture
+        causes the method to return True. Anything else will
+        cause the method to return False
+
+        :rtype: bool
+        """
+        ppc64_arch_names = [
+            'ppc64', 'ppc64le'
+        ]
+        if arch in ppc64_arch_names:
+            return True
+        return False
+
+    @staticmethod
     def is_buildservice_worker():
         """
         Checks if build host is an open buildservice machine
@@ -879,11 +897,11 @@ class Defaults:
         :rtype: str
         """
         bios_grub_core_patterns = [
-            '/usr/share/grub*/i386-pc/{0}'.format(
-                Defaults.get_bios_image_name()
+            '/usr/share/grub*/{0}/{1}'.format(
+                Defaults.get_bios_module_directory_name(), Defaults.get_bios_image_name()
             ),
-            '/usr/lib/grub*/i386-pc/{0}'.format(
-                Defaults.get_bios_image_name()
+            '/usr/lib/grub*/{0}/{1}'.format(
+                Defaults.get_bios_module_directory_name(), Defaults.get_bios_image_name()
             )
         ]
         for bios_grub_core_pattern in bios_grub_core_patterns:
@@ -1298,13 +1316,13 @@ class Defaults:
     @staticmethod
     def get_bios_module_directory_name():
         """
-        Provides x86 BIOS directory name which stores the pc binaries
+        Provides BIOS directory name which stores the pc binaries
 
         :return: directory name
 
         :rtype: str
         """
-        return 'i386-pc'
+        return 'powerpc-ieee1275' if Defaults.is_ppc64_arch(Defaults.get_platform_name()) else 'i386-pc'
 
     @staticmethod
     def get_efi_image_name(arch):
@@ -1340,7 +1358,7 @@ class Defaults:
 
         :rtype: str
         """
-        return 'core.img'
+        return 'grub.elf' if Defaults.is_ppc64_arch(Defaults.get_platform_name()) else 'core.img'
 
     @staticmethod
     def get_default_boot_timeout_seconds():
