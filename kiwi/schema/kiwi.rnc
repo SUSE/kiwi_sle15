@@ -1501,6 +1501,15 @@ div {
             sch:param [ name = "attr" value = "efipartsize" ]
             sch:param [ name = "types" value = "oem" ]
         ]
+    k.type.eficsm.attribute =
+        ## For images with an EFI layout, specify if the legacy
+        ## CSM (BIOS) mode should be supported or not. By default
+        ## CSM mode is enabled
+        attribute eficsm { xsd:boolean }
+        >> sch:pattern [ id = "eficsm" is-a = "image_type"
+            sch:param [ name = "attr" value = "eficsm" ]
+            sch:param [ name = "types" value = "oem iso" ]
+        ]
     k.type.dosparttable_extended_layout.attribute =
         ## Specify to make use of logical partitions inside of an
         ## extended one. If set to true and if the msdos table type
@@ -2103,6 +2112,7 @@ div {
         k.type.bootpartsize.attribute? &
         k.type.efipartsize.attribute? &
         k.type.efiparttable.attribute? &
+        k.type.eficsm.attribute? &
         k.type.dosparttable_extended_layout.attribute? &
         k.type.bootprofile.attribute? &
         k.type.btrfs_quota_groups.attribute? &

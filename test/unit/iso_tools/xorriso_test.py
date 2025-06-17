@@ -34,7 +34,8 @@ class TestIsoToolsXorrIso:
                 'mbr_id': 'app_id',
                 'publisher': 'org',
                 'preparer': 'preparer',
-                'volume_id': 'vol_id'
+                'volume_id': 'vol_id',
+                'legacy_bios_mode': True
             }
         )
         mock_which.assert_called_once_with(
@@ -99,7 +100,8 @@ class TestIsoToolsXorrIso:
                 'publisher': 'org',
                 'preparer': 'preparer',
                 'volume_id': 'vol_id',
-                'efi_mode': 'uefi'
+                'efi_mode': 'uefi',
+                'legacy_bios_mode': True
             }
         )
         assert self.iso_tool.iso_parameters == [
