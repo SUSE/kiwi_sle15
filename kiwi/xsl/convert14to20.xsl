@@ -20,6 +20,11 @@
 </para>
 <xsl:template match="image" mode="conv14to20">
     <xsl:choose>
+        <!-- fail if smaller than 1.4 -->
+        <xsl:when test="not(@schemaversion >= 1.4)">
+            <xsl:message terminate="yes">Error: Schema version must be >= 1.4
+            </xsl:message>
+        </xsl:when>
         <!-- nothing to do if already at 2.0 -->
         <xsl:when test="@schemeversion > 1.4 or @schemaversion > 1.4">
             <xsl:copy-of select="."/>
