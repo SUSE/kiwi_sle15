@@ -1,7 +1,7 @@
 import io
 from textwrap import dedent
 from pytest import raises
-from mock import (
+from unittest.mock import (
     patch, Mock, MagicMock, call
 )
 
@@ -38,7 +38,7 @@ class TestVeritySetup:
         mock_Command_run.assert_called_once_with(
             [
                 'veritysetup', 'format', 'image_file', 'image_file',
-                '--no-superblock', '--hash-offset=4096',
+                '--hash-offset=4096',
                 '--hash-block-size=4096', '--data-blocks=10',
                 '--data-block-size=4096',
             ]
@@ -58,7 +58,7 @@ class TestVeritySetup:
         mock_Command_run.assert_called_once_with(
             [
                 'veritysetup', 'format', 'image_file', 'tempfile',
-                '--no-superblock', '--hash-block-size=4096', '--data-blocks=10',
+                '--hash-block-size=4096', '--data-blocks=10',
                 '--data-block-size=4096',
             ]
         )
@@ -82,7 +82,7 @@ class TestVeritySetup:
         mock_Command_run.assert_called_once_with(
             [
                 'veritysetup', 'format', 'image_file', 'image_file',
-                '--no-superblock', '--hash-offset=4096',
+                '--hash-offset=4096',
                 '--hash-block-size=4096'
             ]
         )
@@ -109,7 +109,7 @@ class TestVeritySetup:
             call('UUID: \n'),
             call('Root hashoffset: 4096'),
             call('\n'),
-            call('Superblock: --no-superblock'),
+            call('Superblock:'),
             call('\n')
         ]
 
@@ -162,7 +162,7 @@ class TestVeritySetup:
             file_handle = mock_open.return_value.__enter__.return_value
             self.veritysetup.create_verity_verification_metadata()
         assert file_handle.write.call_args_list == [
-            call(b'1 ext4 rw verity'),
+            call(b'1 ext4 ro verity'),
             call(b'\xff'),
             call(b'1 4096 4096 10 1 sha256 e2728628377... fb074d1db50...'),
             call(b'\xff'),

@@ -14,9 +14,9 @@
         <timezone>Europe/Berlin</timezone>
         <rpm-excludedocs>true</rpm-excludedocs>
         <rpm-check-signatures>false</rpm-check-signatures>
-        <bootsplash-theme>bgrt</bootsplash-theme>
+        <bootsplash-theme>breeze</bootsplash-theme>
         <bootloader-theme>openSUSE</bootloader-theme>
-        <type image="oem" filesystem="ext4" kernelcmdline="splash" firmware="efi" mdraid="mirroring" installiso="true" installboot="install">
+        <type image="oem" filesystem="btrfs" kernelcmdline="splash" firmware="efi" mdraid="mirroring" installiso="true" installboot="install">
             <oemconfig>
                 <oem-device-filter>/dev/ram</oem-device-filter>
                 <oem-multipath-scan>false</oem-multipath-scan>
@@ -41,16 +41,17 @@
     </repository>
     <packages type="image">
         <package name="patterns-base-minimal_base"/>
+        <package name="procps"/>
         <package name="bind-utils"/>
         <package name="systemd"/>
-        <package name="plymouth-theme-bgrt"/>
+        <package name="plymouth-theme-breeze"/>
+        <package name="plymouth-plugin-script"/>
         <package name="grub2-branding-openSUSE"/>
         <package name="iputils"/>
         <package name="vim"/>
         <package name="grub2"/>
         <package name="grub2-x86_64-efi" arch="x86_64"/>
         <package name="grub2-i386-pc"/>
-        <package name="syslinux"/>
         <package name="lvm2"/>
         <package name="plymouth"/>
         <package name="fontconfig"/>
@@ -76,6 +77,7 @@
         <package name="gzip"/>
         <package name="udev"/>
         <package name="xz"/>
+        <package name="shadow"/>
         <package name="filesystem"/>
         <package name="glibc-locale"/>
         <package name="cracklib-dict-full"/>

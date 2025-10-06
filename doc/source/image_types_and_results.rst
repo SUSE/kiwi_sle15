@@ -48,6 +48,11 @@ KIS Root File System Image
   Many different deployment strategies are possible.
   For further details refer to: :ref:`kis`
 
+AWS Nitro Enclave
+  An initrd based image using the `eif` binary format. The image is
+  expected to be used in the AWS Nitro Enclave system or for testing
+  in QEMU. For further details refer to: :ref:`eif`
+
 Image Results
 -------------
 
@@ -124,7 +129,7 @@ image="oem"
   An image representing an expandable disk image. {kiwi} can also produce an
   installation ISO for this disk image by setting `installiso="true"` in
   the :ref:`\<preferences\>\<type\><sec.preferences>`) section or a tarball
-  including the artifacts for a network deployment by setting `installiso="true"`.
+  including the artifacts for a network deployment by setting `installpxe="true"`.
   For further details see :ref:`expandable_disk`. The results for `oem`
   can be:
 
@@ -167,6 +172,14 @@ image="appx"
 
   - **container**:
     :file:`{exc_image_base_name}.x86_64-{exc_image_version}.appx`
+
+image="wsl"
+  An archive image suitable for the Windows Subsystem For Linux
+  container engine >= v2.4.4. The result is a gzip compressed tar
+  archive with the `.wsl` extension:
+
+  - **container**:
+    :file:`{exc_image_base_name}.x86_64-{exc_image_version}.wsl`
 
 image="kis"
   An optional root filesystem image associated with a kernel and initrd.
@@ -245,3 +258,6 @@ placeholders which gets replaced by their real value can be used:
 
 %p
   Turns into the patch number of the `<version>` section
+
+%v
+  Turns into the version text of the `<version>` section

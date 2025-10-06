@@ -16,8 +16,11 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import os
+import uuid
+import random
 import logging
 import copy
+from functools import reduce
 from typing import (
     Dict, List, Optional
 )
@@ -60,9 +63,7 @@ class FileSystemBase:
         # as a file there
         self.filesystem_mount: Optional[MountManager] = None
 
-        # bind the block device providing class instance to this object.
-        # This is done to guarantee the correct destructor order when
-        # the device should be released. This is only required if the
+        # the underlaying device provider. This is only required if the
         # filesystem required a block device to become created
         self.device_provider = device_provider
 
@@ -75,6 +76,9 @@ class FileSystemBase:
         self.custom_args: Dict = {}
         self.post_init(custom_args)
         self.veritysetup: Optional[VeritySetup] = None
+
+    def __enter__(self):
+        return self
 
     def post_init(self, custom_args: Dict):
         """
@@ -172,11 +176,13 @@ class FileSystemBase:
             return self.filesystem_mount.mountpoint
         return None
 
-    def sync_data(self, exclude: List[str] = []):
+    def sync_data(self, exclude: List[str] = []) -> MountManager:
         """
-        Copy root data tree into filesystem
+        Copy data tree into filesystem
 
         :param list exclude: list of exclude dirs/files
+        :return: The mount created for syncing data. It should be used to
+            un-mount the filesystem again.
         """
         if not self.root_dir:
             raise KiwiFileSystemSyncError(
@@ -184,7 +190,7 @@ class FileSystemBase:
             )
         if not os.path.exists(self.root_dir):
             raise KiwiFileSystemSyncError(
-                'given root directory %s does not exist' % self.root_dir
+                f'given root directory {self.root_dir} does not exist'
             )
         self.filesystem_mount = MountManager(
             device=self.device_provider.get_device()
@@ -199,6 +205,7 @@ class FileSystemBase:
         data.sync_data(
             exclude=exclude, options=Defaults.get_sync_options()
         )
+        return self.filesystem_mount
 
     def create_verity_layer(
         self, blocks: Optional[int] = None, filename: str = None
@@ -245,14 +252,94 @@ class FileSystemBase:
                 device_node or self.device_provider.get_device()
             )
 
-    def umount(self):
+    def mount(self) -> None:
+        """
+        Mount the filesystem
+        """
+        if self.filesystem_mount:
+            self.filesystem_mount.mount(
+                self.custom_args['mount_options']
+            )
+
+    def umount(self) -> None:
         """
         Umounts the filesystem in case it is mounted, does nothing otherwise
         """
         if self.filesystem_mount:
             log.info('umount %s instance', type(self).__name__)
             self.filesystem_mount.umount()
-            self.filesystem_mount = None
+
+    def umount_volumes(self) -> None:
+        """
+        Consistency layer with regards to VolumeManager classes
+
+        Invokes umount
+        """
+        self.umount()
+
+    def mount_volumes(self) -> None:
+        """
+        Consistency layer with regards to VolumeManager classes
+
+        Invokes mount
+        """
+        self.mount()
+
+    def get_volumes(self) -> Dict:
+        """
+        Consistency layer with regards to VolumeManager classes
+
+        Raises
+        """
+        raise NotImplementedError
+
+    def get_root_volume_name(self) -> None:
+        """
+        Consistency layer with regards to VolumeManager classes
+
+        Raises
+        """
+        raise NotImplementedError
+
+    def get_fstab(
+        self, persistency_type: str = 'by-label', filesystem_name: str = ''
+    ) -> List[str]:
+        """
+        Consistency layer with regards to VolumeManager classes
+
+        Raises
+        """
+        raise NotImplementedError
+
+    def set_property_readonly_root(self) -> None:
+        """
+        Consistency layer with regards to VolumeManager classes
+
+        Raises
+        """
+        raise NotImplementedError
+
+    def _generate_seed_uuid(self, label: str, random_bits: int = 128) -> str:
+        """
+        Create random UUID. If SOURCE_DATE_EPOCH is present use
+        SOURCE_DATE_EPOCH + label name as seed
+        """
+        sde = os.environ.get('SOURCE_DATE_EPOCH')
+        if sde:
+            label_seed = reduce(lambda x, y: x + y, map(ord, label))
+            epoch_seed = label_seed + int(sde)
+            log.info(
+                'Using UUID seed SOURCE_DATE_EPOCH:{0} + LABEL:{1}={2}'.format(
+                    sde, label, label_seed
+                )
+            )
+            rd = random.Random()
+            rd.seed(epoch_seed)
+            return format(
+                uuid.UUID(int=rd.getrandbits(random_bits))
+            )
+        else:
+            return format(uuid.uuid4())
 
     def _map_size(self, size: float, from_unit: str, to_unit: str) -> float:
         """
@@ -337,6 +424,5 @@ class FileSystemBase:
                     ]
                 )
 
-    def __del__(self):
-        log.info('Cleaning up %s instance', type(self).__name__)
+    def __exit__(self, exc_type, exc_value, traceback):
         self.umount()

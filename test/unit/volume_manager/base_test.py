@@ -1,5 +1,5 @@
 from collections import namedtuple
-from mock import (
+from unittest.mock import (
     patch, Mock
 )
 from pytest import raises
@@ -52,6 +52,9 @@ class TestVolumeManagerBase:
     @patch('os.path.exists')
     def setup_method(self, cls, mock_path):
         self.setup()
+
+    def test_get_root_volume_name(self):
+        assert self.volume_manager.get_root_volume_name() == '/'
 
     @patch('os.path.exists')
     def test_init_custom_args(self, mock_exists):
@@ -210,9 +213,17 @@ class TestVolumeManagerBase:
         with raises(NotImplementedError):
             self.volume_manager.mount_volumes()
 
+    def test_mount(self):
+        with raises(NotImplementedError):
+            self.volume_manager.mount()
+
     def test_umount_volumes(self):
         with raises(NotImplementedError):
             self.volume_manager.umount_volumes()
+
+    def test_umount(self):
+        with raises(NotImplementedError):
+            self.volume_manager.umount()
 
     def test_get_volumes(self):
         with raises(NotImplementedError):
@@ -242,6 +253,12 @@ class TestVolumeManagerBase:
             ]
         )
         assert self.volume_manager.get_mountpoint() == 'mountpoint'
+
+    @patch('kiwi.volume_manager.base.MountManager.is_mounted')
+    def test_sync_data_without_mountpoint(self, mock_mounted):
+        self.volume_manager.mountpoint = ''
+        assert self.volume_manager.sync_data() is None
+        mock_mounted.assert_not_called()
 
     def test_create_verity_layer(self):
         with raises(NotImplementedError):
@@ -274,3 +291,10 @@ class TestVolumeManagerBase:
         mock_command.assert_called_once_with(
             ['chattr', '+C', 'toplevel/etc']
         )
+
+    @patch('os.path.exists')
+    def test_context_manager_exit(self, mock_os_path_exists):
+        mock_os_path_exists.return_value = True
+        with VolumeManagerBase(self.device_map, 'root_dir', Mock()):
+            pass
+            # just pass

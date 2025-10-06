@@ -20,7 +20,7 @@ import simplejson
 import pickle
 import os
 from typing import (
-    Dict, NamedTuple, TypeVar, Any
+    Dict, NamedTuple, TypeVar, Any, Optional
 )
 
 # project
@@ -47,9 +47,10 @@ result_name_tags = NamedTuple(
         ('A', str),  # architecture name
         ('I', str),  # custom ID setting
         ('T', str),  # image type name
-        ('M', int),  # Major version number
-        ('m', int),  # Minor version number
-        ('p', int)   # Patch version number
+        ('M', str),  # Major version number
+        ('m', str),  # Minor version number
+        ('p', str),  # Patch version number
+        ('v', str)   # Version string
     ]
 )
 
@@ -75,7 +76,11 @@ class Result:
         self.xml_state = xml_state
 
     def add_bundle_format(self, pattern: str):
-        (major, minor, patch) = self.xml_state.get_image_version().split('.')
+        version_string = self.xml_state.get_image_version()
+        if '.' in version_string:
+            (major, minor, patch) = version_string.split(sep='.', maxsplit=2)
+        else:
+            (major, minor, patch) = (version_string, '', '')
         self.name_tags = result_name_tags(
             N=self.xml_state.xml_data.get_name(),
             P='_'.join(
@@ -84,9 +89,10 @@ class Result:
             A=self.xml_state.host_architecture,
             I='',
             T=self.xml_state.get_build_type_name(),
-            M=int(major),
-            m=int(minor),
-            p=int(patch)
+            M=major,
+            m=minor,
+            p=patch,
+            v=version_string
         )
         self.result_files['bundle_format'] = {
             'pattern': pattern,
@@ -158,11 +164,11 @@ class Result:
                     )
         except Exception as e:
             raise KiwiResultError(
-                'Failed to pickle dump results: %s' % format(e)
+                f'Failed to pickle dump results: {format(e)}'
             )
 
     @staticmethod
-    def load(filename: str) -> result_type:
+    def load(filename: str) -> result_type:  # type: ignore
         """
         Load pickle dumped filename into a Result instance
 
@@ -173,18 +179,18 @@ class Result:
         """
         if not os.path.exists(filename):
             raise KiwiResultError(
-                'No result information %s found' % filename
+                f'No result information {filename} found'
             )
         try:
             with open(filename, 'rb') as result:
                 return pickle.load(result)
         except Exception as e:
             raise KiwiResultError(
-                'Failed to pickle load results: %s' % type(e).__name__
+                f'Failed to pickle load results: {type(e).__name__}'
             )
 
     @staticmethod
-    def verify_image_size(size_limit: int, filename: str) -> None:
+    def verify_image_size(size_limit: Optional[int], filename: str) -> None:
         """
         Verifies the given image file does not exceed the size limit.
         Throws an exception if the limit is exceeded. If the size limit

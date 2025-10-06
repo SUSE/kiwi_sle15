@@ -23,7 +23,7 @@ from typing import (
 
 
 # project
-from kiwi.command import command_call_type
+from kiwi.command import CommandCallT
 from kiwi.command import Command
 from kiwi.utils.rpm_database import RpmDataBase
 from kiwi.utils.rpm import Rpm
@@ -31,7 +31,7 @@ from kiwi.package_manager.base import PackageManagerBase
 from kiwi.system.root_bind import RootBind
 from kiwi.path import Path
 from kiwi.defaults import Defaults
-from kiwi.repository.dnf import RepositoryDnf
+from kiwi.repository.dnf4 import RepositoryDnf4
 
 from kiwi.exceptions import KiwiRequestError
 
@@ -54,7 +54,7 @@ class PackageManagerMicroDnf(PackageManagerBase):
 
         :param list custom_args: custom microdnf arguments
         """
-        self.repository: RepositoryDnf = self.repository
+        self.repository: RepositoryDnf4 = self.repository
         self.custom_args = custom_args
 
         runtime_config = self.repository.runtime_config()
@@ -155,7 +155,7 @@ class PackageManagerMicroDnf(PackageManagerBase):
 
     def process_install_requests_bootstrap(
         self, root_bind: RootBind = None, bootstrap_package: str = None
-    ) -> command_call_type:
+    ) -> CommandCallT:
         """
         Process package install requests for bootstrap phase (no chroot)
 
@@ -187,7 +187,7 @@ class PackageManagerMicroDnf(PackageManagerBase):
             microdnf_command, self.command_env
         )
 
-    def process_install_requests(self) -> command_call_type:
+    def process_install_requests(self) -> CommandCallT:
         """
         Process package install requests for image phase (chroot)
 
@@ -218,7 +218,7 @@ class PackageManagerMicroDnf(PackageManagerBase):
             microdnf_command, self.command_env
         )
 
-    def process_delete_requests(self, force: bool = False) -> command_call_type:
+    def process_delete_requests(self, force: bool = False) -> CommandCallT:
         """
         Process package delete requests (chroot)
 
@@ -267,7 +267,7 @@ class PackageManagerMicroDnf(PackageManagerBase):
                 dnf_command, self.command_env
             )
 
-    def update(self) -> command_call_type:
+    def update(self) -> CommandCallT:
         """
         Process package update requests (chroot)
 
@@ -347,16 +347,18 @@ class PackageManagerMicroDnf(PackageManagerBase):
         )
 
     def post_process_install_requests_bootstrap(
-        self, root_bind: RootBind = None
+        self, root_bind: RootBind = None, delta_root: bool = False
     ) -> None:
         """
         Move the rpm database to the place as it is expected by the
         rpm package installed during bootstrap phase
 
         :param object root_bind: unused
+        :param bool delta_root: unused
         """
         rpmdb = RpmDataBase(self.root_dir)
         if rpmdb.has_rpm():
+            rpmdb.rebuild_database()
             rpmdb.set_database_to_image_path()
 
     def clean_leftovers(self) -> None:

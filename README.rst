@@ -1,8 +1,6 @@
 KIWI - Next Generation
 ======================
 
-.. |GitLab CI Pipeline| image:: https://gitlab.com/kiwi3/kiwi-ci/badges/master/pipeline.svg
-   :target: https://gitlab.com/kiwi3/kiwi-ci/-/pipelines
 .. |GitHub Action Code Style| image:: https://github.com/OSInside/kiwi/actions/workflows/ci-code-style.yml/badge.svg
    :target: https://github.com/OSInside/kiwi/actions
 .. |GitHub Action Config Functions| image:: https://github.com/OSInside/kiwi/actions/workflows/ci-config-functions.yml/badge.svg
@@ -20,19 +18,23 @@ KIWI - Next Generation
 .. |Doc| replace:: `Documentation <https://osinside.github.io/kiwi/>`__
 .. |Installation| replace:: `Installation <https://osinside.github.io/kiwi/installation.html>`__
 .. |Contributing| replace:: `Contributing <https://osinside.github.io/kiwi/contributing.html>`__
+.. |IntegrationTesting| replace:: `Integration Testing <https://osinside.github.io/kiwi/integration_testing.html>`__
 .. |Donate| image:: https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif
-   :target: https://www.paypal.me/SchaeferMarcus
+   :target: https://www.paypal.com/donate/?hosted_button_id=CYZY57A7Q4TCC
 
-|GitLab CI Pipeline| |GitHub Action Config Functions| |GitHub Action Documentation| |GitHub Action Publish Pages| |GitHub Action Publish PyPi| |GitHub Action Unit Types| |Health|
+|GitHub Action Code Style| |GitHub Action Config Functions| |GitHub Action Documentation| |GitHub Action Publish Pages| |GitHub Action Publish PyPi| |GitHub Action Unit Types| |Health|
 
 **KIWI, the OS image and appliance builder.**
 
 * |Installation|
 
+* |IntegrationTesting|
+
 * |Contributing|
 
 * |Doc|
 
-We'll donate it for good luck so's you're sure to come back :)
+KIWI has helped you in your work ? Even the smallest gift is
+a way to help that we don't run out of coffee :)
 
 |Donate|

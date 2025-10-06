@@ -14,9 +14,9 @@
         <timezone>Europe/Berlin</timezone>
         <rpm-excludedocs>true</rpm-excludedocs>
         <rpm-check-signatures>false</rpm-check-signatures>
-        <bootsplash-theme>bgrt</bootsplash-theme>
+        <bootsplash-theme>breeze</bootsplash-theme>
         <bootloader-theme>openSUSE</bootloader-theme>
-        <type image="oem" filesystem="ext3" kernelcmdline="console=ttyS0" firmware="uefi" format="vmdk">
+        <type image="oem" filesystem="ext3" kernelcmdline="console=ttyS0" firmware="uefi" eficsm="false" format="vmdk">
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
@@ -25,6 +25,7 @@
     </preferences>
     <users>
         <user password="$1$wYJUgpM5$RXMMeASDc035eX.NbYWFl0" home="/root" name="root" groups="root"/>
+        <user password="$1$wYJUgpM5$RXMMeASDc035eX.NbYWFl0" home="/home/bob" name="bob" groups="users"/>
     </users>
     <repository type="rpm-md">
         <source path="obsrepositories:/"/>
@@ -33,14 +34,14 @@
         <package name="patterns-base-minimal_base"/>
         <package name="bind-utils"/>
         <package name="systemd"/>
-        <package name="plymouth-theme-bgrt"/>
+        <package name="plymouth-theme-breeze"/>
+        <package name="plymouth-plugin-script"/>
         <package name="grub2-branding-openSUSE"/>
         <package name="iputils"/>
         <package name="vim"/>
         <package name="grub2"/>
         <package name="grub2-x86_64-efi" arch="x86_64"/>
         <package name="grub2-i386-pc"/>
-        <package name="syslinux"/>
         <package name="lvm2"/>
         <package name="plymouth"/>
         <package name="fontconfig"/>
@@ -56,9 +57,15 @@
         <package name="kernel-default"/>
         <package name="shim"/>
         <package name="timezone"/>
+        <file name="a_custom_file" target="/home/bob/some_file" owner="bob:users" permissions="444"/>
     </packages>
     <packages type="bootstrap">
+        <package name="gawk"/>
+        <package name="grep"/>
+        <package name="gzip"/>
         <package name="udev"/>
+        <package name="xz"/>
+        <package name="shadow"/>
         <package name="filesystem"/>
         <package name="glibc-locale"/>
         <package name="cracklib-dict-full"/>

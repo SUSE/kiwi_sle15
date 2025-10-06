@@ -47,7 +47,7 @@ class DiskFormatOva(DiskFormatBase):
         """
         ovftype = self.xml_state.get_build_type_machine_section().get_ovftype()
         if ovftype != 'vmware':
-            raise KiwiFormatSetupError('Unsupported ovftype %s' % ovftype)
+            raise KiwiFormatSetupError(f'Unsupported ovftype {ovftype}')
         self.image_format = 'ova'
         self.options = self.get_qemu_option_list(custom_args)
         self.vmdk = DiskFormatVmdk(
@@ -63,15 +63,15 @@ class DiskFormatOva(DiskFormatBase):
         ovftool = Path.which(filename='ovftool', access_mode=os.X_OK)
         if not ovftool:
             tool_not_found_message = dedent('''\n
-                Required tool {0} not found in PATH on the build host
+                Required ovftool not found in PATH on the build host
 
-                Building OVA images requires VMware's {0} tool which
+                Building OVA images requires VMware's ovftool tool which
                 can be installed from the following location
 
-                https://www.vmware.com/support/developer/ovf
+                https://developer.vmware.com/web/tool/ovf
             ''')
             raise KiwiCommandNotFound(
-                tool_not_found_message.format(ovftool)
+                tool_not_found_message
             )
 
         # Create the vmdk disk image and vmx config
@@ -89,6 +89,15 @@ class DiskFormatOva(DiskFormatBase):
             ovftool, '--shaAlgorithm', raise_on_error=False
         ):
             ovftool_options.append('--shaAlgorithm=SHA1')
+        if CommandCapabilities.has_option_in_help(
+            ovftool, '--allowExtraConfig', raise_on_error=False
+        ):
+            ovftool_options.append('--allowExtraConfig')
+        if CommandCapabilities.has_option_in_help(
+            ovftool, '--exportFlags', raise_on_error=False
+        ):
+            ovftool_options.append('--exportFlags=extraconfig')
+
         Command.run(
             [ovftool] + ovftool_options + [vmx, ova]
         )

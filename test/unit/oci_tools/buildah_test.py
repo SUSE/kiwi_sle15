@@ -1,5 +1,5 @@
 import logging
-from mock import (
+from unittest.mock import (
     Mock, patch, call
 )
 from pytest import (
@@ -9,6 +9,7 @@ from collections import namedtuple
 
 from kiwi.oci_tools.buildah import OCIBuildah
 from kiwi.exceptions import KiwiBuildahError
+from kiwi.oci_tools.base import OCIBase
 
 
 class TestOCIBuildah:
@@ -28,15 +29,6 @@ class TestOCIBuildah:
     @patch('kiwi.oci_tools.base.datetime')
     def setup_method(self, cls, mock_datetime):
         self.setup()
-
-    @patch('kiwi.oci_tools.umoci.Command.run')
-    def teardown(self, mock_cmd_run):
-        self.oci.__del__()
-        mock_cmd_run.reset_mock()
-
-    @patch('kiwi.oci_tools.umoci.Command.run')
-    def teardown_method(self, cls, mock_cmd_run):
-        self.teardown()
 
     @patch('kiwi.oci_tools.buildah.random.choice')
     @patch('kiwi.oci_tools.buildah.Command.run')
@@ -119,6 +111,7 @@ class TestOCIBuildah:
             'workingdir': '/root',
             'expose_ports': ['80', '42'],
             'volumes': ['/var/log', '/tmp'],
+            'stopsignal': 'SIGINT',
             'environment': {'FOO': 'bar', 'PATH': '/bin'},
             'labels': {'a': 'value', 'b': 'value'},
             'history': {
@@ -135,7 +128,9 @@ class TestOCIBuildah:
                 'buildah', 'config', '--author=tux', '--user=root',
                 '--workingdir=/root', '--entrypoint=["/bin/bash","-x"]',
                 '--cmd=ls -l',
-                '--volume=/var/log', '--volume=/tmp', '--port=80', '--port=42',
+                '--volume=/var/log', '--volume=/tmp',
+                '--stop-signal=SIGINT',
+                '--port=80', '--port=42',
                 '--env=FOO=bar', '--env=PATH=/bin', '--label=a=value',
                 '--label=b=value', '--history-comment=This is a comment',
                 '--created-by=created by text', 'kiwi-working'
@@ -160,13 +155,18 @@ class TestOCIBuildah:
 
     @patch('kiwi.oci_tools.buildah.random.choice')
     @patch('kiwi.oci_tools.buildah.Command.run')
-    def test_import_container_image(self, mock_Command_run, mock_choice):
+    @patch.object(OCIBase, '_skopeo_provides_tmpdir_option')
+    def test_import_container_image(
+        self, mock_skopeo_provides_tmpdir_option, mock_Command_run, mock_choice
+    ):
+        mock_skopeo_provides_tmpdir_option.return_value = True
         mock_choice.return_value = 'x'
         self.oci.import_container_image('oci-archive:image.tar')
         assert mock_Command_run.call_args_list == [
             call([
                 'skopeo', 'copy', 'oci-archive:image.tar',
-                'containers-storage:kiwi-image-xxxxxx:base_layer'
+                'containers-storage:kiwi-image-xxxxxx:base_layer',
+                '--tmpdir', '/var/tmp'
             ]),
             call([
                 'buildah', 'from', '--name', 'kiwi-container-xxxxxx',
@@ -197,7 +197,11 @@ class TestOCIBuildah:
 
     @patch('kiwi.oci_tools.buildah.Path.wipe')
     @patch('kiwi.oci_tools.buildah.Command.run')
-    def test_export_container_image(self, mock_Command_run, mock_wipe):
+    @patch.object(OCIBase, '_skopeo_provides_tmpdir_option')
+    def test_export_container_image(
+        self, mock_skopeo_provides_tmpdir_option, mock_Command_run, mock_wipe
+    ):
+        mock_skopeo_provides_tmpdir_option.return_value = True
         self.oci.working_image = 'kiwi-image:tag'
         self.oci.export_container_image(
             'image.tar', 'docker-archive', 'myimage:tag',
@@ -205,14 +209,20 @@ class TestOCIBuildah:
         )
         mock_Command_run.assert_called_once_with([
             'skopeo', 'copy', 'containers-storage:kiwi-image:tag',
-            'docker-archive:image.tar:myimage:tag', '--additional-tag',
-            'myimage:tag2', '--additional-tag', 'myimage:tag3'
+            'docker-archive:image.tar:myimage:tag',
+            '--additional-tag', 'myimage:tag2',
+            '--additional-tag', 'myimage:tag3',
+            '--tmpdir', '/var/tmp'
         ])
         mock_wipe.assert_called_once_with('image.tar')
 
     @patch('kiwi.oci_tools.buildah.Path.wipe')
     @patch('kiwi.oci_tools.buildah.Command.run')
-    def test_export_container_image_imported(self, mock_Command_run, mock_wipe):
+    @patch.object(OCIBase, '_skopeo_provides_tmpdir_option')
+    def test_export_container_image_imported(
+        self, mock_skopeo_provides_tmpdir_option, mock_Command_run, mock_wipe
+    ):
+        mock_skopeo_provides_tmpdir_option.return_value = True
         self.oci.working_image = None
         self.oci.imported_image = 'kiwi-image:base_layer'
         self.oci.export_container_image(
@@ -221,8 +231,10 @@ class TestOCIBuildah:
         )
         mock_Command_run.assert_called_once_with([
             'skopeo', 'copy', 'containers-storage:kiwi-image:base_layer',
-            'docker-archive:image.tar:myimage:tag', '--additional-tag',
-            'myimage:tag2', '--additional-tag', 'myimage:tag3'
+            'docker-archive:image.tar:myimage:tag',
+            '--additional-tag', 'myimage:tag2',
+            '--additional-tag', 'myimage:tag3',
+            '--tmpdir', '/var/tmp'
         ])
         mock_wipe.assert_called_once_with('image.tar')
 
@@ -237,3 +249,16 @@ class TestOCIBuildah:
                 ['myimage:tag2', 'myimage:tag3']
             )
             mock_wipe.assert_called_once_with('image.tar')
+
+    @patch('kiwi.oci_tools.buildah.Command.run')
+    def test_context_manager_exit(self, mock_Command_run):
+        with OCIBuildah() as oci:
+            oci.working_container = 'working_container'
+            oci.working_image = 'working_image'
+            oci.imported_image = 'imported_image'
+        assert mock_Command_run.call_args_list == [
+            call(['buildah', 'umount', 'working_container']),
+            call(['buildah', 'rm', 'working_container']),
+            call(['buildah', 'rmi', 'working_image']),
+            call(['buildah', 'rmi', 'imported_image'])
+        ]

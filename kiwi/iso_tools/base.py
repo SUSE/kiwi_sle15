@@ -19,7 +19,7 @@ import os
 import shutil
 import logging
 from typing import (
-    Dict, List, Union
+    Dict, List, Optional, Union
 )
 
 # project
@@ -64,7 +64,7 @@ class IsoToolsBase:
         self, custom_args: Dict[str, Union[str, bool]] = None
     ) -> None:
         """
-        Create a set of standard parameters for the main isolinux loader
+        Create a set of standard parameters for the main loader
 
         Implementation in specialized tool class
 
@@ -72,7 +72,9 @@ class IsoToolsBase:
         """
         raise NotImplementedError
 
-    def add_efi_loader_parameters(self, loader_file: str) -> None:
+    def add_efi_loader_parameters(
+        self, loader_file: str, custom_args: Optional[Dict[str, Union[str, bool]]] = None
+    ) -> None:
         """
         Add ISO creation parameters to embed the EFI loader
 
@@ -122,8 +124,8 @@ class IsoToolsBase:
         Path.wipe(loader_data)
         Path.create(loader_data)
         grub_image_file_names = [
-            Defaults.get_isolinux_bios_grub_loader(),
-            'boot_hybrid.img'
+            Defaults.get_iso_grub_loader(),
+            Defaults.get_iso_grub_mbr()
         ]
         loader_files = []
         for grub_image_file_name in grub_image_file_names:
@@ -133,16 +135,6 @@ class IsoToolsBase:
             )
             if grub_file and os.path.exists(grub_file):
                 loader_files.append(grub_file)
-
-        for syslinux_file_name in Defaults.get_syslinux_modules():
-            for syslinux_dir in Defaults.get_syslinux_search_paths():
-                syslinux_file = os.path.normpath(
-                    os.sep.join(
-                        [lookup_path, syslinux_dir, syslinux_file_name]
-                    )
-                )
-                if os.path.exists(syslinux_file):
-                    loader_files.append(syslinux_file)
 
         log.debug('Copying loader files to {0}'.format(loader_data))
         for loader_file in loader_files:

@@ -11,7 +11,7 @@
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
-            <bootloader name="grub2" timeout="10" console="serial gfxterm"/>
+            <bootloader name="grub2" timeout="10" console="serial"/>
             <size unit="M">10240</size>
         </type>
         <version>0.3.10</version>
@@ -41,7 +41,6 @@
         <package name="plymouth"/>
         <package name="psmisc"/>
         <package name="rsync"/>
-        <package name="syslinux"/>
         <package name="systemd"/>
         <package name="systemd-sysvinit"/>
         <package name="sudo"/>
@@ -78,21 +77,17 @@
         <package name="kernel-default"/>
         <package name="klogd"/>
         <package name="ksh"/>
-        <package name="lockdev"/>
         <package name="man"/>
         <package name="man-pages"/>
         <package name="mozilla-nss-certs"/>
         <package name="netcat-openbsd"/>
-        <package name="nscd"/>
         <package name="ntp"/>
         <package name="openldap2-client"/>
-        <package name="opie"/>
         <package name="polkit-default-privs"/>
         <package name="prctl"/>
         <package name="procinfo"/>
         <package name="quota"/>
         <package name="recode"/>
-        <package name="rsh"/>
         <package name="screen"/>
         <package name="strace"/>
         <package name="supportutils"/>
@@ -103,7 +98,6 @@
         <package name="terminfo"/>
         <package name="vlock"/>
         <package name="wget"/>
-        <package name="x86info"/>
         <package name="xfsprogs"/>
         <package name="xinetd"/>
         <package name="yp-tools"/>
@@ -121,7 +115,12 @@
         <package name="cloud-init-config-suse"/>
     </packages>
     <packages type="bootstrap">
+        <package name="gawk"/>
+        <package name="grep"/>
+        <package name="gzip"/>
         <package name="udev"/>
+        <package name="xz"/>
+        <package name="shadow"/>
         <package name="filesystem"/>
         <package name="glibc-locale"/>
         <package name="cracklib-dict-full"/>

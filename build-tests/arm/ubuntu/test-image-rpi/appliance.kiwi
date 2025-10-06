@@ -9,9 +9,6 @@
     <preferences>
         <version>1.22.4</version>
         <packagemanager>apt</packagemanager>
-        <locale>en_US</locale>
-        <keytable>us</keytable>
-        <timezone>UTC</timezone>
         <rpm-excludedocs>true</rpm-excludedocs>
         <type image="oem" filesystem="xfs" firmware="efi" bootpartition="false" efipartsize="128" devicepersistency="by-label" editbootinstall="editbootinstall_rpi.sh">
             <bootloader name="custom"/>
@@ -30,14 +27,14 @@
         <user password="$1$wYJUgpM5$RXMMeASDc035eX.NbYWFl0" home="/home/ubuntu" name="ubuntu" groups="users,kvm" shell="/bin/bash"/>
     </users>
 
-    <repository type="apt-deb" alias="kiwi-next-generation" priority="1" repository_gpgcheck="false">
-        <source path="obs://Virtualization:Appliances:Builder/xUbuntu_22.04"/>
+    <repository type="apt-deb" alias="kiwi-next-generation" priority="1" repository_gpgcheck="false" architectures="arm64">
+        <source path="obs://Virtualization:Appliances:Staging/xUbuntu_24.04_aarch64"/>
     </repository>
-    <repository type="apt-deb" alias="Ubuntu-Jammy-Universe" distribution="jammy" components="main multiverse restricted universe" repository_gpgcheck="false">
-        <source path="obs://Ubuntu:22.04/universe"/>
+    <repository type="apt-deb" alias="Ubuntu-Noble-Universe" distribution="noble" components="main multiverse restricted universe" repository_gpgcheck="false">
+        <source path="obs://Ubuntu:24.04/universe"/>
     </repository>
-    <repository type="apt-deb" alias="Ubuntu-Jammy" distribution="jammy" components="main multiverse restricted universe" repository_gpgcheck="false">
-        <source path="obs://Ubuntu:22.04/standard"/>
+    <repository type="apt-deb" alias="Ubuntu-Noble" distribution="noble" components="main multiverse restricted universe" repository_gpgcheck="false">
+        <source path="obs://Ubuntu:24.04/standard"/>
     </repository>
     
     <packages type="image">
@@ -50,11 +47,12 @@
         <package name="rpi-eeprom"/>
         <package name="libraspberrypi-bin"/>
         <!-- system packages -->
+        <package name="gawk"/>
+        <package name="libpam-runtime"/>
         <package name="bash-completion"/>
         <package name="git"/>
         <package name="sudo"/>
         <package name="net-tools"/>
-        <package name="tzdata"/>
         <package name="apt-utils"/>
         <package name="systemd"/>
         <package name="systemd-timesyncd"/>
@@ -67,24 +65,19 @@
         <package name="dbus"/>
         <package name="xfsprogs"/>
         <package name="dracut-kiwi-oem-repart"/>
-        <package name="usrmerge"/>
         <package name="mawk"/>
         <package name="openssh-client"/>
         <package name="openssh-server"/>
-        <package name="netcat"/>
         <package name="zstd"/>
         <package name="util-linux"/>
         <package name="less"/>
         <package name="vim"/>
-        <!-- image building -->
-        <package name="python3-kiwi"/>
-        <package name="python3-kiwi-boxed-plugin"/>
-        <package name="kiwi-systemdeps"/>
-        <package name="jing"/>
-        <package name="qemu-kvm"/>
-        <package name="qemu-system-x86"/>
-        <package name="qemu-system-arm"/>
         <package name="fdisk"/>
+        <package name="language-pack-en"/>
+        <package name="locales-all"/>
+        <package name="tzdata"/>
     </packages>
-    <packages type="bootstrap"/>
+    <packages type="bootstrap">
+        <package name="ca-certificates"/>
+    </packages>
 </image>

@@ -1,9 +1,9 @@
 import logging
-from mock import patch
+from unittest.mock import patch
 from pytest import (
     fixture, raises
 )
-import mock
+import unittest.mock as mock
 
 import kiwi
 
@@ -217,7 +217,7 @@ class TestDiskSetup:
     @patch('os.path.exists')
     def test_get_disksize_mbytes_partitions(self, mock_exists):
         mock_exists.side_effect = lambda path: path != 'root_dir/var/tmp'
-        assert self.setup_partitions.get_disksize_mbytes() == 632
+        assert self.setup_partitions.get_disksize_mbytes() == 732
 
     @patch('os.path.exists')
     def test_get_disksize_mbytes_clones(self, mock_exists):
@@ -228,11 +228,12 @@ class TestDiskSetup:
             partition_name='var',
             partition_type='t.linux',
             mountpoint='/var',
-            filesystem='ext3'
+            filesystem='ext3',
+            label='var'
         )
         assert self.setup_partitions.get_disksize_mbytes(
             root_clone=1, boot_clone=1
-        ) == 742
+        ) == 842
 
     @patch('os.path.exists')
     def test_get_disksize_mbytes_oem_volumes(self, mock_exists):
@@ -244,7 +245,7 @@ class TestDiskSetup:
             Defaults.get_default_efi_boot_mbytes() + \
             Defaults.get_default_boot_mbytes() + \
             root_size + \
-            5 * Defaults.get_min_volume_mbytes()
+            5 * Defaults.get_min_volume_mbytes('ext3')
 
     @patch('os.path.exists')
     def test_get_disksize_mbytes_root_volume(self, mock_exists):

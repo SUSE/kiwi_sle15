@@ -48,6 +48,9 @@ var/
 .installed.cfg
 *.egg
 
+# Poetry
+poetry.lock
+
 # PyInstaller
 #  Usually these files are written by a python script from a template
 #  before PyInstaller builds the exe, so as to inject date/other infos into it.
@@ -62,7 +65,6 @@ htmlcov/
 .tox/
 .coverage
 .cache
-nosetests.xml
 coverage.xml
 
 # Translations
@@ -75,9 +77,6 @@ coverage.xml
 docs/_build/
 doc/xml/
 
-# PyBuilder
-target/
-
 # man pages
 *.1.gz
 
@@ -86,3 +85,7 @@ target/
 
 # Editors
 .vscode/
+
+# Rust
+Cargo.lock
+vendor/

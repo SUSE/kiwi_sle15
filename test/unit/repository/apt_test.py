@@ -1,14 +1,14 @@
-from mock import (
+from unittest.mock import (
     patch, call, MagicMock
 )
 import io
-import mock
+import unittest.mock as mock
 
 from kiwi.repository.apt import RepositoryApt
 
 
 class TestRepositoryApt:
-    @patch('kiwi.repository.apt.Temporary.new_file')
+    @patch('kiwi.repository.apt.Temporary.unmanaged_file')
     @patch('kiwi.repository.apt.PackageManagerTemplateAptGet')
     @patch('kiwi.repository.apt.Path.create')
     def setup(self, mock_path, mock_template, mock_temp):
@@ -50,7 +50,7 @@ class TestRepositoryApt:
             assert repo.custom_args == []
             assert repo.unauthenticated == 'true'
 
-    @patch('kiwi.repository.apt.Temporary.new_file')
+    @patch('kiwi.repository.apt.Temporary.unmanaged_file')
     @patch('kiwi.repository.apt.PackageManagerTemplateAptGet')
     @patch('kiwi.repository.apt.Path.create')
     def setup_method(self, cls, mock_path, mock_template, mock_temp):
@@ -151,11 +151,13 @@ class TestRepositoryApt:
             mock_open.return_value = MagicMock(spec=io.IOBase)
             file_handle = mock_open.return_value.__enter__.return_value
             self.repo.add_repo(
-                'foo', 'kiwi_iso_mount/uri', 'deb', None, 'xenial', 'a b'
+                'foo', 'kiwi_iso_mount/uri', 'deb', None, 'xenial', 'a b',
+                architectures='amd64,arm64'
             )
             file_handle.write.assert_called_once_with(
                 'Types: deb\n'
                 'URIs: file:/kiwi_iso_mount/uri\n'
+                'Architectures: amd64 arm64\n'
                 'Suites: xenial\n'
                 'Components: a b\n'
             )
@@ -286,3 +288,9 @@ class TestRepositoryApt:
             call('/shared-dir/apt-get/pkgcache.bin'),
             call('/shared-dir/apt-get/srcpkgcache.bin')
         ]
+
+    @patch('os.path.isfile')
+    @patch('os.unlink')
+    def test_cleanup(self, mock_os_unlink, mock_os_path_isfile):
+        self.repo.cleanup()
+        mock_os_unlink.assert_called_once_with('tmpfile')

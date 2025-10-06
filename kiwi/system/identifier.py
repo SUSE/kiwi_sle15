@@ -15,11 +15,15 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
+import logging
+import os
 import random
 import struct
 
 # project
 from kiwi.storage.device_provider import DeviceProvider
+
+log = logging.getLogger('kiwi')
 
 
 class SystemIdentifier:
@@ -32,6 +36,10 @@ class SystemIdentifier:
     """
     def __init__(self):
         self.image_id = None
+        sde = os.environ.get('SOURCE_DATE_EPOCH')
+        if sde:
+            log.info(f'Using SystemIdentifier seed SOURCE_DATE_EPOCH:{sde}')
+            random.seed(int(sde))
 
     def get_id(self) -> str:
         """
@@ -60,7 +68,7 @@ class SystemIdentifier:
         :param str filename: file path name
         """
         with open(filename, 'w') as identifier:
-            identifier.write('%s\n' % self.image_id)
+            identifier.write(f'{self.image_id}\n')
 
     def write_to_disk(self, device_provider: DeviceProvider) -> None:
         """

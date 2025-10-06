@@ -65,11 +65,16 @@ size="size_string"
   specification mega-Byte is used.
 
 mountpoint="path"
-  Mandatory mountpoint to mount the partition in the system.
+  Optional mountpoint to mount the partition in the system.
 
 filesystem="btrfs|ext2|ext3|ext4|squashfs|xfs
-  Mandatory filesystem configuration to create one of the supported
+  Optional filesystem configuration to create one of the supported
   filesystems on the partition.
+
+label="string"
+  Optional filesystem label if a filesystem is provided. If no
+  label is specified the `name` identifier is set as filesystem
+  label
 
 clone="number"
   Optional setting to indicate that this partition should be
@@ -84,7 +89,7 @@ clone="number"
 Despite the customization options of the partition table shown above
 there are the following limitations:
 
-1. The root partition is always the last one
+1. By default the root partition is always the last one
 
    Disk imags build with {kiwi} are designed to be expandable.
    For this feature to work the partition containing the system
@@ -93,20 +98,27 @@ there are the following limitations:
    partition with the option to be also placed at the end of the
    table. For details lookup `spare_part` in :ref:`image-description-elements`
 
-2. There can be no gaps in the partition table
+2. By default there are no gaps in the partition table
 
-   The way partitions are configured does not allow for gaps in the
-   table. As of today there was no use case were it made sense to
-   leave a gap between table entries. However, leaving some space
+   The way partitions are configured is done such that there are no
+   gaps in the table of the image. However, leaving some space
    free at the **end** of the partition geometry is possible in the
    following ways:
 
    * **Deploy with unpartitioned free space.**
 
      To leave space unpartitioned on first boot of a disk image
-     it is possible to configured an `<oem-systemsize>` which is
+     it is possible to configure an `<oem-systemsize>` which is
      smaller than the disk the image gets deployed to. Details
      about this setting can be found in :ref:`image-description-elements`
+
+   * **Build with unpartitioned free space.**
+
+     To leave space unpartitioned at build time of the image it
+     is possible to disable `<oem-resize>` and configure an
+     `<oem-systemsize>` which is smaller than the kiwi calculated
+     disk size or the fixed setting for the disk size via the
+     `size>` element.
 
    * **Build with unpartitioned free space.**
 

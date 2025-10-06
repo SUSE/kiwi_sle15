@@ -3,10 +3,10 @@
 #
 # KIWI NG documentation build configuration file
 #
+from datetime import datetime
 import sys
 from os.path import abspath, dirname, join, normpath
 import shlex
-import sphinx_rtd_theme
 
 # If extensions (or modules to document with autodoc) are in another directory,
 # add these directories to sys.path here. If the directory is relative to the
@@ -31,7 +31,8 @@ extensions = [
     'sphinx.ext.todo',
     'sphinx.ext.ifconfig',
     'sphinx.ext.viewcode',
-    'sphinx.ext.autodoc'
+    'sphinx.ext.autodoc',
+    'sphinx_rtd_theme'
 ]
 
 docopt_ignore = [
@@ -60,7 +61,6 @@ def setup(app):
     app.add_config_value('prolog_replacements', {}, True)
     app.connect('source-read', prologReplace)
     app.connect("autodoc-process-docstring", remove_module_docstring)
-    app.add_css_file('css/custom.css')
 
 
 prolog_replacements = {
@@ -70,6 +70,7 @@ prolog_replacements = {
     '{exc_image_base_name_disk_simple}': 'kiwi-test-image-disk-simple',
     '{exc_image_base_name_live}': 'kiwi-test-image-live',
     '{exc_image_base_name_docker}': 'kiwi-test-image-docker',
+    '{exc_image_base_name_enclave}': 'kiwi-test-image-nitro-enclave',
     '{exc_netboot}': 'netboot/suse-tumbleweed',
     '{exc_description_pxe}': 'x86/tumbleweed/test-image-pxe',
     '{exc_description_vagrant}': 'x86/leap/test-image-vagrant',
@@ -78,13 +79,15 @@ prolog_replacements = {
     '{exc_description_live}': 'x86/leap/test-image-live',
     '{exc_description_wsl}': 'x86/tumbleweed/test-image-wsl',
     '{exc_description_docker}': 'x86/leap/test-image-docker',
-    '{exc_os_version}': '15.3',
-    '{exc_image_version}': '1.15.3',
-    '{exc_repo_leap}': 'obs://openSUSE:Leap:15.3/standard',
-    '{exc_repo_tumbleweed}': 'http://download.opensuse.org/tumbleweed/repo/oss',
+    '{exc_description_enclave}': 'x86/rawhide/test-image-nitro-enclave',
+    '{exc_os_version}': '15.6',
+    '{exc_image_version}': '1.15.6',
+    '{exc_repo_leap}': 'https://download.opensuse.org/distribution/leap/15.6/repo/oss',
+    '{exc_repo_tumbleweed}': 'https://download.opensuse.org/tumbleweed/repo/oss',
+    '{exc_repo_rawhide}': 'https://mirrors.fedoraproject.org/metalink?repo=rawhide&arch=x86_64',
     '{exc_kiwi_repo}':
-        'obs://Virtualization:Appliances:Builder/openSUSE_Leap_15.3',
-    '{schema_version}': '7.4',
+        'obs://Virtualization:Appliances:Builder/openSUSE_Leap_15.6',
+    '{schema_version}': '8.0',
     '{kiwi}': 'KIWI NG',
     '{kiwi-product}': 'KIWI Next Generation (KIWI NG)',
     '{kiwi-legacy}': 'KIWI Legacy'
@@ -131,15 +134,15 @@ default_role="py:obj"
 
 # General information about the project.
 project = 'KIWI NG'
-copyright = '2020, Marcus Schäfer'
 author = 'Marcus Schäfer'
+copyright = f'2020-{datetime.now().year}, {author}'
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
 # built documents.
 #
 # The short X.Y version.
-version = '9.24.43'
+version = '10.2.33'
 # The full version, including alpha/beta/rc tags.
 release = version
 

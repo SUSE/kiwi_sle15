@@ -1,9 +1,10 @@
-from mock import (
-    patch, call, Mock
+from unittest.mock import (
+    MagicMock, patch, call, Mock
 )
-from pytest import raises
+from pytest import raises, mark
 import sys
-import kiwi
+from kiwi.bootloader.config.grub2 import BootLoaderConfigGrub2
+import kiwi.builder.live
 
 from ..test_helper import argv_kiwi_tests
 
@@ -37,15 +38,14 @@ class TestLiveImageBuilder:
             return_value=self.filesystem_setup
         )
 
-        self.loop = Mock()
-        kiwi.builder.live.LoopDevice = Mock(
-            return_value=self.loop
+        self.bootloader = MagicMock(spec=BootLoaderConfigGrub2)
+        create_boot_loader_config_mock = Mock(
+            return_value=MagicMock()
         )
-
-        self.bootloader = Mock()
-        kiwi.builder.live.BootLoaderConfig.new = Mock(
-            return_value=self.bootloader
-        )
+        create_boot_loader_config_mock.return_value.__enter__.return_value = \
+            MagicMock()
+        kiwi.builder.live.create_boot_loader_config = \
+            create_boot_loader_config_mock
 
         self.boot_image_task = Mock()
         self.boot_image_task.boot_root_directory = 'initrd_dir'
@@ -79,6 +79,9 @@ class TestLiveImageBuilder:
         )
         self.xml_state.get_fs_create_option_list = Mock(
             return_value=['-O', 'option']
+        )
+        self.xml_state.build_type.get_application_id = Mock(
+            return_value='0xffffffff'
         )
         self.xml_state.build_type.get_flags = Mock(
             return_value=None
@@ -136,6 +139,9 @@ class TestLiveImageBuilder:
         )
         assert live_image.arch == 'ix86'
 
+    @patch('kiwi.builder.disk.create_boot_loader_config')
+    @patch('kiwi.builder.live.LoopDevice')
+    @patch('kiwi.builder.live.Command.run')
     @patch('kiwi.builder.live.DeviceProvider')
     @patch('kiwi.builder.live.IsoToolsBase.setup_media_loader_directory')
     @patch('kiwi.builder.live.Temporary')
@@ -146,13 +152,61 @@ class TestLiveImageBuilder:
     @patch('kiwi.builder.live.FileSystem.new')
     @patch('kiwi.builder.live.SystemSize')
     @patch('kiwi.builder.live.Defaults.get_grub_boot_directory_name')
+    @patch('os.unlink')
     @patch('os.path.exists')
-    def test_create_overlay_structure(
-        self, mock_exists, mock_grub_dir, mock_size, mock_filesystem,
-        mock_isofs, mock_Iso, mock_tag, mock_shutil,
-        mock_Temporary, mock_setup_media_loader_directory, mock_DeviceProvider
+    @patch('os.chmod')
+    def test_create_overlay_structure_boot_on_systemd_boot(
+        self, mock_chmod, mock_exists, mock_unlink, mock_grub_dir, mock_size,
+        mock_filesystem, mock_isofs, mock_Iso, mock_tag, mock_shutil,
+        mock_Temporary, mock_setup_media_loader_directory, mock_DeviceProvider,
+        mock_Command_run, mock_LoopDevice, mock_create_boot_loader_config
     ):
+        boot_names = Mock()
+        boot_names.initrd_name = 'dracut_initrd_name'
+        self.live_image.boot_image.get_boot_names.return_value = boot_names
+        self.live_image.boot_image.initrd_filename = 'kiwi_used_initrd_name'
+        self.live_image.bootloader = 'systemd_boot'
+
+        rootsize = Mock()
+        rootsize.accumulate_mbyte_file_sizes = Mock(
+            return_value=8192
+        )
+        mock_size.return_value = rootsize
+
+        self.live_image.create()
+        mock_Command_run.assert_called_once_with(
+            ['mv', 'kiwi_used_initrd_name', 'root_dir/boot/dracut_initrd_name']
+        )
+
+    @mark.parametrize('xml_filesystem', [None, 'squashfs'])
+    @patch('kiwi.builder.live.create_boot_loader_config')
+    @patch('kiwi.builder.live.LoopDevice')
+    @patch('kiwi.builder.live.DeviceProvider')
+    @patch('kiwi.builder.live.IsoToolsBase.setup_media_loader_directory')
+    @patch('kiwi.builder.live.Temporary')
+    @patch('kiwi.builder.live.shutil')
+    @patch('kiwi.builder.live.Iso.set_media_tag')
+    @patch('kiwi.builder.live.Iso')
+    @patch('kiwi.builder.live.FileSystemIsoFs')
+    @patch('kiwi.builder.live.FileSystem.new')
+    @patch('kiwi.builder.live.SystemSize')
+    @patch('kiwi.builder.live.Defaults.get_grub_boot_directory_name')
+    @patch('os.unlink')
+    @patch('os.path.exists')
+    @patch('os.chmod')
+    def test_create_overlay_structure_boot_on_grub(
+        self, mock_chmod, mock_exists, mock_unlink, mock_grub_dir, mock_size,
+        mock_filesystem, mock_isofs, mock_Iso, mock_tag, mock_shutil,
+        mock_Temporary, mock_setup_media_loader_directory, mock_DeviceProvider,
+        mock_LoopDevice, mock_create_boot_loader_config, xml_filesystem
+    ):
+        bootloader_config = Mock()
+        mock_create_boot_loader_config.return_value.__enter__.return_value = \
+            bootloader_config
+        loop_provider = Mock()
+        mock_LoopDevice.return_value.__enter__.return_value = loop_provider
         mock_exists.return_value = True
+        mock_unlink.return_value = True
         mock_grub_dir.return_value = 'grub2'
 
         temp_squashfs = Mock()
@@ -164,7 +218,7 @@ class TestLiveImageBuilder:
         tmpdir_name = [temp_squashfs, temp_media_dir]
 
         filesystem = Mock()
-        mock_filesystem.return_value = filesystem
+        mock_filesystem.return_value.__enter__.return_value = filesystem
 
         def side_effect():
             return tmpdir_name.pop()
@@ -174,9 +228,13 @@ class TestLiveImageBuilder:
 
         self.live_image.live_type = 'overlay'
 
+        self.xml_state.build_type.get_filesystem = Mock(
+            return_value=xml_filesystem
+        )
+
         iso_image = Mock()
         iso_image.create_on_file.return_value = 'offset'
-        mock_isofs.return_value = iso_image
+        mock_isofs.return_value.__enter__.return_value = iso_image
 
         rootsize = Mock()
         rootsize.accumulate_mbyte_file_sizes = Mock(
@@ -189,37 +247,70 @@ class TestLiveImageBuilder:
         self.setup.export_package_list.return_value = '.packages'
 
         self.firmware.bios_mode.return_value = False
+        self.firmware.get_partition_table_type.return_value = 'gpt'
+        self.firmware.gpt_hybrid_mbr = False
         self.live_image.create()
 
         self.setup.import_cdroot_files.assert_called_once_with('temp_media_dir')
 
-        assert kiwi.builder.live.FileSystem.new.call_args_list == [
-            call(
-                device_provider=self.loop, name='ext4',
-                root_dir='root_dir/',
-                custom_args={
-                    'mount_options': ['async'],
-                    'create_options': ['-O', 'option']
-                }
-            ),
-            call(
-                device_provider=mock_DeviceProvider.return_value,
-                name='squashfs',
-                root_dir='temp-squashfs',
-                custom_args={'compression': 'lzo'}
+        if xml_filesystem == 'squashfs':
+            assert kiwi.builder.live.FileSystem.new.call_args_list == [
+                call(
+                    device_provider=mock_DeviceProvider.return_value,
+                    name='squashfs',
+                    root_dir='root_dir/',
+                    custom_args={
+                        'mount_options': ['async'],
+                        'create_options': ['-O', 'option'],
+                        'compression': 'lzo'
+                    }
+                )
+            ]
+
+            filesystem.create_on_file.assert_called_once_with(
+                filename='kiwi-tmpfile',
+                exclude=[
+                    'image', '.kconfig', 'run/*', 'tmp/*',
+                    '.buildenv', 'var/cache/kiwi'
+                ]
             )
-        ]
 
-        filesystem.create_on_device.assert_called_once_with()
-        filesystem.sync_data.assert_called_once_with([
-            'image', '.kconfig',
-            'run/*', 'tmp/*', '.buildenv', 'var/cache/kiwi'
-        ])
-        filesystem.create_on_file.assert_called_once_with('kiwi-tmpfile')
+            assert mock_shutil.copy.call_args_list == [
+                call('kiwi-tmpfile', 'temp_media_dir/LiveOS/squashfs.img')
+            ]
+        else:
+            assert kiwi.builder.live.FileSystem.new.call_args_list == [
+                call(
+                    device_provider=loop_provider, name='ext4',
+                    root_dir='root_dir/',
+                    custom_args={
+                        'mount_options': ['async'],
+                        'create_options': ['-O', 'option']
+                    }
+                ),
+                call(
+                    device_provider=mock_DeviceProvider.return_value,
+                    name='squashfs',
+                    root_dir='temp-squashfs',
+                    custom_args={'compression': 'lzo'}
+                )
+            ]
 
-        assert mock_shutil.copy.call_args_list == [
-            call('kiwi-tmpfile', 'temp-squashfs/LiveOS/rootfs.img'),
-            call('kiwi-tmpfile', 'temp_media_dir/LiveOS/squashfs.img')
+            filesystem.create_on_device.assert_called_once_with()
+            filesystem.sync_data.assert_called_once_with([
+                'image', '.kconfig',
+                'run/*', 'tmp/*', '.buildenv', 'var/cache/kiwi'
+            ])
+
+            filesystem.create_on_file.assert_called_once_with('kiwi-tmpfile')
+
+            assert mock_shutil.copy.call_args_list == [
+                call('kiwi-tmpfile', 'temp-squashfs/LiveOS/rootfs.img'),
+                call('kiwi-tmpfile', 'temp_media_dir/LiveOS/squashfs.img')
+            ]
+
+        assert mock_chmod.call_args_list == [
+            call('initrd', 0o644), call('kiwi-tmpfile', 0o644)
         ]
 
         self.setup.call_edit_boot_config_script.assert_called_once_with(
@@ -239,24 +330,25 @@ class TestLiveImageBuilder:
             config_file='root_dir/etc/dracut.conf.d/02-livecd.conf'
         )
 
-        kiwi.builder.live.BootLoaderConfig.new.assert_called_once_with(
-            'grub2', self.xml_state, root_dir='root_dir',
+        kiwi.builder.live.create_boot_loader_config.assert_called_once_with(
+            name='grub2', xml_state=self.xml_state, root_dir='root_dir',
             boot_dir='temp_media_dir', custom_args={
-                'grub_directory_name': 'grub2'
+                'grub_directory_name': 'grub2',
+                'grub_load_command': 'configfile'
             }
         )
-        self.bootloader.setup_live_boot_images.assert_called_once_with(
+        bootloader_config.setup_live_boot_images.assert_called_once_with(
             lookup_path='root_dir', mbrid=self.mbrid
         )
         mock_setup_media_loader_directory.assert_called_once_with(
             'initrd_dir', 'temp_media_dir',
-            self.bootloader.get_boot_theme.return_value
+            bootloader_config.get_boot_theme.return_value
         )
-        self.bootloader.write_meta_data.assert_called_once_with()
-        self.bootloader.setup_live_image_config.assert_called_once_with(
+        bootloader_config.write_meta_data.assert_called_once_with()
+        bootloader_config.setup_live_image_config.assert_called_once_with(
             mbrid=self.mbrid
         )
-        self.bootloader.write.assert_called_once_with()
+        bootloader_config.write.assert_called_once_with()
 
         self.boot_image_task.prepare.assert_called_once_with()
         self.boot_image_task.create_initrd.assert_called_once_with(
@@ -279,11 +371,14 @@ class TestLiveImageBuilder:
             custom_args={
                 'meta_data': {
                     'mbr_id': '0xffffffff',
+                    'application_id': '0xffffffff',
                     'preparer': 'KIWI - https://github.com/OSInside/kiwi',
                     'publisher': 'Custom publisher',
                     'volume_id': 'volid',
                     'efi_mode': 'uefi',
                     'efi_loader': 'kiwi-tmpfile',
+                    'efi_partition_table': 'gpt',
+                    'gpt_hybrid_mbr': False,
                     'udf': True,
                     'legacy_bios_mode': True
                 }
@@ -331,23 +426,14 @@ class TestLiveImageBuilder:
             'target_dir'
         )
 
-        self.firmware.efi_mode.return_value = None
-        self.firmware.bios_mode.return_value = True
-        tmpdir_name = [temp_squashfs, temp_media_dir]
-        kiwi.builder.live.BootLoaderConfig.new.reset_mock()
-        self.live_image.create()
-        mock_Iso.return_value.setup_isolinux_boot_path.assert_called_once_with()
-        kiwi.builder.live.BootLoaderConfig.new.assert_called_once_with(
-            'isolinux', self.xml_state, root_dir='root_dir',
-            boot_dir='temp_media_dir'
-        )
-
+    @patch('kiwi.builder.disk.create_boot_loader_config')
     @patch('kiwi.builder.live.IsoToolsBase.setup_media_loader_directory')
     @patch('kiwi.builder.live.Temporary')
     @patch('kiwi.builder.live.shutil')
+    @patch('os.unlink')
     def test_create_no_kernel_found(
-        self, mock_shutil, mock_Temporary,
-        mock_setup_media_loader_directory
+        self, mock_unlink, mock_shutil, mock_Temporary,
+        mock_setup_media_loader_directory, mock_create_boot_loader_config
     ):
         self.firmware.bios_mode.return_value = False
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
@@ -355,12 +441,14 @@ class TestLiveImageBuilder:
         with raises(KiwiLiveBootImageError):
             self.live_image.create()
 
+    @patch('kiwi.builder.disk.create_boot_loader_config')
     @patch('kiwi.builder.live.IsoToolsBase.setup_media_loader_directory')
     @patch('kiwi.builder.live.Temporary')
     @patch('kiwi.builder.live.shutil')
+    @patch('os.unlink')
     def test_create_no_hypervisor_found(
-        self, mock_shutil, mock_Temporary,
-        mock_setup_media_loader_directory
+        self, mock_unlink, mock_shutil, mock_Temporary,
+        mock_setup_media_loader_directory, mock_create_boot_loader_config
     ):
         self.firmware.bios_mode.return_value = False
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
@@ -368,16 +456,20 @@ class TestLiveImageBuilder:
         with raises(KiwiLiveBootImageError):
             self.live_image.create()
 
+    @patch('kiwi.builder.disk.create_boot_loader_config')
     @patch('kiwi.builder.live.IsoToolsBase.setup_media_loader_directory')
     @patch('kiwi.builder.live.Temporary')
     @patch('kiwi.builder.live.shutil')
+    @patch('os.unlink')
     @patch('os.path.exists')
     def test_create_no_initrd_found(
-        self, mock_exists, mock_shutil, mock_Temporary,
-        mock_setup_media_loader_directory
+        self, mock_exists, mock_unlink, mock_shutil, mock_Temporary,
+        mock_setup_media_loader_directory,
+        mock_create_boot_loader_config
     ):
         self.firmware.bios_mode.return_value = False
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
         mock_exists.return_value = False
+        mock_unlink.return_value = True
         with raises(KiwiLiveBootImageError):
             self.live_image.create()

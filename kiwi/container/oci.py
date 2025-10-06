@@ -17,15 +17,40 @@
 #
 import os
 import logging
+import sys
+from typing import Dict, List, Optional
+if sys.version_info >= (3, 8):
+    from typing import TypedDict  # pragma: no cover
+else:  # pragma: no cover
+    from typing_extensions import TypedDict  # pragma: no cover
 
 # project
+from kiwi.utils.compress import Compress
+from kiwi.runtime_config import RuntimeConfig
 from kiwi.defaults import Defaults
 from kiwi.oci_tools import OCI
+from kiwi.container.base import ContainerImageBase
 
 log = logging.getLogger('kiwi')
 
 
-class ContainerImageOCI:
+class OciConfig(TypedDict, total=False):
+    container_name: str
+    container_tag: str
+    additional_names: List[str]
+    entry_command: List[str]
+    entry_subcommand: List[str]
+    maintainer: str
+    user: str
+    workingdir: str
+    expose_ports: List[str]
+    volumes: List[str]
+    environment: Dict[str, str]
+    labels: Dict[str, str]
+    history: Dict[str, str]
+
+
+class ContainerImageOCI(ContainerImageBase):
     """
     Create oci container from a root directory
 
@@ -58,13 +83,13 @@ class ContainerImageOCI:
             }
         }
     """
-    def __init__(self, root_dir, transport, custom_args=None):
+    def __init__(
+        self, root_dir: str, transport: str,
+        custom_args: Optional[OciConfig] = None
+    ) -> None:
         self.root_dir = root_dir
         self.archive_transport = transport
-        if custom_args:
-            self.oci_config = custom_args
-        else:
-            self.oci_config = {}
+        self.oci_config = custom_args or {}
 
         # for builds inside the buildservice we include a reference to the
         # specific build. Thus disturl label only exists inside the
@@ -97,71 +122,84 @@ class ContainerImageOCI:
             self.oci_config['history']['created_by'] = \
                 Defaults.get_default_container_created_by()
 
-    def create(self, filename, base_image, ensure_empty_tmpdirs=True):
+    def create(
+        self, filename: str, base_image: str,
+        ensure_empty_tmpdirs: bool = True, compress_archive: bool = False
+    ) -> str:
         """
         Create compressed oci system container tar archive
 
         :param string filename: archive file name
         :param string base_image: archive used as a base image
+        :param bool ensure_empty_tmpdirs: exclude system tmp directories
+        :param bool compress_archive: compress container archive
         """
         exclude_list = Defaults.\
-            get_exclude_list_for_root_data_sync(ensure_empty_tmpdirs) + Defaults.\
-            get_exclude_list_from_custom_exclude_files(self.root_dir)
+            get_exclude_list_for_root_data_sync(
+                ensure_empty_tmpdirs
+            ) + Defaults.get_exclude_list_from_custom_exclude_files(
+                self.root_dir
+            )
         exclude_list.append('dev/*')
         exclude_list.append('sys/*')
         exclude_list.append('proc/*')
 
-        oci = OCI.new()
-        if base_image:
-            oci.import_container_image(
-                'oci-archive:{0}:{1}'.format(
-                    base_image, Defaults.get_container_base_image_tag()
+        with OCI.new() as oci:
+            if base_image:
+                oci.import_container_image(
+                    'oci-archive:{0}:{1}'.format(
+                        base_image, Defaults.get_container_base_image_tag()
+                    )
                 )
+            else:
+                # Apply default subcommand only for base images
+                if 'entry_command' not in self.oci_config and \
+                   'entry_subcommand' not in self.oci_config:
+                    self.oci_config['entry_subcommand'] = \
+                        Defaults.get_default_container_subcommand()
+                oci.init_container()
+
+            image_ref = '{0}:{1}'.format(
+                self.oci_config['container_name'],
+                self.oci_config['container_tag']
             )
-        else:
-            # Apply default subcommand only for base images
-            if 'entry_command' not in self.oci_config and \
-                    'entry_subcommand' not in self.oci_config:
-                self.oci_config['entry_subcommand'] = \
-                    Defaults.get_default_container_subcommand()
-            oci.init_container()
 
-        image_ref = '{0}:{1}'.format(
-            self.oci_config['container_name'], self.oci_config['container_tag']
-        )
+            oci.unpack()
+            oci.sync_rootfs(self.root_dir, exclude_list)
+            oci.repack(self.oci_config)
+            oci.set_config(self.oci_config)
+            oci.post_process()
 
-        oci.unpack()
-        oci.sync_rootfs(self.root_dir, exclude_list)
-        oci.repack(self.oci_config)
-        oci.set_config(self.oci_config)
-        oci.post_process()
+            image_ref = '{0}:{1}'.format(
+                self.oci_config['container_name'],
+                self.oci_config['container_tag']
+            )
+            additional_refs: List[str] = []
+            if self.archive_transport == 'docker-archive':
+                if 'additional_names' in self.oci_config:
+                    additional_refs = []
+                    for name in self.oci_config['additional_names']:
+                        name_parts = name.partition(':')
+                        if not name_parts[0]:
+                            additional_refs.append('{0}:{1}'.format(
+                                self.oci_config['container_name'], name_parts[2]
+                            ))
+                        elif not name_parts[2]:
+                            additional_refs.append('{0}:{1}'.format(
+                                name_parts[0], self.oci_config['container_tag']
+                            ))
+                        else:
+                            additional_refs.append('{0}:{1}'.format(
+                                name_parts[0], name_parts[2]
+                            ))
 
-        image_ref = '{0}:{1}'.format(
-            self.oci_config['container_name'],
-            self.oci_config['container_tag']
-        )
-        additional_refs = []
-        if self.archive_transport == 'docker-archive':
-            if 'additional_names' in self.oci_config:
-                additional_refs = []
-                for name in self.oci_config['additional_names']:
-                    name_parts = name.partition(':')
-                    if not name_parts[0]:
-                        additional_refs.append('{0}:{1}'.format(
-                            self.oci_config['container_name'], name_parts[2]
-                        ))
-                    elif not name_parts[2]:
-                        additional_refs.append('{0}:{1}'.format(
-                            name_parts[0], self.oci_config['container_tag']
-                        ))
-                    else:
-                        additional_refs.append('{0}:{1}'.format(
-                            name_parts[0], name_parts[2]
-                        ))
+            oci.export_container_image(
+                filename, self.archive_transport, image_ref, additional_refs
+            )
 
-        oci.export_container_image(
-            filename, self.archive_transport, image_ref, additional_refs
-        )
+        if compress_archive:
+            compress = Compress(filename)
+            filename = compress.xz(RuntimeConfig().get_xz_options())
 
         return filename
 

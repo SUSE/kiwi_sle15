@@ -61,6 +61,16 @@ class BlockID:
         """
         return self.get_blkid('UUID')
 
+    def get_ptuuid(self):
+        """
+        Retrieve partition uuid from block device
+
+        :return: uuid of the partition table
+
+        :rtype: str
+        """
+        return self.get_blkid('PTUUID')
+
     def get_filesystem(self):
         """
         Retrieve filesystem type from block device
@@ -70,6 +80,23 @@ class BlockID:
         :rtype: str
         """
         return self.get_blkid('TYPE')
+
+    def get_partition_count(self) -> int:
+        """
+        Retrieve number of partitions from block device
+
+        :return: A number
+
+        :rtype: int
+        """
+        partition_count = 0
+        lsblk_result = Command.run(
+            ['lsblk', '-r', '-o', 'NAME,TYPE', self.device]
+        )
+        for line in lsblk_result.output.strip().split(os.linesep):
+            if line.strip().endswith('part'):
+                partition_count += 1
+        return partition_count
 
     def get_blkid(self, id_type):
         """

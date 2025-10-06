@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.2" name="initrd-strip-metadata">
+<image schemaversion="8.0" name="initrd-strip-metadata">
     <description type="boot">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.com</contact>
@@ -93,7 +93,6 @@
         <file name="checkmedia"/>
         <file name="chroot"/>
         <file name="clear"/>
-        <file name="clicfs"/>
         <file name="cmp"/>
         <file name="column"/>
         <file name="cp"/>
@@ -180,7 +179,6 @@
         <file name="lvextend"/>
         <file name="lvm"/>
         <file name="lvresize"/>
-        <file name="md5sum"/>
         <file name="mdadm"/>
         <file name="mdmon"/>
         <file name="mkdir"/>
@@ -261,6 +259,7 @@
         <file name="sfdisk"/>
         <file name="sg_inq"/>
         <file name="sh"/>
+        <file name="sha256sum"/>
         <file name="showconsole"/>
         <file name="shutdown"/>
         <file name="sleep"/>
@@ -280,6 +279,7 @@
         <file name="touch"/>
         <file name="tr"/>
         <file name="true"/>
+        <file name="ts"/>
         <file name="tty"/>
         <file name="tune2fs"/>
         <file name="udevadm"/>

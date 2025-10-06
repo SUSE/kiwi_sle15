@@ -1,21 +1,18 @@
 #!/bin/bash
+set -ex
+
+declare kiwi_btrfs_root_is_snapshot=${kiwi_btrfs_root_is_snapshot}
+
+# shellcheck disable=SC1091
 #======================================
 # Functions...
 #--------------------------------------
 test -f /.kconfig && . /.kconfig
-test -f /.profile && . /.profile
 
+#======================================
+# init reconfig system startup
+#--------------------------------------
 mkdir /var/lib/misc/reconfig_system
-
-#======================================
-# Greeting...
-#--------------------------------------
-echo "Configure image: [$kiwi_iname]-[$kiwi_profiles]..."
-
-#======================================
-# Debug
-#--------------------------------------
-#systemctl enable debug-shell.service
 
 #======================================
 # add missing fonts
@@ -23,19 +20,9 @@ echo "Configure image: [$kiwi_iname]-[$kiwi_profiles]..."
 CONSOLE_FONT="eurlatgr.psfu"
 
 #======================================
-# Setup baseproduct link
-#--------------------------------------
-suseSetupProduct
-
-#======================================
-# Specify default runlevel
-#--------------------------------------
-baseSetRunlevel 3
-
-#======================================
 # Activate services
 #--------------------------------------
-suseInsertService sshd
+systemctl enable sshd
 
 #======================================
 # Sysconfig Update
@@ -49,42 +36,38 @@ echo FONT="$CONSOLE_FONT" >> /etc/vconsole.conf
 echo '** Rehashing SSL Certificates...'
 update-ca-certificates
 
-if [ ! -s /var/log/zypper.log ]; then
-	> /var/log/zypper.log
-fi
+touch /var/log/zypper.log
 
 #======================================
 # Import trusted rpm keys
 #--------------------------------------
 for i in /usr/lib/rpm/gnupg/keys/gpg-pubkey*asc; do
     # importing can fail if it already exists
-    rpm --import $i || true
+    rpm --import "$i" || true
 done
 
 #=====================================
 # Configure snapper
 #-------------------------------------
-if [ "$kiwi_btrfs_root_is_snapshot" = 'true' ]; then
-        echo "creating initial snapper config ..."
-        # we can't call snapper here as the .snapshots subvolume
-        # already exists and snapper create-config doens't like
-        # that.
-        cp /etc/snapper/config-templates/default /etc/snapper/configs/root
-        # Change configuration to match SLES12-SP1 values
-        sed -i -e '/^TIMELINE_CREATE=/s/yes/no/' /etc/snapper/configs/root
-        sed -i -e '/^NUMBER_LIMIT=/s/50/10/'     /etc/snapper/configs/root
+if [ "${kiwi_btrfs_root_is_snapshot-false}" = 'true' ]; then
+    echo "creating initial snapper config ..."
+    cp /usr/share/snapper/config-templates/default /etc/snapper/configs/root
+    baseUpdateSysConfig /etc/sysconfig/snapper SNAPPER_CONFIGS root
 
-        baseUpdateSysConfig /etc/sysconfig/snapper SNAPPER_CONFIGS root
+    # Adjust parameters
+    sed -i'' 's/^TIMELINE_CREATE=.*$/TIMELINE_CREATE="no"/g' \
+        /etc/snapper/configs/root
+    sed -i'' 's/^NUMBER_LIMIT=.*$/NUMBER_LIMIT="2-10"/g' \
+        /etc/snapper/configs/root
+    sed -i'' 's/^NUMBER_LIMIT_IMPORTANT=.*$/NUMBER_LIMIT_IMPORTANT="4-10"/g' \
+        /etc/snapper/configs/root
 fi
 
 #=====================================
-# Enable ntpd if installed
+# Enable chrony if installed
 #-------------------------------------
-if [ -f /etc/ntp.conf ]; then
-	suseInsertService ntpd
-	for i in 0 1 2 3; do
-	    echo "server $i.opensuse.pool.ntp.org iburst" >> /etc/ntp.conf
-	done
+if [ -f /etc/chrony.conf ]; then
+    systemctl enable chronyd
 fi
 
 #======================================

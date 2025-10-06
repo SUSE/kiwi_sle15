@@ -175,13 +175,6 @@ class KiwiCompressionFormatUnknown(KiwiError):
     """
 
 
-class KiwiCompatError(KiwiError):
-    """
-    Exception raised if the given kiwi compatibility command line
-    could not be understood by the compat option parser.
-    """
-
-
 class KiwiConfigFileNotFound(KiwiError):
     """
     Exception raised if no kiwi XML description was found.
@@ -215,10 +208,10 @@ class KiwiDataStructureError(KiwiError):
     """
 
 
-class KiwiDebootstrapError(KiwiError):
+class KiwiDebianBootstrapError(KiwiError):
     """
-    Exception raised if not enough user data to call debootstrap
-    were provided or the debootstrap has failed.
+    Exception raised if the bootstrap installation for Debian
+    based systems has failed
     """
 
 
@@ -352,12 +345,6 @@ class KiwiPackagesDeletePhaseFailed(KiwiError):
     """
 
 
-class KiwiIsoLoaderError(KiwiError):
-    """
-    Exception raised if no isolinux loader file could be found.
-    """
-
-
 class KiwiIsoMetaDataError(KiwiError):
     """
     Exception raised if an inconsistency in the ISO header
@@ -406,6 +393,12 @@ class KiwiLogFileSetupFailed(KiwiError):
     """
 
 
+class KiwiLogSocketSetupFailed(KiwiError):
+    """
+    Exception raised if the Unix Domain log socket could not be created.
+    """
+
+
 class KiwiLoopSetupError(KiwiError):
     """
     Exception raised if not enough user data to create a
@@ -442,6 +435,19 @@ class KiwiNotImplementedError(KiwiError):
 class KiwiOCIArchiveToolError(KiwiError):
     """
     Exception raised if the requested OCI archive tool is not supported
+    """
+
+
+class KiwiOSReleaseImportError(KiwiError):
+    """
+    Exception raised if reading etc/os-release caused an issue
+    """
+
+
+class KiwiEnvImportError(KiwiError):
+    """
+    Exception raised if extending os.environ with another
+    env file caused an issue
     """
 
 
@@ -490,6 +496,13 @@ class KiwiKisBootImageError(KiwiError):
     """
     Exception raised if a required boot file e.g the kernel could
     not be found in the process of building a kis image.
+    """
+
+
+class KiwiEnclaveBootImageError(KiwiError):
+    """
+    Exception raised if no kernel image was found while
+    building an enclave image.
     """
 
 
@@ -847,4 +860,17 @@ class KiwiOffsetError(KiwiError):
     """
     Exception raised if the offset for a seek operation does not
     match the expected data to write
+    """
+
+
+class KiwiBootLoaderDiskPasswordError(KiwiError):
+    """
+    Exception raised if the disk password could not be set
+    """
+
+
+class KiwiEnclaveFormatError(KiwiError):
+    """
+    Exception raised if no enclave_format attribute specified
+    for the selected build type
     """

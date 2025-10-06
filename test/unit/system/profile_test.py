@@ -1,5 +1,5 @@
 # vim: set fileencoding=utf-8
-from mock import patch
+from unittest.mock import patch
 
 import os
 
@@ -15,13 +15,67 @@ class TestProfile:
         self.profile = Profile(
             XMLState(description.load())
         )
+        live_description = XMLDescription(
+            '../data/example_dot_profile_live_config.xml'
+        )
+        self.live_profile = Profile(
+            XMLState(live_description.load())
+        )
 
     def setup_method(self, cls):
         self.setup()
 
     @patch('kiwi.path.Path.which')
-    def test_create(self, mock_which):
-        mock_which.return_value = 'cp'
+    def test_create_live(self, mock_which):
+        mock_which.side_effect = ['cp', 'bash']
+        self.live_profile.create(self.profile_file)
+        os.remove(self.profile_file)
+        assert self.live_profile.dot_profile == {
+            'kiwi_iname': 'LiveImage',
+            'kiwi_displayname': 'Live',
+            'kiwi_profiles': '',
+            'kiwi_delete': '',
+            'kiwi_type': 'iso',
+            'kiwi_compressed': None,
+            'kiwi_boot_timeout': None,
+            'kiwi_wwid_wait_timeout': None,
+            'kiwi_hybridpersistent': True,
+            'kiwi_hybridpersistent_filesystem': 'ext4',
+            'kiwi_initrd_system': 'dracut',
+            'kiwi_ramonly': None,
+            'kiwi_target_blocksize': None,
+            'kiwi_target_removable': None,
+            'kiwi_cmdline': 'console=ttyS0',
+            'kiwi_firmware': 'bios',
+            'kiwi_bootloader': 'grub2',
+            'kiwi_bootloader_console': 'default:default',
+            'kiwi_btrfs_root_is_snapshot': None,
+            'kiwi_btrfs_root_is_snapper_snapshot': None,
+            'kiwi_gpt_hybrid_mbr': None,
+            'kiwi_devicepersistency': None,
+            'kiwi_installboot': None,
+            'kiwi_bootkernel': None,
+            'kiwi_fsmountoptions': None,
+            'kiwi_bootprofile': None,
+            'kiwi_vga': None,
+            'kiwi_startsector': 2048,
+            'kiwi_luks_empty_passphrase': False,
+            'kiwi_live_volid': 'CDROM',
+            'kiwi_iversion': '1.1.0',
+            'kiwi_showlicense': None,
+            'kiwi_keytable': 'us.map.gz',
+            'kiwi_timezone': 'Europe/Berlin',
+            'kiwi_language': 'en_US',
+            'kiwi_strip_delete': '',
+            'kiwi_strip_tools': '',
+            'kiwi_strip_libs': '',
+            'kiwi_drivers': '',
+            'kiwi_rootpartuuid': None
+        }
+
+    @patch('kiwi.path.Path.which')
+    def test_create_oem(self, mock_which):
+        mock_which.side_effect = ['cp', 'bash']
         self.profile.create(self.profile_file)
         os.remove(self.profile_file)
         assert self.profile.dot_profile == {
@@ -56,6 +110,7 @@ class TestProfile:
             'kiwi_lvm': 'true',
             'kiwi_lvmgroup': 'systemVG',
             'kiwi_oembootwait': None,
+            'kiwi_oemramdisksize': None,
             'kiwi_oemdevicefilter': None,
             'kiwi_oemnicfilter': None,
             'kiwi_oemkboot': None,
@@ -85,6 +140,7 @@ class TestProfile:
             'kiwi_initrd_system': 'dracut',
             'kiwi_install_volid': 'INSTALL',
             'kiwi_btrfs_root_is_snapshot': None,
+            'kiwi_btrfs_root_is_snapper_snapshot': None,
             'kiwi_gpt_hybrid_mbr': None,
             'kiwi_showlicense': None,
             'kiwi_splash_theme': 'openSUSE',
@@ -104,7 +160,7 @@ class TestProfile:
 
     @patch('kiwi.path.Path.which')
     def test_create_displayname_is_image_name(self, mock_which):
-        mock_which.return_value = 'cp'
+        mock_which.side_effect = ['cp', 'bash']
         description = XMLDescription('../data/example_pxe_config.xml')
         profile = Profile(
             XMLState(description.load())
@@ -116,7 +172,7 @@ class TestProfile:
 
     @patch('kiwi.path.Path.which')
     def test_create_cpio(self, mock_which):
-        mock_which.return_value = 'cp'
+        mock_which.side_effect = ['cp', 'bash']
         description = XMLDescription('../data/example_dot_profile_config.xml')
         profile = Profile(
             XMLState(description.load(), None, 'cpio')

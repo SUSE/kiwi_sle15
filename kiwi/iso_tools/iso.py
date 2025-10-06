@@ -15,12 +15,10 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
-import os
-
 # project
 from kiwi.defaults import Defaults
 from kiwi.command import Command
-from kiwi.exceptions import KiwiIsoLoaderError
+from kiwi.runtime_config import RuntimeConfig
 
 
 class Iso:
@@ -45,52 +43,22 @@ class Iso:
 
         :param str isofile: path to the ISO file
         """
-        Command.run(
-            [
-                'tagmedia',
-                '--md5',
-                '--check',
-                '--pad', '150',
-                isofile
-            ]
-        )
-
-    def setup_isolinux_boot_path(self) -> None:
-        """
-        Write the base boot path into the isolinux loader binary
-
-        :raises KiwiIsoLoaderError: if loader/isolinux.bin is not found
-        """
-        loader_base_directory = self.boot_path + '/loader'
-        loader_file = '/'.join(
-            [self.source_dir, self.boot_path, 'loader/isolinux.bin']
-        )
-        if not os.path.exists(loader_file):
-            raise KiwiIsoLoaderError(
-                'No isolinux loader {} found'.format(loader_file)
-            )
-        try:
+        media_tagger = RuntimeConfig().get_iso_media_tag_tool()
+        if media_tagger == 'checkmedia':
             Command.run(
                 [
-                    'isolinux-config', '--base', loader_base_directory,
-                    loader_file
+                    'tagmedia',
+                    '--digest', 'sha256',
+                    '--check',
+                    '--pad', '0',
+                    isofile
                 ]
             )
-        except Exception:
-            # Setup of the base directory failed. This happens if
-            # isolinux-config was not able to identify the isolinux
-            # signature. As a workaround a compat directory /isolinux
-            # is created which hardlinks all loader files
-            loader_source_directory = os.sep.join(
-                [self.source_dir, loader_base_directory]
-            )
-            loader_compat_target_directory = os.sep.join(
-                [self.source_dir, 'isolinux']
-            )
+        elif media_tagger == 'isomd5sum':
             Command.run(
                 [
-                    'cp', '-a', '-l',
-                    loader_source_directory + os.sep,
-                    loader_compat_target_directory + os.sep
+                    'implantisomd5',
+                    '--force',
+                    isofile
                 ]
             )

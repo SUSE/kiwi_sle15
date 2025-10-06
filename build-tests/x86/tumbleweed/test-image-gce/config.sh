@@ -1,35 +1,11 @@
 #!/bin/bash
-#================
-# FILE          : config.sh
-#----------------
-# PROJECT       : OpenSuSE KIWI Image System
-# COPYRIGHT     : (c) 2018 SUSE LINUX Products GmbH. All rights reserved
-#               :
-# AUTHOR        : Marcus Schaefer <ms@suse.de>
-#               :
-# BELONGS TO    : Operating System images
-#               :
-# DESCRIPTION   : configuration script for SUSE based
-#               : operating systems
-#               :
-#               :
-# STATUS        : BETA
-#----------------
+set -ex
+
+# shellcheck disable=SC1091
 #======================================
 # Functions...
 #--------------------------------------
 test -f /.kconfig && . /.kconfig
-test -f /.profile && . /.profile
-
-#======================================
-# Greeting...
-#--------------------------------------
-echo "Configure image: [$kiwi_iname]..."
-
-#======================================
-# Setup baseproduct link
-#--------------------------------------
-suseSetupProduct
 
 #=========================================
 # Set sysconfig options
@@ -51,7 +27,7 @@ sed -i 's/requestkey/#requestkey/' /etc/ntp.conf
 echo "server metadata.google.internal iburst" >> /etc/ntp.conf
 
 # replace HOSTNAME file with link to file being created by Google startup code
-rm /etc/HOSTNAME
+rm -f /etc/HOSTNAME
 ln -s /etc/hostname /etc/HOSTNAME
 
 # Setup policy kit
@@ -63,7 +39,8 @@ if [ -f /etc/modprobe.d/unsupported-modules ];then
 fi
 
 # Disable password based login via ssh
-sed -i 's/#ChallengeResponseAuthentication yes/ChallengeResponseAuthentication no/' /etc/ssh/sshd_config
+sed -i 's/#ChallengeResponseAuthentication yes/ChallengeResponseAuthentication no/' \
+    /usr/etc/ssh/sshd_config
 
 # Remove the password for root
 # Note the string matches the password set in the config file
@@ -89,17 +66,10 @@ sed -i 's/# download.use_deltarpm = true/download.use_deltarpm = false/' \
 #======================================
 # Activate services
 #--------------------------------------
-suseInsertService sshd
-suseInsertService google-accounts-daemon
-suseInsertService google-clock-skew-daemon
-suseInsertService google-instance-setup
-suseInsertService google-network-daemon
-suseInsertService google-shutdown-scripts
-suseInsertService google-startup-scripts
-suseInsertService haveged
-suseInsertService ntpd
-suseInsertService rootgrow
-suseRemoveService boot.lvm
-suseRemoveService boot.md
-suseRemoveService display-manager
-suseRemoveService kbd
+systemctl enable sshd
+systemctl enable haveged
+systemctl enable google-guest-agent
+systemctl enable google-osconfig-agent
+systemctl enable google-oslogin-cache.timer
+systemctl enable google-shutdown-scripts
+systemctl enable google-startup-scripts

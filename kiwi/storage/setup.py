@@ -310,11 +310,17 @@ class DiskSetup:
         data_partition_mbytes = self._calculate_partition_mbytes()
         for map_name in sorted(self.custom_partitions.keys()):
             partition_mount_path = self.custom_partitions[map_name].mountpoint
+            partition_filesystem = self.custom_partitions[map_name].filesystem
             partition_clone = self.custom_partitions[map_name].clone
             if partition_mount_path:
                 partition_mbsize = self.custom_partitions[map_name].mbsize
-                disk_add_mbytes = int(partition_mbsize) - \
-                    data_partition_mbytes.partition[partition_mount_path]
+                if partition_filesystem == 'squashfs':
+                    # cannot predict compressed size prior compressing
+                    # use size as configured
+                    disk_add_mbytes = int(partition_mbsize)
+                else:
+                    disk_add_mbytes = int(partition_mbsize) - \
+                        data_partition_mbytes.partition[partition_mount_path]
                 if disk_add_mbytes > 0:
                     if partition_clone:
                         partition_clone += 1
@@ -355,7 +361,9 @@ class DiskSetup:
         # on first boot of the disk image in oemboot/repart
         if self.disk_resize_requested:
             for volume in self.volumes:
-                disk_volume_mbytes += Defaults.get_min_volume_mbytes()
+                disk_volume_mbytes += Defaults.get_min_volume_mbytes(
+                    self.filesystem
+                )
             return disk_volume_mbytes
 
         # For static disk(no resize requested) we need to add the
@@ -372,7 +380,7 @@ class DiskSetup:
                         data_volume_mbytes.volume[volume.realpath]
                 if disk_add_mbytes > 0:
                     disk_volume_mbytes += disk_add_mbytes + \
-                        Defaults.get_min_volume_mbytes()
+                        Defaults.get_min_volume_mbytes(self.filesystem)
                 else:
                     message = dedent('''\n
                         Requested volume size {0}MB for {1!r} is too small
@@ -396,7 +404,7 @@ class DiskSetup:
 
             if disk_add_mbytes > 0:
                 disk_volume_mbytes += disk_add_mbytes + \
-                    Defaults.get_min_volume_mbytes()
+                    Defaults.get_min_volume_mbytes(self.filesystem)
             else:
                 log.warning(
                     'root volume size of %s MB is too small, skipped',

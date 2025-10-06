@@ -1,4 +1,4 @@
-from mock import Mock
+from unittest.mock import Mock
 from pytest import raises
 
 from kiwi.partitioner.base import PartitionerBase
@@ -17,6 +17,10 @@ class TestPartitionerBase:
 
     def test_get_id(self):
         assert self.partitioner.get_id() == 0
+
+    def test_set_uuid(self):
+        with raises(NotImplementedError):
+            self.partitioner.set_uuid(100, 'ID')
 
     def test_create(self):
         with raises(NotImplementedError):
@@ -37,3 +41,6 @@ class TestPartitionerBase:
     def test_resize_table(self):
         with raises(NotImplementedError):
             self.partitioner.resize_table()
+
+    def test_set_start_sector(self):
+        assert self.partitioner.set_start_sector(4096) is None

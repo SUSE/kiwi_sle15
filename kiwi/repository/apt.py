@@ -21,11 +21,15 @@ from urllib.parse import urlparse
 from typing import List, Dict
 
 # project
-from kiwi.utils.temporary import Temporary
+import kiwi.defaults as defaults
+from kiwi.utils.temporary import (
+    Temporary, TmpT
+)
 from kiwi.repository.template.apt import PackageManagerTemplateAptGet
 from kiwi.repository.base import RepositoryBase
 from kiwi.path import Path
 from kiwi.command import Command
+from kiwi.utils.toenv import ToEnv
 
 log = logging.getLogger('kiwi')
 
@@ -52,6 +56,7 @@ class RepositoryApt(RepositoryBase):
 
         :param list custom_args: apt-get arguments
         """
+        self.runtime_apt_get_config_file = TmpT(name='')
         self.custom_args = custom_args
         self.exclude_docs = False
         self.signing_keys: List = []
@@ -69,7 +74,6 @@ class RepositoryApt(RepositoryBase):
 
         self.distribution: str = ''
         self.distribution_path: str = ''
-        self.debootstrap_repo_set = False
         self.repo_names: List = []
         self.components: List = []
 
@@ -87,8 +91,8 @@ class RepositoryApt(RepositoryBase):
         self.keyring = '{}/trusted.gpg'.format(self.manager_base)
 
         self.runtime_apt_get_config_file = Temporary(
-            path=self.root_dir
-        ).new_file()
+            path=self.root_dir, prefix='kiwi_apt.config'
+        ).unmanaged_file()
 
         self.apt_get_args = [
             '-q', '-c', self.runtime_apt_get_config_file.name, '-y'
@@ -136,8 +140,8 @@ class RepositoryApt(RepositoryBase):
         prio: int = None, dist: str = None, components: str = None,
         user: str = None, secret: str = None, credentials_file: str = None,
         repo_gpgcheck: bool = None, pkg_gpgcheck: bool = None,
-        sourcetype: str = None, use_for_bootstrap: bool = False,
-        customization_script: str = None
+        sourcetype: str = None, customization_script: str = None,
+        architectures: str = None
     ) -> None:
         """
         Add apt_get repository
@@ -154,10 +158,10 @@ class RepositoryApt(RepositoryBase):
         :param bool repo_gpgcheck: enable repository signature validation
         :param bool pkg_gpgcheck: unused
         :param str sourcetype: unused
-        :param bool use_for_bootstrap: use this repository for the
-            debootstrap call
         :param str customization_script:
             custom script called after the repo file was created
+        :param str architectures:
+            identifies which architectures are supported by this repository
         """
         sources_file = '/'.join(
             [self.shared_apt_get_dir['sources-dir'], name + '.sources']
@@ -176,6 +180,10 @@ class RepositoryApt(RepositoryBase):
         with open(sources_file, 'w') as repo:
             repo_details = 'Types: deb' + os.linesep
             repo_details += 'URIs: ' + uri + os.linesep
+            if architectures:
+                repo_details += 'Architectures: {}{}'.format(
+                    architectures.replace(',', ' '), os.linesep
+                )
             if not dist:
                 # create a debian flat repository setup. We consider the
                 # repository metadata to exist on the toplevel of the
@@ -187,10 +195,8 @@ class RepositoryApt(RepositoryBase):
             else:
                 # create a debian distributon repository setup for the
                 # specified distributon name and components
-                if not self.debootstrap_repo_set:
-                    self.distribution = dist
-                    self.distribution_path = uri
-                    self.debootstrap_repo_set = use_for_bootstrap
+                self.distribution = dist
+                self.distribution_path = uri
                 repo_details += 'Suites: ' + dist + os.linesep
                 repo_details += 'Components: ' + components + os.linesep
             if repo_gpgcheck is False:
@@ -302,6 +308,7 @@ class RepositoryApt(RepositoryBase):
     def _create_apt_get_runtime_environment(self) -> Dict:
         for apt_get_dir in list(self.shared_apt_get_dir.values()):
             Path.create(apt_get_dir)
+        ToEnv(self.root_dir, defaults.PACKAGE_MANAGER_ENV_VARS)
         return dict(
             os.environ, LANG='C', DEBIAN_FRONTEND='noninteractive'
         )
@@ -320,3 +327,10 @@ class RepositoryApt(RepositoryBase):
 
         with open(self.runtime_apt_get_config_file.name, 'w') as config:
             config.write(apt_conf_data)
+
+    def cleanup(self) -> None:
+        """
+        Delete intermediate apt config file
+        """
+        if os.path.isfile(self.runtime_apt_get_config_file.name):
+            os.unlink(self.runtime_apt_get_config_file.name)

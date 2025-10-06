@@ -18,8 +18,10 @@
 """
 usage: kiwi-ng result bundle -h | --help
        kiwi-ng result bundle --target-dir=<directory> --id=<bundle_id> --bundle-dir=<directory>
+           [--bundle-format=<format>]
            [--zsync-source=<download_location>]
            [--package-as-rpm]
+           [--no-compress]
        kiwi-ng result bundle help
 
 commands:
@@ -48,6 +50,13 @@ options:
         are placed to the same download location
     --package-as-rpm
         Take all result files and create an rpm package out of it
+    --bundle-format=<format>
+        specify the bundle format to create the bundle.
+        If provided this setting will overwrite an eventually
+        provided bundle_format attribute from the main
+        image description
+    --no-compress
+        Do not compress the result image file(s)
 """
 from collections import OrderedDict
 from textwrap import dedent
@@ -113,6 +122,10 @@ class ResultBundleTask(CliTask):
         result = Result.load(
             result_directory + '/kiwi.result'
         )
+
+        if self.command_args['--bundle-format']:
+            result.add_bundle_format(self.command_args['--bundle-format'])
+
         image_version = result.xml_state.get_image_version()
         image_name = result.xml_state.xml_data.get_name()
         image_description = result.xml_state.get_description_section()
@@ -157,11 +170,15 @@ class ResultBundleTask(CliTask):
             bundle_file_format_name = bundle_file_format_name.replace(
                 '%p', format(tags.p)
             )
+            # Insert Version string
+            bundle_file_format_name = bundle_file_format_name.replace(
+                '%v', format(tags.v)
+            )
             # Insert Bundle ID
             bundle_file_format_name = bundle_file_format_name.replace(
                 '%I', self.command_args['--id']
             )
-            del (ordered_results['bundle_format'])
+            del ordered_results['bundle_format']
 
         # copy result files
         origin_files = []
@@ -217,11 +234,10 @@ class ResultBundleTask(CliTask):
                 bundle_file = ''.join(
                     [bundle_directory, '/', bundle_file_basename]
                 )
-                if result_file.compress:
+                if result_file.compress and not self.command_args['--no-compress']:
                     log.info('--> Compressing')
                     compress = Compress(bundle_file)
-                    compress.xz(self.runtime_config.get_xz_options())
-                    bundle_file = compress.compressed_filename
+                    bundle_file = compress.xz(self.runtime_config.get_xz_options())
 
                 if self.command_args['--zsync-source'] and result_file.shasum:
                     # Files with a checksum are considered to be image files
@@ -273,10 +289,11 @@ class ResultBundleTask(CliTask):
     ) -> str:
         image_version = result.xml_state.get_image_version()
         image_name = result.xml_state.xml_data.get_name()
-        if '.tar.' in result_file.filename:
+        special_exts = ['.oci.tar.', '.docker.tar.', '.vagrant.']
+        if any(special_ext in result_file.filename for special_ext in special_exts):
+            extension = f'{".".join(result_file.filename.split(".")[-3:])}'
+        elif '.tar.' in result_file.filename:
             extension = f'tar.{result_file.filename.split(".").pop()}'
-        elif '.vagrant.' in result_file.filename:
-            extension = f'vagrant.{".".join(result_file.filename.split(".")[-2:])}'
         else:
             extension = result_file.filename.split('.').pop()
         if bundle_file_format_name:

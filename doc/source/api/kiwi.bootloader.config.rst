@@ -22,10 +22,18 @@ Submodules
     :undoc-members:
     :show-inheritance:
 
-`kiwi.bootloader.config.isolinux` Module
-----------------------------------------
+`kiwi.bootloader.config.systemd_boot` Module
+--------------------------------------------
 
-.. automodule:: kiwi.bootloader.config.isolinux
+.. automodule:: kiwi.bootloader.config.systemd_boot
+    :members:
+    :undoc-members:
+    :show-inheritance:
+
+`kiwi.bootloader.config.zipl` Module
+------------------------------------
+
+.. automodule:: kiwi.bootloader.config.zipl
     :members:
     :undoc-members:
     :show-inheritance:

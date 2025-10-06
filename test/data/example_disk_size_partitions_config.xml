@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.5" name="TestPartitions">
+<image schemaversion="8.3" name="TestPartitions">
     <description type="system">
         <author>Marcus Schäfer</author>
         <contact>ms@suse.com</contact>
@@ -15,6 +15,7 @@
             <partitions>
                 <partition name="var" size="100" mountpoint="/var" filesystem="ext3"/>
                 <partition name="var/tmp" size="500" mountpoint="/var/tmp" filesystem="xfs"/>
+                <partition name="tmp" size="100" mountpoint="/tmp" filesystem="squashfs"/>
             </partitions>
         </type>
     </preferences>

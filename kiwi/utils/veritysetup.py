@@ -73,7 +73,6 @@ class VeritySetup:
             [
                 'veritysetup', 'format',
                 self.image_filepath, self.image_filepath,
-                '--no-superblock',
                 f'--hash-offset={self.verity_hash_offset}',
                 f'--hash-block-size={defaults.VERITY_HASH_BLOCKSIZE}'
             ] + (
@@ -109,7 +108,6 @@ class VeritySetup:
             [
                 'veritysetup', 'format',
                 self.image_filepath, temp_file.name,
-                '--no-superblock',
                 f'--hash-block-size={defaults.VERITY_HASH_BLOCKSIZE}'
             ] + (
                 [
@@ -173,7 +171,7 @@ class VeritySetup:
         |header_string|0xFF|dm_verity_credentials|0xFF|0x0|
 
         header_string:
-            '{version} {fstype} {ro|rw} verity'
+            '{version} {fstype} ro verity'
 
         dm_verity_credentials:
             '{hash_type} {data_blksize} {hash_blksize}
@@ -186,10 +184,8 @@ class VeritySetup:
         metadata_format_version = defaults.DM_METADATA_FORMAT_VERSION
         filesystem = self.get_block_storage_filesystem()
         if filesystem and self.verity_dict:
-            filesystem_mode = 'ro' if filesystem == 'squashfs' else 'rw'
-
-            header_string = '{0} {1} {2} verity'.format(
-                metadata_format_version, filesystem, filesystem_mode
+            header_string = '{0} {1} ro verity'.format(
+                metadata_format_version, filesystem
             )
 
             hash_start_block = int(
@@ -242,5 +238,5 @@ class VeritySetup:
                 verity.write(
                     f'Root hashoffset: {self.verity_hash_offset}')
                 verity.write(os.linesep)
-                verity.write('Superblock: --no-superblock')
+                verity.write('Superblock:')
                 verity.write(os.linesep)

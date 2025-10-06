@@ -17,6 +17,8 @@
 #
 import os
 import logging
+import time
+import pathlib
 
 # project
 from kiwi.command import Command
@@ -24,7 +26,9 @@ from kiwi.storage.device_provider import DeviceProvider
 from kiwi.utils.command_capabilities import CommandCapabilities
 
 from kiwi.exceptions import (
-    KiwiLoopSetupError
+    KiwiLoopSetupError,
+    KiwiCommandNotFound,
+    KiwiCommandError
 )
 
 log = logging.getLogger('kiwi')
@@ -50,6 +54,9 @@ class LoopDevice(DeviceProvider):
         self.filename = filename
         self.filesize_mbytes = filesize_mbytes
         self.blocksize_bytes = blocksize_bytes
+
+    def __enter__(self):
+        return self
 
     def get_device(self) -> str:
         """
@@ -98,12 +105,30 @@ class LoopDevice(DeviceProvider):
         )
         self.node_name = loop_call.output.rstrip(os.linesep)
 
-    def __del__(self):
+    def __exit__(self, exc_type, exc_value, traceback):
         if self.node_name:
-            log.info('Cleaning up %s instance', type(self).__name__)
             try:
                 Command.run(['losetup', '-d', self.node_name])
-            except Exception:
-                log.warning(
-                    'loop device %s still busy', self.node_name
+                # loop detach is an async operation, re-use of the device
+                # should not be done before the block device has been released
+                loop_released = False
+                sys_block_loop = pathlib.Path(
+                    '/sys/devices/virtual/block/{0}/loop'.format(
+                        os.path.basename(self.node_name)
+                    )
+                )
+                for busy in range(0, 100):
+                    if not sys_block_loop.is_block_device():
+                        loop_released = True
+                        break
+                    time.sleep(0.1)
+                if not loop_released:
+                    raise KiwiCommandError(
+                        f'Loop device {self.node_name} still attached'
+                    )
+            except (KiwiCommandError, KiwiCommandNotFound) as issue:
+                log.error(
+                    'loop cleanup on {0} failed with: {1}'.format(
+                        self.node_name, issue
+                    )
                 )

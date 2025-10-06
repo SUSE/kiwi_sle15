@@ -1,5 +1,5 @@
 from pytest import raises
-import mock
+import unittest.mock as mock
 
 from kiwi.firmware import FirmWare
 from kiwi.defaults import Defaults
@@ -38,6 +38,9 @@ class TestFirmWare:
         xml_state.get_build_type_bootloader_targettype.return_value = 'CDL'
         self.firmware_s390_cdl = FirmWare(xml_state)
 
+        xml_state.get_build_type_bootloader_targettype.return_value = 'GPT'
+        self.firmware_s390_gpt = FirmWare(xml_state)
+
         xml_state.get_build_type_bootloader_targettype.return_value = 'SCSI'
         self.firmware_s390_scsi = FirmWare(xml_state)
 
@@ -67,6 +70,7 @@ class TestFirmWare:
         assert self.firmware_efi_mbr.get_partition_table_type() == 'msdos'
         assert self.firmware_s390_cdl.get_partition_table_type() == 'dasd'
         assert self.firmware_s390_scsi.get_partition_table_type() == 'msdos'
+        assert self.firmware_s390_gpt.get_partition_table_type() == 'gpt'
 
     def test_get_partition_table_type_ppc_ofw_mode(self):
         assert self.firmware_ofw.get_partition_table_type() == 'gpt'
@@ -75,12 +79,15 @@ class TestFirmWare:
         assert self.firmware_opal.get_partition_table_type() == 'gpt'
 
     def test_legacy_bios_mode(self):
-        assert self.firmware_bios.legacy_bios_mode() is False
+        assert self.firmware_bios.legacy_bios_mode() is True
         assert self.firmware_efi.legacy_bios_mode() is True
 
     def test_legacy_bios_mode_non_x86_platform(self):
         self.firmware_efi.arch = 'arm64'
         assert self.firmware_efi.legacy_bios_mode() is False
+        self.firmware_bios.arch = 'arm64'
+        assert self.firmware_bios.legacy_bios_mode() is False
+        assert self.firmware_s390_cdl.legacy_bios_mode() is False
 
     def test_ec2_mode(self):
         assert self.firmware_ec2.ec2_mode() == 'ec2'

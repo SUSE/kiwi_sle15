@@ -25,8 +25,6 @@ from xml.dom import minidom
 from typing import List
 
 # project
-import kiwi.defaults as defaults
-
 from kiwi.command import Command
 from kiwi.volume_manager.base import VolumeManagerBase
 from kiwi.mount_manager import MountManager
@@ -59,7 +57,7 @@ class VolumeManagerBtrfs(VolumeManagerBase):
 
         Store custom btrfs initialization arguments
 
-        :param list custom_args: custom btrfs volume manager arguments
+        :param dict custom_args: custom btrfs volume manager arguments
         """
         if custom_args:
             self.custom_args = custom_args
@@ -67,24 +65,44 @@ class VolumeManagerBtrfs(VolumeManagerBase):
             self.custom_args = {}
         if 'root_label' not in self.custom_args:
             self.custom_args['root_label'] = 'ROOT'
-        if 'root_is_snapshot' not in self.custom_args:
-            self.custom_args['root_is_snapshot'] = False
+        if 'root_is_snapper_snapshot' not in self.custom_args:
+            self.custom_args['root_is_snapper_snapshot'] = False
+        if 'btrfs_default_volume_requested' not in self.custom_args:
+            self.custom_args['btrfs_default_volume_requested'] = True
         if 'root_is_readonly_snapshot' not in self.custom_args:
             self.custom_args['root_is_readonly_snapshot'] = False
+        if 'root_is_subvolume' not in self.custom_args:
+            self.custom_args['root_is_subvolume'] = None
         if 'quota_groups' not in self.custom_args:
             self.custom_args['quota_groups'] = False
 
+        self.root_volume_name = '/'
+        self.default_volume_name = self.root_volume_name
+        if self._has_root_volume():
+            self.root_volume_name = '@'
+            canonical_volume_list = self.get_canonical_volume_list()
+            for volume in canonical_volume_list.volumes:
+                if volume.is_root_volume and volume.name:
+                    self.root_volume_name = volume.name
+                    self.default_volume_name = self.root_volume_name
+
+        if self.custom_args['root_is_snapper_snapshot'] and \
+           self.root_volume_name == '/':
+            log.warning('root_is_snapper_snapshot requires a toplevel sub-volume')
+            log.warning('root_is_snapper_snapshot has been disabled')
+            self.custom_args['root_is_snapper_snapshot'] = False
+
         self.subvol_mount_list = []
         self.toplevel_mount = None
-        self.toplevel_volume = None
+        self.snapshots_root_mount = None
 
     def setup(self, name=None):
         """
         Setup btrfs volume management
 
-        In case of btrfs a toplevel(@) subvolume is created and marked
+        In case of btrfs an optional toplevel subvolume is created and marked
         as default volume. If snapshots are activated via the custom_args
-        the setup method also created the @/.snapshots/1/snapshot
+        the setup method also creates the .snapshots/1/snapshot
         subvolumes. There is no concept of a volume manager name, thus
         the name argument is not used for btrfs
 
@@ -92,16 +110,16 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         """
         self.setup_mountpoint()
 
-        filesystem = FileSystem.new(
+        with FileSystem.new(
             name='btrfs',
             device_provider=MappedDevice(
                 device=self.device, device_provider=self.device_provider_root
             ),
             custom_args=self.custom_filesystem_args
-        )
-        filesystem.create_on_device(
-            label=self.custom_args['root_label']
-        )
+        ) as filesystem:
+            filesystem.create_on_device(
+                label=self.custom_args['root_label']
+            )
         self.toplevel_mount = MountManager(
             device=self.device, mountpoint=self.mountpoint
         )
@@ -112,29 +130,55 @@ class VolumeManagerBtrfs(VolumeManagerBase):
             Command.run(
                 ['btrfs', 'quota', 'enable', self.mountpoint]
             )
-        root_volume = self.mountpoint + '/@'
-        Command.run(
-            ['btrfs', 'subvolume', 'create', root_volume]
-        )
-        if self.custom_args['root_is_snapshot']:
-            snapshot_volume = self.mountpoint + '/@/.snapshots'
+        if self.root_volume_name != '/':
+            root_volume = self.mountpoint + f'/{self.root_volume_name}'
+            Command.run(
+                ['btrfs', 'subvolume', 'create', root_volume]
+            )
+        if self.custom_args['root_is_snapper_snapshot']:
+            snapshot_volume = self.mountpoint + \
+                f'/{self.root_volume_name}/.snapshots'
             Command.run(
                 ['btrfs', 'subvolume', 'create', snapshot_volume]
             )
             os.chmod(snapshot_volume, 0o700)
-            volume_mount = MountManager(
-                device=self.device,
-                mountpoint=self.mountpoint + '/.snapshots'
-            )
-            self.subvol_mount_list.append(volume_mount)
             Path.create(snapshot_volume + '/1')
-            snapshot = self.mountpoint + '/@/.snapshots/1/snapshot'
+            snapshot = self.mountpoint + \
+                f'/{self.root_volume_name}/.snapshots/1/snapshot'
             Command.run(
-                ['btrfs', 'subvolume', 'snapshot', root_volume, snapshot]
+                ['btrfs', 'subvolume', 'create', snapshot]
             )
-            self._set_default_volume('@/.snapshots/1/snapshot')
-        else:
-            self._set_default_volume('@')
+            self._set_default_volume(
+                f'{self.root_volume_name}/.snapshots/1/snapshot'
+            )
+            snapshot = self.mountpoint + \
+                f'/{self.root_volume_name}/.snapshots/1/snapshot'
+            # Mount /{some-name}/.snapshots as /.snapshots inside the root
+            snapshots_mount = MountManager(
+                device=self.device,
+                attributes={
+                    'subvol_path': f'{self.root_volume_name}/.snapshots',
+                    'subvol_name': f'{self.root_volume_name}/.snapshots'
+                },
+                mountpoint=snapshot + '/.snapshots'
+            )
+            self.subvol_mount_list.append(snapshots_mount)
+            # make sure the snapshot appears as proper (/) in the chroot
+            self.snapshots_root_mount = MountManager(
+                device=self.get_mountpoint(), mountpoint=self.get_mountpoint()
+            )
+        elif self.root_volume_name != '/':
+            self._set_default_volume(self.root_volume_name)
+
+    def get_root_volume_name(self) -> str:
+        """
+        Provides name of the root volume
+
+        :return: directory path name
+
+        :rtype: string
+        """
+        return self.default_volume_name
 
     def create_volumes(self, filesystem_name):
         """
@@ -161,37 +205,83 @@ class VolumeManagerBtrfs(VolumeManagerBase):
 
         for volume in canonical_volume_list.volumes:
             if volume.is_root_volume:
-                # the btrfs root volume named '@' has been created as
+                # the btrfs root volume has been created as
                 # part of the setup procedure
                 pass
             else:
                 log.info('--> sub volume %s', volume.realpath)
-                toplevel = self.mountpoint + '/@/'
-                volume_parent_path = os.path.normpath(
-                    toplevel + os.path.dirname(volume.realpath)
+                toplevel = os.path.normpath(
+                    self.mountpoint + os.sep + self.root_volume_name
                 )
-                if not os.path.exists(volume_parent_path):
-                    Path.create(volume_parent_path)
+                if volume.parent:
+                    toplevel = os.path.normpath(
+                        self.mountpoint + os.sep + volume.parent
+                    )
+
+                Path.create(
+                    os.path.dirname(
+                        os.path.normpath(toplevel + os.sep + volume.realpath)
+                    )
+                )
                 Command.run(
                     [
                         'btrfs', 'subvolume', 'create',
-                        os.path.normpath(toplevel + volume.realpath)
+                        os.path.normpath(toplevel + os.sep + volume.realpath)
                     ]
+                )
+                self._apply_quota(
+                    os.path.normpath(toplevel + os.sep + volume.realpath),
+                    volume.attributes
                 )
                 self.apply_attributes_on_volume(
                     toplevel, volume
                 )
-                if self.custom_args['root_is_snapshot']:
-                    snapshot = self.mountpoint + '/@/.snapshots/1/snapshot/'
-                    volume_mount = MountManager(
-                        device=self.device,
-                        mountpoint=os.path.normpath(snapshot + volume.realpath)
-                    )
-                    self.subvol_mount_list.append(
-                        volume_mount
-                    )
 
-    def get_fstab(self, persistency_type='by-label', filesystem_name=None):
+                volume_mountpoint = toplevel
+                root_is_snapper_snapshot = \
+                    self.custom_args['root_is_snapper_snapshot']
+
+                attributes = {
+                    'parent': volume.parent or '',
+                    'subvol_path': os.path.normpath(
+                        toplevel.replace(
+                            self.mountpoint, ''
+                        ) + os.sep + volume.realpath
+                    ).lstrip(os.sep),
+                    'subvol_name': volume.name
+                }
+                if root_is_snapper_snapshot:
+                    volume_mountpoint = self.mountpoint + \
+                        f'/{self.root_volume_name}/.snapshots/1/snapshot/'
+                    attributes = {
+                        'subvol_path': os.path.normpath(
+                            self.root_volume_name + os.sep + volume.realpath
+                        ),
+                        'subvol_name': os.path.normpath(
+                            self.root_volume_name + os.sep + volume.realpath
+                        )
+                    }
+
+                volume_mount = MountManager(
+                    device=self.device,
+                    attributes=attributes,
+                    mountpoint=os.path.normpath(
+                        os.sep.join(
+                            [
+                                volume_mountpoint,
+                                self.root_volume_name if not root_is_snapper_snapshot else '',
+                                volume.realpath
+                            ]
+                        )
+                    )
+                )
+                self.subvol_mount_list.append(
+                    volume_mount
+                )
+
+    def get_fstab(
+        self, persistency_type: str = 'by-label', filesystem_name: str = ''
+    ) -> List[str]:
         """
         Implements creation of the fstab entries. The method
         returns a list of fstab compatible entries
@@ -210,14 +300,28 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         blkid_type = 'LABEL' if persistency_type == 'by-label' else 'UUID'
         device_id = block_operation.get_blkid(blkid_type)
         for volume_mount in self.subvol_mount_list:
-            subvol_name = self._get_subvol_name_from_mountpoint(volume_mount)
-            mount_entry_options = mount_options + ['subvol=' + subvol_name]
+            mount_point = volume_mount.get_attributes().get('subvol_path')
+
+            # Delete root_volume_name from mountpoint path if present
+            if self.root_volume_name != '/' and \
+               mount_point.startswith(self.root_volume_name):
+                mount_point = mount_point.replace(self.root_volume_name, '')
+
+            mount_entry_options = mount_options + [
+                'subvol=' + volume_mount.get_attributes().get(
+                    'subvol_path'
+                ).lstrip(os.sep)
+            ]
+
             fs_check = self._is_volume_enabled_for_fs_check(
                 volume_mount.mountpoint
             )
             fstab_entry = ' '.join(
                 [
-                    blkid_type + '=' + device_id, subvol_name.replace('@', ''),
+                    blkid_type + '=' + device_id,
+                    mount_point if mount_point.startswith(
+                        os.sep
+                    ) else f'{os.sep}{mount_point}',
                     'btrfs', ','.join(mount_entry_options),
                     '0 {fs_passno}'.format(
                         fs_passno='2' if fs_check else '0'
@@ -237,13 +341,16 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         """
         volumes = {}
         for volume_mount in self.subvol_mount_list:
-            subvol_name = self._get_subvol_name_from_mountpoint(volume_mount)
+            subvol_path = volume_mount.get_attributes().get('subvol_path')
             subvol_options = ','.join(
                 [
-                    'subvol=' + subvol_name
+                    'subvol=' + subvol_path
                 ] + self.custom_filesystem_args['mount_options']
             )
-            volumes[subvol_name.replace('@', '')] = {
+            subvol_path = subvol_path.replace(
+                self.root_volume_name, ''
+            ) if self.root_volume_name != '/' else subvol_path
+            volumes[subvol_path] = {
                 'volume_options': subvol_options,
                 'volume_device': volume_mount.device
             }
@@ -258,44 +365,33 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         )
 
         for volume_mount in self.subvol_mount_list:
-            if self.volumes_mounted_initially:
-                volume_mount.mountpoint = os.path.normpath(
-                    volume_mount.mountpoint.replace(self.toplevel_volume, '', 1)
-                )
             if not os.path.exists(volume_mount.mountpoint):
                 Path.create(volume_mount.mountpoint)
-            subvol_name = self._get_subvol_name_from_mountpoint(volume_mount)
+            if self.snapshots_root_mount:
+                self.snapshots_root_mount.bind_mount()
+            subvol_path = volume_mount.get_attributes().get('subvol_path')
             subvol_options = ','.join(
                 [
-                    'subvol=' + subvol_name
+                    'subvol=' + subvol_path
                 ] + self.custom_filesystem_args['mount_options']
             )
             volume_mount.mount(
                 options=[subvol_options]
             )
 
-        self.volumes_mounted_initially = True
-
-    def umount_volumes(self):
+    def umount_volumes(self) -> None:
         """
         Umount btrfs subvolumes
-
-        :return: True if all subvolumes are successfully unmounted
-
-        :rtype: bool
         """
-        all_volumes_umounted = True
         for volume_mount in reversed(self.subvol_mount_list):
             if volume_mount.is_mounted():
-                if not volume_mount.umount():
-                    all_volumes_umounted = False
+                volume_mount.umount()
 
-        if all_volumes_umounted:
-            if self.toplevel_mount.is_mounted():
-                if not self.toplevel_mount.umount():
-                    all_volumes_umounted = False
+        if self.snapshots_root_mount and self.snapshots_root_mount.is_mounted():
+            self.snapshots_root_mount.umount()
 
-        return all_volumes_umounted
+        if self.toplevel_mount.is_mounted():
+            self.toplevel_mount.umount()
 
     def get_mountpoint(self) -> str:
         """
@@ -307,8 +403,12 @@ class VolumeManagerBtrfs(VolumeManagerBase):
 
         :rtype: string
         """
-        sync_target: List[str] = [self.mountpoint, '@']
-        if self.custom_args.get('root_is_snapshot'):
+        if not self.mountpoint:
+            raise KiwiVolumeManagerSetupError("No mountpoint exists")
+        sync_target: List[str] = [self.mountpoint]
+        if self.root_volume_name != '/':
+            sync_target.append(self.root_volume_name)
+        if self.custom_args.get('root_is_snapper_snapshot'):
             sync_target.extend(['.snapshots', '1', 'snapshot'])
         return os.path.join(*sync_target)
 
@@ -323,31 +423,64 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         """
         if self.toplevel_mount:
             sync_target = self.get_mountpoint()
-            if self.custom_args['root_is_snapshot']:
+            if self.custom_args['root_is_snapper_snapshot']:
                 self._create_snapshot_info(
-                    ''.join([self.mountpoint, '/@/.snapshots/1/info.xml'])
+                    ''.join(
+                        [
+                            self.mountpoint,
+                            f'/{self.root_volume_name}/.snapshots/1/info.xml'
+                        ]
+                    )
                 )
             data = DataSync(self.root_dir, sync_target)
             data.sync_data(
                 options=Defaults.get_sync_options(), exclude=exclude
             )
             if self.custom_args['quota_groups'] and \
-               self.custom_args['root_is_snapshot']:
+               self.custom_args['root_is_snapper_snapshot']:
                 self._create_snapper_quota_configuration()
 
     def set_property_readonly_root(self):
         """
         Sets the root volume to be a readonly filesystem
         """
-        root_is_snapshot = \
-            self.custom_args['root_is_snapshot']
+        root_is_snapper_snapshot = \
+            self.custom_args['root_is_snapper_snapshot']
         root_is_readonly_snapshot = \
             self.custom_args['root_is_readonly_snapshot']
-        if root_is_snapshot and root_is_readonly_snapshot:
-            sync_target = self.mountpoint
+        if root_is_snapper_snapshot and root_is_readonly_snapshot:
+            sync_target = self.get_mountpoint()
             Command.run(
                 ['btrfs', 'property', 'set', sync_target, 'ro', 'true']
             )
+
+    def _apply_quota(self, volume_path: str, attributes: List[str]):
+        for attribute in attributes:
+            if attribute.startswith('quota='):
+                quota = attribute.split('=')[1]
+                Command.run(
+                    ['btrfs', 'quota', 'enable', '--simple', volume_path]
+                )
+                Command.run(
+                    ['btrfs', 'qgroup', 'limit', quota, volume_path]
+                )
+
+    def _has_root_volume(self) -> bool:
+        has_root_volume = bool(self.custom_args['root_is_subvolume'])
+        if self.custom_args['root_is_subvolume'] is None:
+            # root volume not explicitly configured, will
+            # be enabled by default but this is going to change
+            # in the future. Print a deprecation message to inform
+            # the user about a potential behavior change
+            log.warning("Implicitly creating root volume")
+            log.warning(
+                "--> Future versions of kiwi will not do this anymore"
+            )
+            log.warning(
+                "--> Please specify btrfs_root_is_subvolume true|false"
+            )
+            has_root_volume = True
+        return has_root_volume
 
     def _is_volume_enabled_for_fs_check(self, mountpoint):
         for volume in self.volumes:
@@ -361,22 +494,23 @@ class VolumeManagerBtrfs(VolumeManagerBase):
             ['btrfs', 'subvolume', 'list', self.mountpoint]
         )
         for subvolume in subvolume_list_call.output.split('\n'):
-            id_search = re.search('ID (\d+) .*path (.*)', subvolume)
+            id_search = re.search(r'ID (\d+) .*path (.*)', subvolume)
             if id_search:
                 volume_id = id_search.group(1)
                 volume_path = id_search.group(2)
                 if volume_path == default_volume:
-                    Command.run(
-                        [
-                            'btrfs', 'subvolume', 'set-default',
-                            volume_id, self.mountpoint
-                        ]
-                    )
-                    self.toplevel_volume = default_volume
+                    if self.custom_args['btrfs_default_volume_requested']:
+                        Command.run(
+                            [
+                                'btrfs', 'subvolume', 'set-default',
+                                volume_id, self.mountpoint
+                            ]
+                        )
+                    self.default_volume_name = default_volume
                     return
 
         raise KiwiVolumeRootIDError(
-            'Failed to find btrfs volume: %s' % default_volume
+            f'Failed to find btrfs volume: {default_volume}'
         )
 
     def _xml_pretty(self, toplevel_element):
@@ -387,7 +521,12 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         return xml_data_domtree.toprettyxml(indent="    ")
 
     def _create_snapper_quota_configuration(self):
-        root_path = os.sep.join([self.mountpoint, '@/.snapshots/1/snapshot'])
+        root_path = os.sep.join(
+            [
+                self.mountpoint,
+                f'{self.root_volume_name}/.snapshots/1/snapshot'
+            ]
+        )
         snapper_default_conf = Defaults.get_snapper_config_template_file(
             root_path
         )
@@ -444,17 +583,6 @@ class VolumeManagerBtrfs(VolumeManagerBase):
         with open(filename, 'w') as snapshot_info_file:
             snapshot_info_file.write(self._xml_pretty(snapshot))
 
-    def _get_subvol_name_from_mountpoint(self, volume_mount):
-        path_start_index = len(defaults.TEMP_DIR.split(os.sep)) + 1
-        subvol_name = os.sep.join(
-            volume_mount.mountpoint.split(os.sep)[path_start_index:]
-        )
-        if self.toplevel_volume and self.toplevel_volume in subvol_name:
-            subvol_name = subvol_name.replace(self.toplevel_volume, '')
-        return os.path.normpath(os.sep.join(['@', subvol_name]))
-
-    def __del__(self):
+    def __exit__(self, exc_type, exc_value, traceback):
         if self.toplevel_mount:
-            log.info('Cleaning up %s instance', type(self).__name__)
-            if not self.umount_volumes():
-                log.warning('Subvolumes still busy')
+            self.umount_volumes()

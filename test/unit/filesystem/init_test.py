@@ -1,6 +1,6 @@
-from mock import patch
+from unittest.mock import patch
 from pytest import raises
-from mock import Mock
+from unittest.mock import Mock
 
 from kiwi.filesystem import FileSystem
 
@@ -59,12 +59,6 @@ class TestFileSystem:
         provider = Mock()
         FileSystem.new('squashfs', provider, 'root_dir')
         mock_squashfs.assert_called_once_with(provider, 'root_dir', None)
-
-    @patch('kiwi.filesystem.clicfs.FileSystemClicFs')
-    def test_filesystem_clicfs(self, mock_clicfs):
-        provider = Mock()
-        FileSystem.new('clicfs', provider, 'root_dir')
-        mock_clicfs.assert_called_once_with(provider, 'root_dir', None)
 
     @patch('kiwi.filesystem.swap.FileSystemSwap')
     def test_filesystem_swap(self, mock_swap):

@@ -23,12 +23,17 @@ from typing import (
 )
 
 # project
+from kiwi.defaults import Defaults
 from kiwi.utils.temporary import Temporary
 from kiwi.command import Command
 from kiwi.storage.device_provider import DeviceProvider
 from kiwi.storage.mapped_device import MappedDevice
 from kiwi.partitioner import Partitioner
-from kiwi.exceptions import KiwiCustomPartitionConflictError
+from kiwi.runtime_config import RuntimeConfig
+from kiwi.exceptions import (
+    KiwiCustomPartitionConflictError,
+    KiwiError
+)
 
 ptable_entry_type = NamedTuple(
     'ptable_entry_type', [
@@ -37,7 +42,8 @@ ptable_entry_type = NamedTuple(
         ('partition_name', str),
         ('partition_type', str),
         ('mountpoint', str),
-        ('filesystem', str)
+        ('filesystem', str),
+        ('label', str)
     ]
 )
 
@@ -66,15 +72,14 @@ class Disk(DeviceProvider):
             partitions will be placed as logical partitions inside
             of that extended partition
         """
-        # bind the underlaying block device providing class instance
-        # to this object (e.g loop) if present. This is done to guarantee
-        # the correct destructor order when the device should be released.
+        self.partition_mapper = RuntimeConfig().get_mapper_tool()
+        #: the underlaying device provider
         self.storage_provider = storage_provider
 
-        # list of protected map ids. If used in a custom partitions
-        # setup this will lead to a raise conditition in order to
-        # avoid conflicts with the existing partition layout and its
-        # customizaton capabilities
+        #: list of protected map ids. If used in a custom partitions
+        #: setup this will lead to a raise conditition in order to
+        #: avoid conflicts with the existing partition layout and its
+        #: customizaton capabilities
         self.protected_map_ids = [
             'root',
             'readonly',
@@ -86,6 +91,9 @@ class Disk(DeviceProvider):
             'efi'
         ]
 
+        #: Unified partition UUIDs according to systemd
+        self.gUID = self.get_discoverable_partition_ids()
+
         self.partition_map: Dict[str, str] = {}
         self.public_partition_id_map: Dict[str, str] = {}
         self.partition_id_map: Dict[str, str] = {}
@@ -96,6 +104,9 @@ class Disk(DeviceProvider):
         )
 
         self.table_type = table_type
+
+    def __enter__(self):
+        return self
 
     def get_device(self) -> Dict[str, MappedDevice]:
         """
@@ -158,6 +169,11 @@ class Disk(DeviceProvider):
             )
             self._add_to_map(map_name)
             self._add_to_public_id_map(id_name)
+            part_uuid = self.gUID.get(entry.partition_name)
+            if part_uuid:
+                self.partitioner.set_uuid(
+                    self.partition_id_map[map_name], part_uuid
+                )
 
     def create_root_partition(self, mbsize: str, clone: int = 0):
         """
@@ -179,6 +195,11 @@ class Disk(DeviceProvider):
             self._add_to_public_id_map('kiwi_RWPart')
         if 'kiwi_BootPart' not in self.public_partition_id_map:
             self._add_to_public_id_map('kiwi_BootPart')
+        root_uuid = self.gUID.get('root')
+        if root_uuid:
+            self.partitioner.set_uuid(
+                self.partition_id_map['root'], root_uuid
+            )
 
     def create_root_lvm_partition(self, mbsize: str, clone: int = 0):
         """
@@ -195,6 +216,11 @@ class Disk(DeviceProvider):
         self.partitioner.create('p.lxlvm', mbsize, 't.lvm')
         self._add_to_map('root')
         self._add_to_public_id_map('kiwi_RootPart')
+        root_uuid = self.gUID.get('root')
+        if root_uuid:
+            self.partitioner.set_uuid(
+                self.partition_id_map['root'], root_uuid
+            )
 
     def create_root_raid_partition(self, mbsize: str, clone: int = 0):
         """
@@ -214,6 +240,11 @@ class Disk(DeviceProvider):
         self._add_to_map('root')
         self._add_to_public_id_map('kiwi_RootPart')
         self._add_to_public_id_map('kiwi_RaidPart')
+        root_uuid = self.gUID.get('root')
+        if root_uuid:
+            self.partitioner.set_uuid(
+                self.partition_id_map['root'], root_uuid
+            )
 
     def create_root_readonly_partition(self, mbsize: str, clone: int = 0):
         """
@@ -233,6 +264,11 @@ class Disk(DeviceProvider):
         self.partitioner.create('p.lxreadonly', mbsize, 't.linux')
         self._add_to_map('readonly')
         self._add_to_public_id_map('kiwi_ROPart')
+        root_uuid = self.gUID.get('root')
+        if root_uuid:
+            self.partitioner.set_uuid(
+                self.partition_id_map['readonly'], root_uuid
+            )
 
     def create_boot_partition(self, mbsize: str, clone: int = 0):
         """
@@ -249,6 +285,11 @@ class Disk(DeviceProvider):
         self.partitioner.create('p.lxboot', mbsize, 't.linux')
         self._add_to_map('boot')
         self._add_to_public_id_map('kiwi_BootPart')
+        boot_uuid = self.gUID.get('xbootldr')
+        if boot_uuid:
+            self.partitioner.set_uuid(
+                self.partition_id_map['boot'], boot_uuid
+            )
 
     def create_prep_partition(self, mbsize: str):
         """
@@ -288,6 +329,11 @@ class Disk(DeviceProvider):
         self.partitioner.create('p.swap', mbsize, 't.swap')
         self._add_to_map('swap')
         self._add_to_public_id_map('kiwi_SwapPart')
+        swap_uuid = self.gUID.get('swap')
+        if swap_uuid:
+            self.partitioner.set_uuid(
+                self.partition_id_map['swap'], swap_uuid
+            )
 
     def create_efi_csm_partition(self, mbsize: str):
         """
@@ -314,6 +360,11 @@ class Disk(DeviceProvider):
         self.partitioner.create('p.UEFI', mbsize, 't.efi')
         self._add_to_map('efi')
         self._add_to_public_id_map('kiwi_EfiPart')
+        esp_uuid = self.gUID.get('esp')
+        if esp_uuid:
+            self.partitioner.set_uuid(
+                self.partition_id_map['efi'], esp_uuid
+            )
 
     def activate_boot_partition(self):
         """
@@ -347,6 +398,14 @@ class Disk(DeviceProvider):
         Note: only GPT tables supports this
         """
         self.partitioner.set_mbr()
+
+    def set_start_sector(self, start_sector: int):
+        """
+        Set start sector
+
+        Note: only effective on DOS tables
+        """
+        self.partitioner.set_start_sector(start_sector)
 
     def wipe(self):
         """
@@ -391,9 +450,14 @@ class Disk(DeviceProvider):
         required to map them if the storage provider is loop based
         """
         if self.storage_provider.is_loop():
-            Command.run(
-                ['kpartx', '-s', '-a', self.storage_provider.get_device()]
-            )
+            if self.partition_mapper == 'kpartx':
+                Command.run(
+                    ['kpartx', '-s', '-a', self.storage_provider.get_device()]
+                )
+            else:
+                Command.run(
+                    ['partx', '--add', self.storage_provider.get_device()]
+                )
             self.is_mapped = True
         else:
             Command.run(
@@ -407,6 +471,37 @@ class Disk(DeviceProvider):
         return OrderedDict(
             sorted(self.public_partition_id_map.items())
         )
+
+    def get_discoverable_partition_ids(self) -> Dict[str, str]:
+        """
+        Ask systemd for a list of standardized GUIDs for the
+        current architecture and return them in a dictionary.
+        If there is no such information available an empty
+        dictionary is returned
+
+        :return: key:value dict from systemd-id128
+
+        :rtype: dict
+        """
+        discoverable_ids = {}
+        try:
+            raw_lines = Command.run(
+                ['systemd-id128', 'show']
+            ).output.split(os.linesep)[1:]
+            for line in raw_lines:
+                if line:
+                    line = ' '.join(line.split())
+                    partition_name, uuid = line.split(' ')
+                    discoverable_ids[partition_name] = uuid
+        except KiwiError as issue:
+            log.warning(
+                f'Failed to obtain discoverable partition IDs: {issue}'
+            )
+            log.warning(
+                'Using built-in table'
+            )
+            discoverable_ids = Defaults.get_discoverable_partition_ids()
+        return discoverable_ids
 
     def _create_clones(
         self, name: str, clone: int, type_flag: str, mbsize: str
@@ -473,9 +568,14 @@ class Disk(DeviceProvider):
         partition_number = format(self.partitioner.get_id())
         if self.storage_provider.is_loop():
             device_base = os.path.basename(self.storage_provider.get_device())
-            device_node = ''.join(
-                ['/dev/mapper/', device_base, 'p', partition_number]
-            )
+            if self.partition_mapper == 'kpartx':
+                device_node = ''.join(
+                    ['/dev/mapper/', device_base, 'p', partition_number]
+                )
+            else:
+                device_node = ''.join(
+                    ['/dev/', device_base, 'p', partition_number]
+                )
         else:
             device = self.storage_provider.get_device()
             if device[-1].isdigit():
@@ -490,17 +590,23 @@ class Disk(DeviceProvider):
             self.partition_map[name] = device_node
             self.partition_id_map[name] = partition_number
 
-    def __del__(self):
+    def __exit__(self, exc_type, exc_value, traceback):
         if self.storage_provider.is_loop() and self.is_mapped:
             log.info('Cleaning up %s instance', type(self).__name__)
             try:
-                for device_node in self.partition_map.values():
-                    Command.run(['dmsetup', 'remove', device_node])
-                Command.run(
-                    ['kpartx', '-d', self.storage_provider.get_device()]
-                )
-            except Exception:
-                log.warning(
-                    'cleanup of partition device maps failed, %s still busy',
-                    self.storage_provider.get_device()
+                if self.partition_mapper == 'kpartx':
+                    for device_node in self.partition_map.values():
+                        Command.run(['dmsetup', 'remove', device_node])
+                    Command.run(
+                        ['kpartx', '-d', self.storage_provider.get_device()]
+                    )
+                else:
+                    Command.run(
+                        ['partx', '--delete', self.storage_provider.get_device()]
+                    )
+            except Exception as issue:
+                log.error(
+                    'cleanup of partition maps on {} failed with: {}'.format(
+                        self.storage_provider.get_device(), issue
+                    )
                 )

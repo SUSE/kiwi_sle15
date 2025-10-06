@@ -23,7 +23,7 @@ import pathlib
 from collections import OrderedDict
 from collections import namedtuple
 from typing import (
-    Any, List
+    Any, List, Optional, Dict
 )
 
 # project
@@ -31,7 +31,9 @@ import kiwi.defaults as defaults
 
 from kiwi.xml_parse import repository
 from kiwi.utils.fstab import Fstab
-from kiwi.xml_state import XMLState
+from kiwi.xml_state import (
+    XMLState, FileT
+)
 from kiwi.runtime_config import RuntimeConfig
 from kiwi.mount_manager import MountManager
 from kiwi.system.uri import Uri
@@ -49,6 +51,7 @@ from kiwi.archive.tar import ArchiveTar
 from kiwi.utils.compress import Compress
 from kiwi.utils.command_capabilities import CommandCapabilities
 from kiwi.utils.rpm_database import RpmDataBase
+from kiwi.builder.template.container_import import BuilderTemplateSystemdUnit
 from kiwi.system.profile import Profile
 
 from kiwi.exceptions import (
@@ -85,6 +88,48 @@ class SystemSetup:
         self._preferences_lookup()
         self._oemconfig_lookup()
 
+    def setup_registry_import(self) -> None:
+        """
+        Fetch container(s) and activate systemd unit to load
+        containers from local oci-archive file during boot
+        """
+        container_files_to_load = []
+        container_execs_to_load = []
+        after_services = set()
+        for container in self.xml_state.get_containers():
+            log.info(f'Fetching container: {container.name}')
+            pathlib.Path(f'{self.root_dir}/{defaults.LOCAL_CONTAINERS}').mkdir(
+                parents=True, exist_ok=True
+            )
+            container.fetch_command(self.root_dir)
+            if container.load_command:
+                container_files_to_load.append(container.container_file)
+                container_execs_to_load.append(container.load_command)
+                if container.backend == 'docker':
+                    after_services.add('docker.service')
+                elif container.backend == 'container-snap':
+                    after_services.add('container-snap.service')
+
+        if container_files_to_load:
+            log.info('--> Setup kiwi_containers.service import unit')
+            service = BuilderTemplateSystemdUnit()
+            unit_template = service.get_container_import_template(
+                container_files_to_load, container_execs_to_load,
+                list(after_services)
+            )
+            unit = unit_template.substitute()
+            unit_file = '{0}/etc/systemd/system/{1}.service'.format(
+                self.root_dir, 'kiwi_containers'
+            )
+            with open(unit_file, 'w') as systemd:
+                systemd.write(unit)
+            Command.run(
+                [
+                    'chroot', self.root_dir,
+                    'systemctl', 'enable', 'kiwi_containers'
+                ]
+            )
+
     def import_description(self) -> None:
         """
         Import XML descriptions, custom scripts, archives and
@@ -106,6 +151,7 @@ class SystemSetup:
 
         self._import_custom_scripts()
         self._import_custom_archives()
+        self._import_custom_files()
         self._import_cdroot_archive()
 
     def script_exists(self, name: str) -> bool:
@@ -124,9 +170,19 @@ class SystemSetup:
         Command.run(
             [
                 'chroot', self.root_dir,
-                'rm', '-rf', '.kconfig', defaults.IMAGE_METADATA_DIR
+                'rm', '-f',
+                '.kconfig',
+                '.profile',
+                'config.bootoptions'
             ]
         )
+        meta_dir = f'{self.root_dir}/{defaults.IMAGE_METADATA_DIR}'
+        if os.path.isdir(meta_dir):
+            image_meta = MountManager(
+                device='none', mountpoint=meta_dir
+            )
+            image_meta.umount()
+            Path.wipe(meta_dir)
 
     def import_repositories_marked_as_imageinclude(self) -> None:
         """
@@ -139,44 +195,52 @@ class SystemSetup:
         root = RootInit(
             root_dir=self.root_dir, allow_existing=True
         )
-        repo = Repository.new(
+        with Repository.new(
             RootBind(root), self.xml_state.get_package_manager()
-        )
-        repo.use_default_location()
-        for xml_repo in repository_sections:
-            repo_type = xml_repo.get_type()
-            repo_source = xml_repo.get_source().get_path()
-            repo_user = xml_repo.get_username()
-            repo_secret = xml_repo.get_password()
-            repo_alias = xml_repo.get_alias()
-            repo_priority = xml_repo.get_priority()
-            repo_dist = xml_repo.get_distribution()
-            repo_components = xml_repo.get_components()
-            repo_repository_gpgcheck = xml_repo.get_repository_gpgcheck()
-            repo_package_gpgcheck = xml_repo.get_package_gpgcheck()
-            repo_customization_script = self._get_repo_customization_script(
-                xml_repo
-            )
-            repo_sourcetype = xml_repo.get_sourcetype()
-            repo_use_for_bootstrap = False
-            uri = Uri(repo_source, repo_type)
-            repo_source_translated = uri.translate(
-                check_build_environment=False
-            )
-            if not repo_alias:
-                repo_alias = uri.alias()
-            log.info('Setting up image repository {0}'.format(repo_source))
-            log.info('--> Type: {0}'.format(repo_type))
-            log.info('--> Translated: {0}'.format(repo_source_translated))
-            log.info('--> Alias: {0}'.format(repo_alias))
-            repo.add_repo(
-                repo_alias, repo_source_translated,
-                repo_type, repo_priority, repo_dist, repo_components,
-                repo_user, repo_secret, uri.credentials_file_name(),
-                repo_repository_gpgcheck, repo_package_gpgcheck,
-                repo_sourcetype, repo_use_for_bootstrap,
-                repo_customization_script
-            )
+        ) as repo:
+            repo.use_default_location()
+            for xml_repo in repository_sections:
+                repo_type = xml_repo.get_type()
+                repo_source = xml_repo.get_source().get_path()
+                repo_architectures = xml_repo.get_architectures()
+                repo_user = xml_repo.get_username()
+                repo_secret = xml_repo.get_password()
+                repo_alias = xml_repo.get_alias()
+                repo_priority = xml_repo.get_priority()
+                repo_dist = xml_repo.get_distribution()
+                repo_components = xml_repo.get_components()
+                repo_repository_gpgcheck = xml_repo.get_repository_gpgcheck()
+                repo_package_gpgcheck = xml_repo.get_package_gpgcheck()
+                repo_customization_script = self._get_repo_customization_script(
+                    xml_repo
+                )
+                repo_sourcetype = xml_repo.get_sourcetype()
+                uri = Uri(repo_source, repo_type)
+                repo_source_translated = uri.translate(
+                    check_build_environment=False
+                )
+                if not repo_alias:
+                    repo_alias = uri.alias()
+                log.info(
+                    'Setting up image repository {0}'.format(
+                        Uri.print_sensitive(repo_source)
+                    )
+                )
+                log.info('--> Type: {0}'.format(repo_type))
+                log.info(
+                    '--> Translated: {0}'.format(
+                        Uri.print_sensitive(repo_source_translated)
+                    )
+                )
+                log.info('--> Alias: {0}'.format(repo_alias))
+                repo.add_repo(
+                    repo_alias, repo_source_translated,
+                    repo_type, repo_priority, repo_dist, repo_components,
+                    repo_user, repo_secret, uri.credentials_file_name(),
+                    repo_repository_gpgcheck, repo_package_gpgcheck,
+                    repo_sourcetype, repo_customization_script,
+                    repo_architectures
+                )
 
     def import_cdroot_files(self, target_dir: str) -> None:
         """
@@ -196,6 +260,14 @@ class SystemSetup:
             archive = ArchiveTar(cdroot_archive)
             archive.extract(target_dir)
             break
+
+    def import_files(self) -> None:
+        system_files = self.xml_state.get_system_files()
+        bootstrap_files = self.xml_state.get_bootstrap_files()
+        if system_files:
+            self._sync_files(system_files)
+        if bootstrap_files:
+            self._sync_files(bootstrap_files)
 
     def import_overlay_files(
         self, follow_links: bool = False, preserve_owner_group: bool = False
@@ -224,7 +296,8 @@ class SystemSetup:
         overlay_archive = self.description_dir + '/root.tar.gz'
         if os.path.exists(overlay_directory):
             self._sync_overlay_files(
-                overlay_directory, follow_links, preserve_owner_group
+                f'{os.path.normpath(overlay_directory)}/',
+                follow_links, preserve_owner_group
             )
         elif os.path.exists(overlay_archive):
             log.info('Extracting user defined files from archive to image tree')
@@ -295,7 +368,7 @@ class SystemSetup:
                 ['chroot', self.root_dir, 'chkstat', '--system', '--set']
             )
         else:
-            log.warning(
+            log.debug(
                 'chkstat not found in image. File Permissions Check skipped'
             )
 
@@ -492,20 +565,51 @@ class SystemSetup:
         :param str security_context_file: path file name
         """
         log.info('Processing SELinux file security contexts')
+        if not os.access(self.root_dir, os.W_OK):
+            log.info('System is read-only, security context unchanged')
+            return
         exclude = []
         for devname in Defaults.get_exclude_list_for_non_physical_devices():
             exclude.append('-e')
             exclude.append(f'/{devname}')
-        Command.run(
-            [
-                'chroot', self.root_dir, 'setfiles',
-                '-F', '-p', '-c', self._find_selinux_policy_file(
-                    self.xml_state.build_type.get_selinux_policy() or 'targeted'
-                )
-            ] + exclude + [
-                security_context_file, '/'
-            ]
-        )
+        # setfiles doesn't come with a stable command API and older versions
+        # needs a different invocation syntax. On older versions the usage
+        # information explicitly lists "setfiles -c policyfile" which is not
+        # present in newer versions. As setfiles doesn't come with a simple
+        # --version option, checking for this extra element in the usage
+        # was the only pointer I could come up with to differentiate the
+        # call options.
+        if CommandCapabilities.has_option_in_help(
+            'setfiles', 'setfiles -c policyfile', ['--help'],
+            root=self.root_dir, raise_on_error=False, silent=True
+        ):
+            Command.run(
+                [
+                    'chroot', self.root_dir, 'setfiles',
+                    '-c', self._find_selinux_policy_file(
+                        self.xml_state.build_type.get_selinux_policy() or 'targeted'
+                    ), security_context_file
+                ]
+            )
+            Command.run(
+                [
+                    'chroot', self.root_dir, 'setfiles',
+                    '-F', '-p'
+                ] + exclude + [
+                    security_context_file, '/'
+                ]
+            )
+        else:
+            Command.run(
+                [
+                    'chroot', self.root_dir, 'setfiles',
+                    '-T0', '-F', '-p', '-c', self._find_selinux_policy_file(
+                        self.xml_state.build_type.get_selinux_policy() or 'targeted'
+                    )
+                ] + exclude + [
+                    security_context_file, '/'
+                ]
+            )
 
     def setup_selinux_file_contexts(self) -> None:
         """
@@ -513,7 +617,12 @@ class SystemSetup:
         """
         security_context = '/etc/selinux/targeted/contexts/files/file_contexts'
         if os.path.exists(self.root_dir + security_context):
-            self.set_selinux_file_contexts(security_context)
+            if Path.which(filename='setfiles', access_mode=os.X_OK, root_dir=self.root_dir):
+                self.set_selinux_file_contexts(security_context)
+            else:
+                log.warning(
+                    'security_context found but setfiles tool not installed'
+                )
 
     def export_modprobe_setup(self, target_root_dir: str) -> None:
         """
@@ -531,6 +640,25 @@ class SystemSetup:
             data.sync_data(
                 options=['-a']
             )
+
+    def export_flake_pilot_system_file_list(
+        self, target_dir: str, file_name: str
+    ) -> str:
+        """
+        Export image package file list to the target_dir
+        and filename
+
+        :param str target_dir: path name
+        :param str file_name: file name
+        """
+        packager = Defaults.get_default_packager_tool(
+            self.xml_state.get_package_manager()
+        )
+        result_file = os.path.normpath(f'{target_dir}/{file_name}')
+        if packager == 'rpm':
+            self._export_rpm_flake_pilot_system_file_list(result_file)
+            return result_file
+        return ''
 
     def export_package_list(self, target_dir: str) -> str:
         """
@@ -652,6 +780,24 @@ class SystemSetup:
             defaults.POST_PREPARE_SCRIPT
         )
 
+    def call_config_overlay_script(self) -> None:
+        """
+        Call config-overlay.sh script chrooted
+        """
+        self._call_script(
+            defaults.POST_PREPARE_OVERLAY_SCRIPT
+        )
+
+    def call_config_host_overlay_script(self, working_directory: str = None) -> None:
+        """
+        Call config-host-overlay.sh script _NON_ chrooted
+        """
+        self._call_script_no_chroot(
+            name=defaults.POST_HOST_PREPARE_OVERLAY_SCRIPT,
+            option_list=[],
+            working_directory=working_directory
+        )
+
     def call_image_script(self) -> None:
         """
         Call images.sh script chrooted
@@ -699,6 +845,15 @@ class SystemSetup:
             working_directory=working_directory
         )
 
+    def create_system_files(self) -> None:
+        """
+        Create file list of packages to be used by flake-pilot
+        """
+        if self.xml_state.build_type.get_provide_system_files():
+            self.export_flake_pilot_system_file_list(
+                self.root_dir, Defaults.get_system_files_name()
+            )
+
     def create_fstab(self, fstab: Fstab) -> None:
         """
         Create etc/fstab from given Fstab object
@@ -744,8 +899,8 @@ class SystemSetup:
             Path.wipe(fstab_patch_file)
 
         if os.path.exists(fstab_script_file):
-            Command.run(
-                ['chroot', self.root_dir, '/etc/fstab.script']
+            self._call_script(
+                name='etc/fstab.script', path_prefix=''
             )
             Path.wipe(fstab_script_file)
 
@@ -917,6 +1072,50 @@ class SystemSetup:
             )
             break
 
+    def _import_custom_files(self):
+        """
+        Import custom file files
+        """
+        file_list = []
+        system_files = self.xml_state.get_system_files()
+        bootstrap_files = self.xml_state.get_bootstrap_files()
+        if system_files:
+            file_list += system_files.keys()
+        if bootstrap_files:
+            file_list += bootstrap_files.keys()
+
+        file_target_dir = os.path.join(
+            self.root_dir, defaults.IMAGE_METADATA_DIR
+        ) + os.sep
+
+        for file in file_list:
+            file_is_absolute = file.startswith(os.sep)
+            if file_is_absolute:
+                file_file = file
+            else:
+                file_file = os.path.join(self.description_dir, file)
+
+            file_exists = os.path.exists(file_file)
+
+            if not file_exists:
+                if self.derived_description_dir and not file_is_absolute:
+                    file_file = self.derived_description_dir + '/' + file
+                    file_exists = os.path.exists(file_file)
+
+            if file_exists:
+                log.info(
+                    '--> Importing {0} file to {1}'.format(
+                        file_file, file_target_dir
+                    )
+                )
+                Command.run(
+                    ['cp', file_file, file_target_dir]
+                )
+            else:
+                raise KiwiImportDescriptionError(
+                    f'Specified file {file_file} does not exist'
+                )
+
     def _import_custom_archives(self):
         """
         Import custom tar archive files
@@ -982,6 +1181,14 @@ class SystemSetup:
             ),
             defaults.POST_PREPARE_SCRIPT: script_type(
                 filepath=defaults.POST_PREPARE_SCRIPT,
+                raise_if_not_exists=False
+            ),
+            defaults.POST_PREPARE_OVERLAY_SCRIPT: script_type(
+                filepath=defaults.POST_PREPARE_OVERLAY_SCRIPT,
+                raise_if_not_exists=False
+            ),
+            defaults.POST_HOST_PREPARE_OVERLAY_SCRIPT: script_type(
+                filepath=defaults.POST_HOST_PREPARE_OVERLAY_SCRIPT,
                 raise_if_not_exists=False
             ),
             defaults.PRE_CREATE_SCRIPT: script_type(
@@ -1052,8 +1259,10 @@ class SystemSetup:
                 ]
             )
 
-    def _call_script(self, name, option_list=None):
-        script_path = os.path.join(self.root_dir, 'image', name)
+    def _call_script(
+        self, name, option_list=None, path_prefix=defaults.IMAGE_METADATA_DIR
+    ):
+        script_path = os.path.join(self.root_dir, path_prefix, name)
         if os.path.exists(script_path):
             options = option_list or []
             if log.getLogFlags().get('run-scripts-in-screen'):
@@ -1066,7 +1275,7 @@ class SystemSetup:
             if not Path.access(script_path, os.X_OK):
                 command.append('bash')
             command.append(
-                os.path.join(defaults.IMAGE_METADATA_DIR, name)
+                os.path.join(os.sep, path_prefix, name)
             )
             command.extend(options)
             profile = Profile(self.xml_state)
@@ -1081,9 +1290,11 @@ class SystemSetup:
                 raise KiwiScriptFailed(
                     '{0} failed: {1}'.format(name, result.stderr)
                 )
+            # if configured, assign SELinux labels
+            self.setup_selinux_file_contexts()
 
     def _call_script_no_chroot(
-        self, name, option_list, working_directory
+        self, name: str, option_list: List[str], working_directory: Optional[str]
     ):
         if not working_directory:
             working_directory = self.root_dir
@@ -1152,6 +1363,23 @@ class SystemSetup:
         """
         if section_content:
             return section_content[0]
+
+    def _export_rpm_flake_pilot_system_file_list(self, filename):
+        log.info('Export rpm system files script for flake-pilot')
+        dbpath_option = [
+            '--dbpath', self._get_rpm_database_location()
+        ]
+        skip_list = self.xml_state.get_system_files_ignore_packages()
+        query_call = Command.run(
+            [
+                'rpm', '--root', self.root_dir, '-qa', '--qf', '%{NAME}\n'
+            ] + dbpath_option
+        )
+        with open(filename, 'w', encoding='utf-8') as systemfiles:
+            systemfiles.write('set -e\n')
+            for package in query_call.output.splitlines():
+                if package not in skip_list:
+                    systemfiles.write(f'rpm --noghost -ql {package}\n')
 
     def _export_rpm_package_list(self, filename):
         log.info('Export rpm packages metadata')
@@ -1286,6 +1514,45 @@ class SystemSetup:
         if shared_mount.is_mounted():
             shared_mount.umount_lazy()
         return dbpath
+
+    def _sync_files(self, file_list: Dict[str, FileT]) -> None:
+        log.info("Installing files")
+        ordered_files = OrderedDict(sorted(file_list.items()))
+        for filename, file_t in list(ordered_files.items()):
+            target = file_t.target
+            target_owner = file_t.owner
+            target_permissions = file_t.permissions
+            file_file = '/'.join(
+                [self.root_dir, 'image', filename]
+            )
+            target_name = self.root_dir
+            if target:
+                target_name = os.path.normpath(
+                    os.sep.join([target_name, target])
+                )
+            log.info(f'--> file: {file_file} -> {target_name}')
+            if target_owner:
+                Command.run(
+                    [
+                        'chroot', self.root_dir,
+                        'chown', target_owner,
+                        file_file.replace(self.root_dir, '')
+                    ]
+                )
+            if target_permissions:
+                Command.run(
+                    [
+                        'chroot', self.root_dir,
+                        'chmod', target_permissions,
+                        file_file.replace(self.root_dir, '')
+                    ]
+                )
+            if os.path.dirname(target_name):
+                Path.create(os.path.dirname(target_name))
+            data = DataSync(file_file, target_name)
+            data.sync_data(
+                options=Defaults.get_sync_options()
+            )
 
     def _sync_overlay_files(
         self, overlay_directory, follow_links=False,

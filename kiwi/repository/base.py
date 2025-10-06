@@ -44,6 +44,9 @@ class RepositoryBase:
 
         self.post_init(custom_args or [])
 
+    def __enter__(self):
+        return self
+
     def post_init(self, custom_args: List = []) -> None:
         """
         Post initialization method
@@ -74,7 +77,7 @@ class RepositoryBase:
         self, name: str, uri: str, repo_type: str, prio: int, dist: str,
         components: str, user: str, secret: str, credentials_file: str,
         repo_gpgcheck: bool, pkg_gpgcheck: bool, sourcetype: str,
-        use_for_bootstrap: bool = False, customization_script: str = None
+        customization_script: str = None, architectures: str = None
     ) -> None:
         """
         Add repository
@@ -93,8 +96,8 @@ class RepositoryBase:
         :param bool repo_gpgcheck: unused
         :param bool pkg_gpgcheck: unused
         :param str sourcetype: unused
-        :param bool use_for_bootstrap: unused
         :param str customization_script: unused
+        :param str architectures: unused
         """
         raise NotImplementedError
 
@@ -166,3 +169,14 @@ class RepositoryBase:
         Command.run(
             ['bash', '--norc', script_path, repo_file]
         )
+
+    def cleanup(self) -> None:
+        """
+        Cleanup method
+
+        Implementation in specialized repository class
+        """
+        pass  # pragma: no cover
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        pass  # pragma: no cover

@@ -1,10 +1,10 @@
 import io
-from mock import (
+from unittest.mock import (
     patch, call, mock_open, MagicMock, Mock
 )
 from pytest import raises
 import os
-import mock
+import unittest.mock as mock
 
 from lxml import etree
 
@@ -17,10 +17,19 @@ from kiwi.exceptions import KiwiUriOpenError
 class TestSolverRepositoryBase:
     def setup(self):
         self.uri = mock.Mock()
+        self.uri.uri = 'http://example.org/some/path'
         self.solver = SolverRepositoryBase(self.uri)
 
     def setup_method(self, cls):
         self.setup()
+
+    def test_uri_has_credentials(self):
+        self.uri = mock.Mock()
+        self.uri.uri = 'http://user:pass@example.org/some/path'
+        self.solver = SolverRepositoryBase(self.uri)
+        assert self.solver.user == 'user'
+        assert self.solver.secret == 'pass'
+        assert self.solver.uri.uri == 'http://example.org/some/path'
 
     @patch.object(SolverRepositoryBase, '_get_repomd_xml')
     @patch.object(SolverRepositoryBase, '_get_deb_packages')
@@ -290,22 +299,32 @@ class TestSolverRepositoryBase:
     def test__create_solvables_rpmmd2_solv(
         self, mock_glob, mock_command, mock_rand, mock_Temporary
     ):
-        mock_glob.return_value = ['some-solv-data-file']
+        mock_glob.return_value = ['some-solv-data-file', 'some-solv-data-file.zst']
         mock_rand.return_value = 0xfe
         self.solver.repository_metadata_dirs = ['metadata_dir.XXXX']
         mock_Temporary.return_value.new_dir.return_value.name = 'solv_dir.XX'
         self.solver._create_solvables('meta_dir.XX', 'rpmmd2solv')
         mock_glob.assert_called_once_with('meta_dir.XX/*')
-        mock_command.assert_called_once_with(
-            [
-                'bash', '-c',
+        assert mock_command.mock_calls == [
+            call([
+                'bash',
+                '-c',
                 ' '.join([
                     'gzip -cd --force some-solv-data-file',
                     '|',
                     'rpmmd2solv > solv_dir.XX/solvable-fefefefe'
                 ])
-            ]
-        )
+            ]),
+            call([
+                'bash',
+                '-c',
+                ' '.join([
+                    'zstd -dcf some-solv-data-file.zst',
+                    '|',
+                    'rpmmd2solv > solv_dir.XX/solvable-fefefefe'
+                ])
+            ])
+        ]
 
     @patch('kiwi.solver.repository.base.Temporary')
     @patch('kiwi.solver.repository.base.random.randrange')

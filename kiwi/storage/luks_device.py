@@ -17,10 +17,13 @@
 #
 import os
 import logging
+import binascii
 from typing import Optional
 
 # project
 from kiwi.utils.temporary import Temporary
+from kiwi.utils.checksum import Checksum
+from kiwi.path import Path
 from kiwi.command import Command
 from kiwi.defaults import Defaults
 from kiwi.storage.device_provider import DeviceProvider
@@ -40,13 +43,12 @@ class LuksDevice(DeviceProvider):
     :param object storage_provider: Instance of class based on DeviceProvider
     """
     def __init__(self, storage_provider: DeviceProvider) -> None:
-        # bind the underlaying block device providing class instance
-        # to this object (e.g loop) if present. This is done to guarantee
-        # the correct destructor order when the device should be released.
+        #: the underlaying device provider
         self.storage_provider = storage_provider
 
         self.luks_device: Optional[str] = None
-        self.luks_keyfile: Optional[str] = None
+        self.luks_keyfile: str = ''
+        self.passphrase: str = ''
         self.luks_name = 'luksRoot'
 
         self.option_map = {
@@ -56,6 +58,9 @@ class LuksDevice(DeviceProvider):
                 '--hash', 'sha1'
             ]
         }
+
+    def __enter__(self):
+        return self
 
     def get_device(self) -> Optional[MappedDevice]:
         """
@@ -72,8 +77,9 @@ class LuksDevice(DeviceProvider):
         return None
 
     def create_crypto_luks(
-        self, passphrase: str, os: str = None,
-        options: list = None, keyfile: str = ''
+        self, passphrase: str, osname: str = None,
+        options: list = None, keyfile: str = '', randomize: bool = True,
+        root_dir: str = ''
     ) -> None:
         """
         Create luks device. Please note the passphrase is readable
@@ -81,22 +87,25 @@ class LuksDevice(DeviceProvider):
         is secure while this process runs
 
         :param string passphrase: credentials
-        :param string os:
+        :param string osname:
             distribution name to match distribution specific
             options for cryptsetup
         :param list options: further cryptsetup options
         :param string keyfile: file path name
             file path name which contains an alternative key
             to unlock the luks device
+        :param string root_dir: root dir path
         """
+        keyslot = '0'
+        self.passphrase = passphrase
         if not options:
             options = []
-        if os:
-            if os in self.option_map:
-                options += self.option_map[os]
+        if osname:
+            if osname in self.option_map:
+                options += self.option_map[osname]
             else:
                 raise KiwiLuksSetupError(
-                    'no custom option configuration found for OS %s' % os
+                    f'no custom option configuration found for OS {osname}'
                 )
         extra_options = []
         storage_device = self.storage_provider.get_device()
@@ -105,25 +114,49 @@ class LuksDevice(DeviceProvider):
         if not passphrase:
             log.warning('Using an empty passphrase for the key setup')
 
-        log.info('--> Randomizing...')
-        storage_size_mbytes = self.storage_provider.get_byte_size(
-            storage_device
-        ) / 1048576
-        Command.run(
-            [
-                'dd', 'if=/dev/urandom', 'bs=1M',
-                'count=%d' % storage_size_mbytes,
-                'of=%s' % storage_device
-            ]
-        )
+        if keyfile:
+            self.luks_keyfile = keyfile
+            keyfile_path = os.path.normpath(
+                os.sep.join([root_dir, self.luks_keyfile])
+            )
+            random_passphrase = LuksDevice.create_random_keyfile(keyfile_path)
+
+        if randomize:
+            log.info('--> Randomizing...')
+            storage_size_mbytes = self.storage_provider.get_byte_size(
+                storage_device
+            ) / 1048576
+            Command.run(
+                [
+                    'dd', 'if=/dev/urandom', 'bs=1M',
+                    'count=%d' % storage_size_mbytes,
+                    f'of={storage_device}'
+                ]
+            )
+
         log.info('--> Creating LUKS map')
 
-        if passphrase:
+        if passphrase and passphrase == 'random':
+            # In random mode use the generated keyfile as the only
+            # key to decrypt. This is only secure if the generated
+            # initrd also gets protected, e.g through encryption
+            # like it is done with the secure linux execution on
+            # zSystems
+            self.passphrase = random_passphrase
+            passphrase_file = keyfile_path
+            # Do not add an additional keyfile
+            keyfile = ''
+        elif passphrase:
+            # Setup a passphrase file for which the system will
+            # ask for in an interactive dialog
             passphrase_file_tmp = Temporary().new_file()
             with open(passphrase_file_tmp.name, 'w') as credentials:
                 credentials.write(passphrase)
             passphrase_file = passphrase_file_tmp.name
         else:
+            # Setup an empty passphrase, insecure and only useful
+            # for initial deployment which then applies a process
+            # to secure the image e.g reencrypt
             passphrase_file_zero = '/dev/zero'
             extra_options = [
                 '--keyfile-size', '32'
@@ -137,16 +170,42 @@ class LuksDevice(DeviceProvider):
                 'luksFormat', storage_device
             ]
         )
+
         if keyfile:
-            self.luks_keyfile = keyfile
-            LuksDevice.create_random_keyfile(keyfile)
             Command.run(
                 [
                     'cryptsetup', '--key-file', passphrase_file
                 ] + extra_options + [
-                    'luksAddKey', storage_device, keyfile
+                    'luksAddKey', storage_device, keyfile_path
                 ]
             )
+
+        # Create backup header checksum as reencryption reference
+        master_checksum = f'{root_dir}/root/.luks.header'
+        Path.wipe(master_checksum)
+        Command.run(
+            [
+                'cryptsetup', '--key-file', passphrase_file
+            ] + extra_options + [
+                'luksHeaderBackup', storage_device,
+                '--header-backup-file', master_checksum
+            ]
+        )
+        checksum = Checksum(master_checksum).sha256()
+        with open(master_checksum, 'w') as shasum:
+            shasum.write(checksum)
+
+        # Create key slot number as reencryption reference
+        master_slot = f'{root_dir}/root/.luks.slot'
+        with open(master_slot, 'w') as slot:
+            slot.write(keyslot)
+
+        # Create slot passphrase as reencryption reference
+        master_slotpass = f'{root_dir}/root/.slotpass'
+        with open(master_slotpass, 'w') as slotpass:
+            slotpass.write(self.passphrase)
+
+        # open the pool
         Command.run(
             [
                 'cryptsetup', '--key-file', passphrase_file
@@ -168,8 +227,7 @@ class LuksDevice(DeviceProvider):
             if self.luks_keyfile:
                 crypttab.write(
                     'luks UUID={0} /{1}{2}'.format(
-                        luks_uuid, os.path.basename(self.luks_keyfile),
-                        os.linesep
+                        luks_uuid, self.luks_keyfile.lstrip(os.sep), os.linesep
                     )
                 )
             else:
@@ -192,25 +250,29 @@ class LuksDevice(DeviceProvider):
         return self.storage_provider.is_loop()
 
     @staticmethod
-    def create_random_keyfile(filename: str) -> None:
+    def create_random_keyfile(filename: str) -> str:
         """
         Create keyfile with random data
 
         :param string filename: file path name
         """
-        with open(filename, 'wb') as keyfile:
-            keyfile.write(os.urandom(Defaults.get_luks_key_length()))
+        random_data = binascii.hexlify(
+            os.urandom(Defaults.get_luks_key_length())
+        ).decode()
+        with open(filename, 'w') as keyfile:
+            keyfile.write(random_data)
         os.chmod(filename, 0o600)
+        return random_data
 
-    def __del__(self):
+    def __exit__(self, exc_type, exc_value, traceback):
         if self.luks_device:
-            log.info('Cleaning up %s instance', type(self).__name__)
             try:
                 Command.run(
                     ['cryptsetup', 'luksClose', self.luks_name]
                 )
-            except Exception:
-                log.warning(
-                    'Shutdown of luks map %s failed, %s still busy',
-                    self.luks_name, self.luks_device
+            except Exception as issue:
+                log.error(
+                    'Shutdown of luks map {0}:{1} failed with: {2}'.format(
+                        self.luks_name, self.luks_device, issue
+                    )
                 )
