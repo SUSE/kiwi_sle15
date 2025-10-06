@@ -1,12 +1,13 @@
-from mock import (
-    patch, call, mock_open, ANY, Mock
+from unittest.mock import (
+    MagicMock, patch, call, mock_open, ANY, Mock
 )
 from pytest import raises
-import mock
-import kiwi
+import unittest.mock as mock
+import kiwi.builder.install
 
 from collections import namedtuple
 
+from kiwi.bootloader.config.grub2 import BootLoaderConfigGrub2
 from kiwi.defaults import Defaults
 from kiwi.builder.install import InstallImageBuilder
 from kiwi.exceptions import KiwiInstallBootImageError
@@ -29,15 +30,6 @@ class TestInstallImageBuilder:
         kiwi.builder.install.FirmWare = mock.Mock(
             return_value=self.firmware
         )
-        self.squashed_image = mock.Mock()
-        kiwi.builder.install.FileSystemSquashFs = mock.Mock(
-            return_value=self.squashed_image
-        )
-        self.iso_image = mock.Mock()
-        self.iso_image.create_on_file.return_value = 42
-        kiwi.builder.install.FileSystemIsoFs = mock.Mock(
-            return_value=self.iso_image
-        )
         self.mbrid = mock.Mock()
         self.mbrid.get_id = mock.Mock(
             return_value='0xffffffff'
@@ -46,7 +38,11 @@ class TestInstallImageBuilder:
             return_value=self.mbrid
         )
         kiwi.builder.install.Path = mock.Mock()
-        kiwi.builder.install.BootLoaderConfig.new = mock.Mock()
+
+        create_boot_loader_config_mock = mock.Mock(return_value=MagicMock())
+        create_boot_loader_config_mock.return_value.__enter__.return_value = mock.Mock()
+        kiwi.builder.install.create_boot_loader_config = create_boot_loader_config_mock
+
         self.checksum = mock.Mock()
         kiwi.builder.install.Checksum = mock.Mock(
             return_value=self.checksum
@@ -77,6 +73,9 @@ class TestInstallImageBuilder:
         )
         self.xml_state.get_installmedia_initrd_modules = mock.Mock(
             return_value=['module1', 'module2']
+        )
+        self.xml_state.get_installmedia_initrd_drivers = mock.Mock(
+            return_value=['driver1', 'driver2']
         )
         self.boot_image_task = mock.Mock()
         self.boot_image_task.boot_root_directory = 'initrd_dir'
@@ -124,19 +123,24 @@ class TestInstallImageBuilder:
         )
         assert install_image.arch == 'ix86'
 
+    @patch('kiwi.builder.install.FileSystemIsoFs')
+    @patch('kiwi.builder.install.FileSystemSquashFs')
     @patch('kiwi.builder.install.DeviceProvider')
-    @patch('kiwi.builder.install.BootLoaderConfig.new')
+    @patch('kiwi.builder.install.create_boot_loader_config')
     @patch('kiwi.builder.install.IsoToolsBase.setup_media_loader_directory')
     @patch('kiwi.builder.install.shutil.copy')
     @patch('kiwi.builder.install.Temporary')
     @patch('kiwi.builder.install.Command.run')
     @patch('kiwi.builder.install.Defaults.get_grub_boot_directory_name')
-    @patch('kiwi.builder.install.Iso')
+    @patch('kiwi.builder.install.BlockID.get_ptuuid')
     def test_create_install_iso(
-        self, mock_Iso, mock_grub_dir, mock_command, mock_Temporary, mock_copy,
-        mock_setup_media_loader_directory, mock_BootLoaderConfig,
-        mock_DeviceProvider
+        self, mock_get_ptuuid, mock_grub_dir, mock_command, mock_Temporary,
+        mock_copy, mock_setup_media_loader_directory,
+        mock_create_boot_loader_config, mock_DeviceProvider,
+        mock_FileSystemSquashFs, mock_FileSystemIsoFs
     ):
+        mock_get_ptuuid.return_value = 'some_PTUUID'
+
         temp_squashfs = Mock()
         temp_squashfs.new_dir.return_value.name = 'temp-squashfs'
 
@@ -148,14 +152,16 @@ class TestInstallImageBuilder:
 
         tmp_names = [temp_esp_file, temp_squashfs, temp_media_dir]
 
+        iso_image = mock_FileSystemIsoFs.return_value.__enter__.return_value
+        iso_image.create_on_file.return_value = 42
+
         def side_effect(prefix, path):
             return tmp_names.pop()
 
-        bootloader_config = mock.Mock()
-        mock_BootLoaderConfig.return_value = bootloader_config
+        bootloader_config = mock.MagicMock(spec=BootLoaderConfigGrub2)
+        mock_create_boot_loader_config.return_value.__enter__.return_value = bootloader_config
         mock_Temporary.side_effect = side_effect
 
-        self.firmware.ofw_mode.return_value = False
         self.firmware.bios_mode.return_value = False
 
         m_open = mock_open()
@@ -164,8 +170,8 @@ class TestInstallImageBuilder:
 
         self.setup.import_cdroot_files.assert_called_once_with('temp_media_dir')
 
-        self.checksum.md5.assert_called_once_with(
-            'temp-squashfs/result-image.md5'
+        self.checksum.sha256.assert_called_once_with(
+            'temp-squashfs/result-image.sha256'
         )
         mock_copy.assert_called_once_with(
             'root_dir/boot/initrd-kernel_version',
@@ -184,13 +190,16 @@ class TestInstallImageBuilder:
             device_provider=mock_DeviceProvider.return_value,
             root_dir='temp-squashfs'
         )
-        self.squashed_image.create_on_file.assert_called_once_with(
+        squashed_image = mock_FileSystemSquashFs \
+            .return_value.__enter__.return_value
+        squashed_image.create_on_file.assert_called_once_with(
             'target_dir/result-image.raw.squashfs'
         )
-        mock_BootLoaderConfig.assert_called_once_with(
-            'grub2', self.xml_state, root_dir='root_dir',
+        mock_create_boot_loader_config.assert_called_once_with(
+            name='grub2', xml_state=self.xml_state, root_dir='root_dir',
             boot_dir='temp_media_dir', custom_args={
-                'grub_directory_name': mock_grub_dir.return_value
+                'grub_directory_name': mock_grub_dir.return_value,
+                'grub_load_command': 'configfile'
             }
         )
         bootloader_config.setup_install_boot_images.assert_called_once_with(
@@ -231,7 +240,7 @@ class TestInstallImageBuilder:
                 'mv', 'initrd', 'temp_media_dir/boot/x86_64/loader/initrd'
             ])
         ]
-        self.iso_image.create_on_file.assert_called_once_with(
+        iso_image.create_on_file.assert_called_once_with(
             'target_dir/result-image.x86_64-1.2.3.install.iso'
         )
 
@@ -244,44 +253,36 @@ class TestInstallImageBuilder:
 
         self.boot_image_task.include_module.assert_any_call('kiwi-dump')
         self.boot_image_task.include_module.assert_any_call('kiwi-dump-reboot')
-        self.boot_image_task.omit_module.call_args_list == [
-            call('multipath'), call('module1'), call('module2')
+        self.boot_image_task.include_driver.assert_any_call('driver1')
+        self.boot_image_task.include_driver.assert_any_call('driver2')
+        assert self.boot_image_task.omit_module.call_args_list == [
+            call('kiwi-repart'), call('multipath'),
+            call('module1'), call('module2')
         ]
         self.boot_image_task.set_static_modules.assert_called_once_with(
             ['module1', 'module2']
         )
 
-        self.boot_image_task.include_file.assert_called_once_with(
-            '/config.bootoptions'
-        )
+        assert self.boot_image_task.include_file.call_args_list == [
+            call('/config.bootoptions'),
+            call('/system_identifier')
+        ]
         assert m_open.call_args_list == [
             call('temp_media_dir/config.isoclient', 'w'),
+            call('initrd_dir/system_identifier', 'w')
         ]
         assert m_open.return_value.write.call_args_list == [
-            call('IMAGE="result-image.raw"\n')
+            call('IMAGE="result-image.raw"\n'),
+            call('some_PTUUID')
         ]
 
-        mock_BootLoaderConfig.reset_mock()
-        tmp_names = [temp_esp_file, temp_squashfs, temp_media_dir]
-        self.firmware.efi_mode.return_value = None
-        self.firmware.ofw_mode.return_value = False
-        self.firmware.bios_mode.return_value = True
-
-        with patch('builtins.open', m_open, create=True):
-            self.install_image.create_install_iso()
-
-        mock_Iso.return_value.setup_isolinux_boot_path.assert_called_once_with()
-        mock_BootLoaderConfig.assert_called_once_with(
-            'isolinux', self.xml_state, root_dir='root_dir',
-            boot_dir='temp_media_dir'
-        )
-        bootloader_config._create_embedded_fat_efi_image.assert_not_called()
-
+    @patch('kiwi.builder.disk.create_boot_loader_config')
     @patch('kiwi.builder.install.IsoToolsBase.setup_media_loader_directory')
     @patch('kiwi.builder.install.Temporary')
     @patch('kiwi.builder.install.Command.run')
     def test_create_install_iso_no_kernel_found(
-        self, mock_command, mock_Temporary, mock_setup_media_loader_directory
+        self, mock_command, mock_Temporary, mock_setup_media_loader_directory,
+        mock_create_boot_loader_config
     ):
         self.firmware.bios_mode.return_value = False
         self.kernel.get_kernel.return_value = False
@@ -289,11 +290,13 @@ class TestInstallImageBuilder:
             with raises(KiwiInstallBootImageError):
                 self.install_image.create_install_iso()
 
+    @patch('kiwi.builder.disk.create_boot_loader_config')
     @patch('kiwi.builder.install.IsoToolsBase.setup_media_loader_directory')
     @patch('kiwi.builder.install.Temporary')
     @patch('kiwi.builder.install.Command.run')
     def test_create_install_iso_no_hypervisor_found(
-        self, mock_command, mock_Temporary, mock_setup_media_loader_directory
+        self, mock_command, mock_Temporary, mock_setup_media_loader_directory,
+        mock_create_boot_loader_config
     ):
         self.firmware.bios_mode.return_value = False
         self.kernel.get_xen_hypervisor.return_value = False
@@ -306,7 +309,7 @@ class TestInstallImageBuilder:
     @patch('kiwi.builder.install.Checksum')
     @patch('kiwi.builder.install.Compress')
     def test_create_install_pxe_no_kernel_found(
-        self, mock_compress, mock_md5, mock_command, mock_Temporary
+        self, mock_compress, mock_sha256, mock_command, mock_Temporary
     ):
         self.firmware.bios_mode.return_value = False
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
@@ -321,7 +324,7 @@ class TestInstallImageBuilder:
     @patch('kiwi.builder.install.Compress')
     @patch('kiwi.builder.install.os.symlink')
     def test_create_install_pxe_no_hypervisor_found(
-        self, mock_symlink, mock_compress, mock_md5, mock_command,
+        self, mock_symlink, mock_compress, mock_sha256, mock_command,
         mock_Temporary
     ):
         self.firmware.bios_mode.return_value = False
@@ -341,7 +344,7 @@ class TestInstallImageBuilder:
     @patch('kiwi.builder.install.os.chmod')
     def test_create_install_pxe_archive(
         self, mock_chmod, mock_symlink, mock_copy, mock_compress,
-        mock_md5, mock_archive, mock_command, mock_Temporary
+        mock_sha256, mock_archive, mock_command, mock_Temporary
     ):
         mock_Temporary.return_value.new_dir.return_value.name = 'tmpdir'
 
@@ -349,9 +352,11 @@ class TestInstallImageBuilder:
         mock_archive.return_value = archive
 
         checksum = mock.Mock()
-        mock_md5.return_value = checksum
+        mock_sha256.return_value = checksum
 
         compress = mock.Mock()
+        src = 'target_dir/result-image.x86_64-1.2.3.raw'
+        compress.xz.return_value = src
         mock_compress.return_value = compress
 
         m_open = mock_open()
@@ -359,21 +364,17 @@ class TestInstallImageBuilder:
             self.install_image.create_install_pxe_archive()
 
         mock_compress.assert_called_once_with(
-            keep_source_on_compress=True,
-            source_filename='target_dir/result-image.x86_64-1.2.3.raw'
+            keep_source_on_compress=True, source_filename=src
         )
         compress.xz.assert_called_once_with(None)
         assert mock_command.call_args_list[0] == call(
-            [
-                'mv', compress.compressed_filename,
-                'tmpdir/result-image.x86_64-1.2.3.xz'
-            ]
+            ['mv', src, 'tmpdir/result-image.x86_64-1.2.3.xz']
         )
-        mock_md5.assert_called_once_with(
+        mock_sha256.assert_called_once_with(
             'target_dir/result-image.x86_64-1.2.3.raw'
         )
-        checksum.md5.assert_called_once_with(
-            'tmpdir/result-image.x86_64-1.2.3.md5'
+        checksum.sha256.assert_called_once_with(
+            'tmpdir/result-image.x86_64-1.2.3.sha256'
         )
         assert m_open.call_args_list == [
             call('initrd_dir/config.vmxsystem', 'w'),
@@ -447,8 +448,10 @@ class TestInstallImageBuilder:
 
         self.boot_image_task.include_module.assert_any_call('kiwi-dump')
         self.boot_image_task.include_module.assert_any_call('kiwi-dump-reboot')
-        self.boot_image_task.omit_module.call_args_list == [
-            call('multipath'), call('module1'), call('module2')
+        self.boot_image_task.include_driver.assert_any_call('driver1')
+        self.boot_image_task.include_driver.assert_any_call('driver2')
+        assert self.boot_image_task.omit_module.call_args_list == [
+            call('kiwi-repart'), call('multipath'), call('module1'), call('module2')
         ]
         self.boot_image_task.set_static_modules.assert_called_once_with(
             ['module1', 'module2']

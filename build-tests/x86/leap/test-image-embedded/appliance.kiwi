@@ -53,7 +53,7 @@
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
-            <size unit="M">500</size>
+            <size unit="M">700</size>
         </type>
     </preferences>
     <users>
@@ -67,6 +67,7 @@
     </packages>
     <packages type="bootstrap" profiles="SystemFeatures">
         <package name="dracut-kiwi-overlay"/>
+        <package name="dkms"/>
         <package name="grub2"/>
         <package name="grub2-i386-pc"/>
         <package name="grub2-x86_64-efi"/>
@@ -93,6 +94,7 @@
         <package name="gzip"/>
         <package name="udev"/>
         <package name="xz"/>
+        <package name="procps"/>
         <package name="filesystem"/>
         <package name="glibc-locale"/>
         <package name="cracklib-dict-full"/>

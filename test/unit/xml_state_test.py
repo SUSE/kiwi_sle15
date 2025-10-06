@@ -2,7 +2,7 @@ import os
 import io
 import logging
 from collections import namedtuple
-from mock import (
+from unittest.mock import (
     patch, Mock, MagicMock
 )
 from pytest import (
@@ -28,6 +28,19 @@ class TestXMLState:
         self._caplog = caplog
 
     def setup(self):
+        self.volume_type = namedtuple(
+            'volume_type', [
+                'name',
+                'parent',
+                'size',
+                'realpath',
+                'mountpoint',
+                'fullsize',
+                'label',
+                'attributes',
+                'is_root_volume'
+            ]
+        )
         Defaults.set_platform_name('x86_64')
         self.description = XMLDescription(
             '../data/example_config.xml'
@@ -58,8 +71,10 @@ class TestXMLState:
         self.bootloader.get_timeout.return_value = 'some-timeout'
         self.bootloader.get_timeout_style.return_value = 'some-style'
         self.bootloader.get_targettype.return_value = 'some-target'
+        self.bootloader.get_bls.return_value = False
         self.bootloader.get_console.return_value = 'some-console'
         self.bootloader.get_serial_line.return_value = 'some-serial'
+        self.bootloader.get_use_disk_password.return_value = True
 
     def setup_method(self, cls):
         self.setup()
@@ -116,7 +131,7 @@ class TestXMLState:
     @patch('kiwi.xml_state.XMLState.get_preferences_sections')
     def test_get_default_package_manager(self, mock_preferences):
         mock_preferences.return_value = []
-        assert self.state.get_package_manager() == 'dnf'
+        assert self.state.get_package_manager() == 'dnf4'
 
     def test_get_image_version(self):
         assert self.state.get_image_version() == '1.13.2'
@@ -130,6 +145,18 @@ class TestXMLState:
         ]
         assert self.no_image_packages_boot_state.get_bootstrap_packages() == [
             'patterns-openSUSE-base'
+        ]
+        self.state.get_package_manager = Mock(
+            return_value="dnf4"
+        )
+        assert self.state.get_bootstrap_packages() == [
+            'dnf', 'filesystem',
+        ]
+        self.state.get_package_manager = Mock(
+            return_value="apk"
+        )
+        assert self.state.get_bootstrap_packages() == [
+            'apk-tools', 'filesystem',
         ]
 
     def test_get_system_packages(self):
@@ -166,11 +193,25 @@ class TestXMLState:
         assert self.state.get_system_collections() == [
             'base'
         ]
+        self.state.host_architecture = 'aarch64'
+        assert self.state.get_system_collections() == [
+            'base', 'base_for_arch'
+        ]
 
     def test_get_system_products(self):
         assert self.state.get_system_products() == [
             'openSUSE'
         ]
+
+    def test_get_system_files(self):
+        assert self.state.\
+            get_system_files()['some'].target == ''
+        assert self.state.\
+            get_system_files()['/absolute/path/to/some'].target == ''
+
+    def test_get_bootstrap_files(self):
+        assert self.state.\
+            get_bootstrap_files()['some'].target == '/some/target'
 
     def test_get_system_archives(self):
         assert self.state.get_system_archives() == [
@@ -188,6 +229,11 @@ class TestXMLState:
         self.state.host_architecture = 's390'
         assert self.state.get_system_ignore_packages() == [
             'baz'
+        ]
+
+    def test_get_bootstrap_ignore_packages(self):
+        assert self.state.get_bootstrap_ignore_packages() == [
+            'some'
         ]
 
     def test_get_system_collection_type(self):
@@ -210,7 +256,7 @@ class TestXMLState:
     def test_set_repository(self):
         self.state.set_repository(
             'repo', 'type', 'alias', 1, True, False, ['key_a', 'key_b'],
-            'main universe', 'jammy', False
+            'main universe', 'jammy', False, 'metalink'
         )
         assert self.state.xml_data.get_repository()[0].get_source().get_path() \
             == 'repo'
@@ -231,11 +277,13 @@ class TestXMLState:
             == 'jammy'
         assert self.state.xml_data.get_repository()[0] \
             .get_repository_gpgcheck() is False
+        assert self.state.xml_data.get_repository()[0] \
+            .get_sourcetype() == 'metalink'
 
     def test_add_repository(self):
         self.state.add_repository(
             'repo', 'type', 'alias', 1, True, None, ['key_a', 'key_b'],
-            'main universe', 'jammy', False
+            'main universe', 'jammy', False, 'metalink'
         )
         assert self.state.xml_data.get_repository()[3].get_source().get_path() \
             == 'repo'
@@ -254,6 +302,8 @@ class TestXMLState:
             == 'jammy'
         assert self.state.xml_data.get_repository()[3] \
             .get_repository_gpgcheck() is False
+        assert self.state.xml_data.get_repository()[3] \
+            .get_sourcetype() == 'metalink'
 
     def test_add_repository_with_empty_values(self):
         self.state.add_repository('repo', 'type', '', '', True)
@@ -264,10 +314,17 @@ class TestXMLState:
         assert self.state.xml_data.get_repository()[3].get_priority() is None
         assert self.state.xml_data.get_repository()[3] \
             .get_imageinclude() is True
+        assert self.state.xml_data.get_repository()[3] \
+            .get_sourcetype() is None
 
     def test_get_to_become_deleted_packages(self):
         assert self.state.get_to_become_deleted_packages() == [
             'kernel-debug'
+        ]
+
+    def test_get_system_files_ignore_packages(self):
+        assert self.state.get_system_files_ignore_packages() == [
+            'rpm', 'yast', 'zypp'
         ]
 
     def test_get_build_type_vagrant_config_section(self):
@@ -366,9 +423,131 @@ class TestXMLState:
                 partition_name='p.lxvar',
                 partition_type='t.linux',
                 mountpoint='/var',
-                filesystem='ext3'
+                filesystem='ext3',
+                label=''
             )
         }
+
+    @patch('kiwi.xml_state.Defaults.is_buildservice_worker')
+    @patch('kiwi.xml_state.Command.run')
+    def test_get_containers_in_buildservice(
+        self, mock_Command_run, mock_Defaults_is_buildservice_worker
+    ):
+        mock_Defaults_is_buildservice_worker.return_value = True
+        description = XMLDescription(
+            '../data/example_containers_config.xml'
+        )
+        xml_data = description.load()
+        state = XMLState(xml_data)
+        containers = state.get_containers()[0]
+        containers.fetch_command('root_dir')
+        assert containers.name == 'tumbleweed_latest'
+        assert containers.backend == 'podman'
+        assert containers.container_file == \
+            '/var/tmp/kiwi_containers/tumbleweed_latest'
+        assert containers.fetch_only is False
+        assert containers.load_command == [
+            '/usr/bin/podman', 'load', '-i',
+            '/var/tmp/kiwi_containers/tumbleweed_latest'
+        ]
+        mock_Command_run.assert_called_once_with(
+            [
+                'cp',
+                '/usr/src/packages/SOURCES/containers/'
+                '_obsrepositories/registry.opensuse.org/opensuse/'
+                'tumbleweed:latest.ociarchive',
+                'root_dir/var/tmp/kiwi_containers/tumbleweed_latest'
+            ]
+        )
+
+    @patch('kiwi.xml_state.Command.run')
+    def test_get_containers(self, mock_Command_run):
+        containers = self.state.get_containers()
+        c1 = containers[0]
+        c2 = containers[1]
+        c3 = containers[2]
+        c4 = containers[3]
+
+        c1.fetch_command('root_dir')
+        assert c1.name == 'rmtserver_latest'
+        assert c1.backend == 'podman'
+        assert c1.container_file == \
+            '/var/tmp/kiwi_containers/rmtserver_latest'
+        assert c1.fetch_only is False
+        assert c1.load_command == [
+            '/usr/bin/podman', 'load', '-i',
+            '/var/tmp/kiwi_containers/rmtserver_latest'
+        ]
+        mock_Command_run.assert_called_once_with(
+            [
+                'chroot', 'root_dir',
+                '/usr/bin/skopeo', 'copy',
+                'docker://registry.suse.com/home/mschaefer/'
+                'images_pubcloud/pct/rmtserver:latest',
+                'oci-archive:/var/tmp/kiwi_containers/'
+                'rmtserver_latest:registry.suse.com/home/mschaefer/'
+                'images_pubcloud/pct/rmtserver:latest'
+            ]
+        )
+        mock_Command_run.reset_mock()
+
+        c2.fetch_command('root_dir')
+        assert c2.name == 'some_latest'
+        assert c2.backend == 'docker'
+        assert c2.container_file == \
+            '/var/tmp/kiwi_containers/some_latest'
+        assert c2.fetch_only is False
+        assert c2.load_command == [
+            '/usr/bin/docker', 'load', '-i',
+            '/var/tmp/kiwi_containers/some_latest'
+        ]
+        mock_Command_run.assert_called_once_with(
+            [
+                'chroot', 'root_dir',
+                '/usr/bin/skopeo', 'copy',
+                'docker://registry.suse.com/some:latest',
+                'oci-archive:/var/tmp/kiwi_containers/'
+                'some_latest:registry.suse.com/some:latest'
+            ]
+        )
+        mock_Command_run.reset_mock()
+
+        c3.fetch_command('root_dir')
+        assert c3.name == 'foo_latest'
+        assert c3.backend == 'podman'
+        assert c3.container_file == \
+            '/var/tmp/kiwi_containers/foo_latest'
+        assert c3.fetch_only is True
+        assert c3.load_command == []
+        mock_Command_run.assert_called_once_with(
+            [
+                'chroot', 'root_dir',
+                '/usr/bin/skopeo', 'copy', 'docker://docker.io/foo:latest',
+                'oci-archive:/var/tmp/kiwi_containers/'
+                'foo_latest:docker.io/foo:latest'
+            ]
+        )
+        mock_Command_run.reset_mock()
+
+        c4.fetch_command('root_dir')
+        assert c4.name == 'test-app_v1.0'
+        assert c4.backend == 'container-snap'
+        assert c4.container_file == \
+            '/var/tmp/kiwi_containers/test-app_v1.0'
+        assert c4.fetch_only is False
+        assert c4.load_command == [
+            '/usr/bin/container-snap', 'load', '-i',
+            '/var/tmp/kiwi_containers/test-app_v1.0'
+        ]
+        mock_Command_run.assert_called_once_with(
+            [
+                'chroot', 'root_dir',
+                '/usr/bin/skopeo', 'copy',
+                'docker://registry.example.com/test-app:v1.0',
+                'oci-archive:/var/tmp/kiwi_containers/'
+                'test-app_v1.0:registry.example.com/test-app:v1.0'
+            ]
+        )
 
     def test_get_volumes_custom_root_volume_name(self):
         description = XMLDescription(
@@ -376,23 +555,83 @@ class TestXMLState:
         )
         xml_data = description.load()
         state = XMLState(xml_data)
-        volume_type = namedtuple(
-            'volume_type', [
-                'name',
-                'size',
-                'realpath',
-                'mountpoint',
-                'fullsize',
-                'label',
-                'attributes',
-                'is_root_volume'
-            ]
-        )
+        volume_type = self.volume_type
         assert state.get_volumes() == [
             volume_type(
-                name='myroot', size='freespace:500',
+                name='myroot', parent='', size='freespace:500',
                 realpath='/',
                 mountpoint=None, fullsize=False,
+                label=None,
+                attributes=[],
+                is_root_volume=True
+            )
+        ]
+
+    def test_get_volumes_btrfs_quota(self):
+        description = XMLDescription(
+            '../data/example_btrfs_vol_config.xml'
+        )
+        xml_data = description.load()
+        state = XMLState(xml_data)
+        volume_type = self.volume_type
+        assert state.get_volumes() == [
+            volume_type(
+                name='some', parent='', size='freespace:120',
+                realpath='some',
+                mountpoint='some', fullsize=False,
+                label=None,
+                attributes=['quota=500M'],
+                is_root_volume=False
+            ),
+            volume_type(
+                name='', parent='', size=None,
+                realpath='/',
+                mountpoint=None, fullsize=True,
+                label=None,
+                attributes=[],
+                is_root_volume=True
+            )
+        ]
+
+    def test_get_volumes_for_arch(self):
+        description = XMLDescription('../data/example_lvm_arch_config.xml')
+        xml_data = description.load()
+        state = XMLState(xml_data)
+        state.host_architecture = 'aarch64'
+        volume_type = self.volume_type
+        assert state.get_volumes() == [
+            volume_type(
+                name='usr_lib',
+                parent='',
+                size='freespace:30',
+                realpath='usr/lib',
+                mountpoint='usr/lib',
+                fullsize=False,
+                label=None,
+                attributes=[],
+                is_root_volume=False
+            ),
+            volume_type(
+                name='LVRoot',
+                parent='',
+                size=None,
+                realpath='/',
+                mountpoint=None,
+                fullsize=True,
+                label=None,
+                attributes=[],
+                is_root_volume=True
+            )
+        ]
+        state.host_architecture = 'x86_64'
+        assert state.get_volumes() == [
+            volume_type(
+                name='LVRoot',
+                parent='',
+                size=None,
+                realpath='/',
+                mountpoint=None,
+                fullsize=True,
                 label=None,
                 attributes=[],
                 is_root_volume=True
@@ -403,21 +642,10 @@ class TestXMLState:
         description = XMLDescription('../data/example_lvm_default_config.xml')
         xml_data = description.load()
         state = XMLState(xml_data)
-        volume_type = namedtuple(
-            'volume_type', [
-                'name',
-                'size',
-                'realpath',
-                'mountpoint',
-                'fullsize',
-                'label',
-                'attributes',
-                'is_root_volume'
-            ]
-        )
+        volume_type = self.volume_type
         assert state.get_volumes() == [
             volume_type(
-                name='usr_lib', size='size:1024',
+                name='usr_lib', parent='', size='size:1024',
                 realpath='usr/lib',
                 mountpoint='usr/lib',
                 fullsize=False,
@@ -426,7 +654,7 @@ class TestXMLState:
                 is_root_volume=False
             ),
             volume_type(
-                name='LVRoot', size='freespace:500',
+                name='LVRoot', parent='', size='freespace:500',
                 realpath='/',
                 mountpoint=None, fullsize=False,
                 label=None,
@@ -434,7 +662,7 @@ class TestXMLState:
                 is_root_volume=True
             ),
             volume_type(
-                name='etc_volume', size='freespace:30',
+                name='etc_volume', parent='', size='freespace:30',
                 realpath='etc',
                 mountpoint='etc', fullsize=False,
                 label=None,
@@ -442,7 +670,7 @@ class TestXMLState:
                 is_root_volume=False
             ),
             volume_type(
-                name='bin_volume', size=None,
+                name='bin_volume', parent='', size=None,
                 realpath='/usr/bin',
                 mountpoint='/usr/bin', fullsize=True,
                 label=None,
@@ -450,7 +678,7 @@ class TestXMLState:
                 is_root_volume=False
             ),
             volume_type(
-                name='LVSwap', size='size:128',
+                name='LVSwap', parent='', size='size:128',
                 realpath='swap',
                 mountpoint=None, fullsize=False,
                 label='SWAP',
@@ -463,28 +691,17 @@ class TestXMLState:
         description = XMLDescription('../data/example_lvm_no_root_config.xml')
         xml_data = description.load()
         state = XMLState(xml_data)
-        volume_type = namedtuple(
-            'volume_type', [
-                'name',
-                'size',
-                'realpath',
-                'mountpoint',
-                'fullsize',
-                'label',
-                'attributes',
-                'is_root_volume'
-            ]
-        )
+        volume_type = self.volume_type
         assert state.get_volumes() == [
             volume_type(
-                name='LVRoot', size=None, realpath='/',
+                name='LVRoot', parent='', size=None, realpath='/',
                 mountpoint=None, fullsize=True,
                 label=None,
                 attributes=[],
                 is_root_volume=True
             ),
             volume_type(
-                name='LVSwap', size='size:128',
+                name='LVSwap', parent='', size='size:128',
                 realpath='swap',
                 mountpoint=None, fullsize=False,
                 label='SWAP',
@@ -499,35 +716,24 @@ class TestXMLState:
         )
         xml_data = description.load()
         state = XMLState(xml_data)
-        volume_type = namedtuple(
-            'volume_type', [
-                'name',
-                'size',
-                'realpath',
-                'mountpoint',
-                'fullsize',
-                'label',
-                'attributes',
-                'is_root_volume'
-            ]
-        )
+        volume_type = self.volume_type
         assert state.get_volumes() == [
             volume_type(
-                name='usr', size=None, realpath='usr',
+                name='usr', parent='', size=None, realpath='usr',
                 mountpoint='usr', fullsize=True,
                 label=None,
                 attributes=[],
                 is_root_volume=False
             ),
             volume_type(
-                name='LVRoot', size='freespace:30', realpath='/',
+                name='LVRoot', parent='', size='freespace:30', realpath='/',
                 mountpoint=None, fullsize=False,
                 label=None,
                 attributes=[],
                 is_root_volume=True
             ),
             volume_type(
-                name='LVSwap', size='size:128',
+                name='LVSwap', parent='', size='size:128',
                 realpath='swap',
                 mountpoint=None, fullsize=False,
                 label='SWAP',
@@ -575,6 +781,11 @@ class TestXMLState:
         xml_data = description.load()
         state = XMLState(xml_data)
         assert state.get_oemconfig_oem_resize() is False
+
+    def test_get_oemconfig_oem_systemsize(self):
+        xml_data = self.description.load()
+        state = XMLState(xml_data, ['vmxFlavour'], 'oem')
+        assert state.get_oemconfig_oem_systemsize() == 2048
 
     def test_get_oemconfig_oem_multipath_scan(self):
         xml_data = self.description.load()
@@ -890,6 +1101,7 @@ class TestXMLState:
             'volumes': ['/tmp', '/var/log'],
             'entry_command': ['/bin/bash', '-x'],
             'expose_ports': ['80', '8080'],
+            'stopsignal': 'SIGINT',
             'history': {
                 'author': 'history author',
                 'comment': 'This is a comment',
@@ -933,14 +1145,14 @@ class TestXMLState:
     def test_get_derived_from_image_uri(self):
         xml_data = self.description.load()
         state = XMLState(xml_data, ['derivedContainer'], 'docker')
-        assert state.get_derived_from_image_uri().uri == \
+        assert state.get_derived_from_image_uri()[0].uri == \
             'obs://project/repo/image#mytag'
 
     def test_set_derived_from_image_uri(self):
         xml_data = self.description.load()
         state = XMLState(xml_data, ['derivedContainer'], 'docker')
         state.set_derived_from_image_uri('file:///new_uri')
-        assert state.get_derived_from_image_uri().translate() == '/new_uri'
+        assert state.get_derived_from_image_uri()[0].translate() == '/new_uri'
 
     def test_set_derived_from_image_uri_not_applied(self):
         with self._caplog.at_level(logging.WARNING):
@@ -1010,6 +1222,23 @@ class TestXMLState:
         assert self.state.get_build_type_bootloader_name() == 'some-loader'
 
     @patch('kiwi.xml_parse.type_.get_bootloader')
+    def test_get_build_type_bootloader_use_disk_password(self, mock_bootloader):
+        mock_bootloader.return_value = [None]
+        assert self.state.get_build_type_bootloader_use_disk_password() is False
+        mock_bootloader.return_value = [self.bootloader]
+        assert self.state.get_build_type_bootloader_use_disk_password() is True
+
+    @patch('kiwi.xml_parse.type_.get_bootloader')
+    def test_get_build_type_bootloader_bls(self, mock_bootloader):
+        mock_bootloader.return_value = [self.bootloader]
+        self.bootloader.get_bls.return_value = False
+        assert self.state.get_build_type_bootloader_bls() is False
+        self.bootloader.get_bls.return_value = True
+        assert self.state.get_build_type_bootloader_bls() is True
+        self.bootloader.get_bls.return_value = None
+        assert self.state.get_build_type_bootloader_bls() is True
+
+    @patch('kiwi.xml_parse.type_.get_bootloader')
     def test_get_build_type_bootloader_console(self, mock_bootloader):
         mock_bootloader.return_value = [self.bootloader]
         assert self.state.get_build_type_bootloader_console() == \
@@ -1046,18 +1275,38 @@ class TestXMLState:
             'some-target'
 
     def test_get_installintrd_modules(self):
-        self.state.get_installmedia_initrd_modules('add') == ['network-legacy']
-        self.state.get_installmedia_initrd_modules('set') == []
-        self.state.get_installmedia_initrd_modules('omit') == []
+        assert self.state.get_installmedia_initrd_modules('add') == \
+            ['network-legacy']
+        assert self.state.get_installmedia_initrd_modules('set') == []
+        assert self.state.get_installmedia_initrd_modules('omit') == []
         xml_data = self.description.load()
         state = XMLState(xml_data, ['vmxSimpleFlavour'], 'oem')
-        state.get_installmedia_initrd_modules('add') == []
+        assert state.get_installmedia_initrd_modules('add') == []
+
+    def test_get_installintrd_driver(self):
+        assert self.state.get_installmedia_initrd_drivers('add') == \
+            ['erofs']
+        assert self.state.get_installmedia_initrd_drivers('omit') == []
+        xml_data = self.description.load()
+        state = XMLState(xml_data, ['vmxSimpleFlavour'], 'oem')
+        assert state.get_installmedia_initrd_drivers('add') == []
+
+    def test_get_dracut_config(self):
+        assert self.state.get_dracut_config('setup').uefi is False
+        xml_data = self.description.load()
+        state = XMLState(xml_data, ['vmxSimpleFlavour'], 'oem')
+        assert state.get_dracut_config('setup').uefi is True
+        assert state.get_dracut_config('add').modules == ['some']
+        assert state.get_dracut_config('add').drivers == ['driver']
 
     @patch('kiwi.system.uri.os.path.abspath')
     def test_get_repositories_signing_keys(self, mock_root_path):
-        mock_root_path.side_effect = lambda x: f'/some/path/{x}'
+        mock_root_path.side_effect = lambda x: f'(mock_abspath){x}'
         assert self.state.get_repositories_signing_keys() == [
-            '/some/path/key_a', '/some/path/key_b'
+            '(mock_abspath)key_a',
+            '(mock_abspath)/usr/share/distribution-gpg-keys/'
+            'fedora/RPM-GPG-KEY-fedora-15.3-primary',
+            '(mock_abspath)key_b'
         ]
 
     def test_this_path_resolver(self):
@@ -1094,8 +1343,56 @@ class TestXMLState:
         assert self.state.get_luks_format_options() == [
             '--type', 'luks2',
             '--cipher', 'aes-gcm-random',
-            '--integrity', 'aead'
+            '--integrity', 'aead',
+            '--pbkdf', 'pbkdf2'
         ]
 
     def test_get_bootstrap_package_name(self):
         assert self.apt_state.get_bootstrap_package_name() == 'bootstrap-me'
+
+    def test_get_bootloader_options(self):
+        xml_data = self.description.load()
+        state = XMLState(xml_data, ['vmxSimpleFlavour'], 'oem')
+        assert state.get_bootloader_shim_options() == [
+            '--foo', 'bar', '--suse-we-adapt-you-succeed'
+        ]
+        assert state.get_bootloader_install_options() == [
+            '--A', '123', 'B'
+        ]
+        assert state.get_bootloader_config_options() == [
+            '--joe', '-x'
+        ]
+
+    def test_get_host_key_certificates(self):
+        description = XMLDescription('../data/example_hkd_config.xml')
+        xml_data = description.load()
+        state = XMLState(xml_data)
+        assert state.get_host_key_certificates() == [
+            {
+                'hkd_cert': ['some1-host.crt', 'some2-host.crt'],
+                'hkd_revocation_list': ['some1-revocation.crl'],
+                'hkd_ca_cert': 'some-ca.crt',
+                'hkd_sign_cert': 'some1-signing.crt'
+            },
+            {
+                'hkd_cert': ['some3-host.crt'],
+                'hkd_revocation_list': ['some2-revocation.crl'],
+                'hkd_ca_cert': 'some-ca.crt',
+                'hkd_sign_cert': 'some2-signing.crt'
+            }
+        ]
+
+    def test_get_btrfs_root_is_subvolume(self):
+        assert self.state.build_type.get_btrfs_root_is_subvolume() is \
+            None
+
+    @patch('kiwi.xml_parse.type_.get_btrfs_set_default_volume')
+    def test_btrfs_default_volume_requested(
+        self, mock_get_btrfs_set_default_volume
+    ):
+        mock_get_btrfs_set_default_volume.return_value = True
+        assert self.state.btrfs_default_volume_requested() is True
+        mock_get_btrfs_set_default_volume.return_value = False
+        assert self.state.btrfs_default_volume_requested() is False
+        mock_get_btrfs_set_default_volume.return_value = None
+        assert self.state.btrfs_default_volume_requested() is True

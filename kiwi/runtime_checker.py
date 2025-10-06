@@ -40,6 +40,8 @@ from kiwi.exceptions import (
     KiwiRuntimeError
 )
 
+import kiwi.defaults as defaults
+
 dracut_module_type = NamedTuple(
     'dracut_module_type', [
         ('package', str),
@@ -73,6 +75,38 @@ class RuntimeChecker:
             raise KiwiRuntimeError(
                 'No repositories configured'
             )
+
+    @staticmethod
+    def check_target_dir_on_unsupported_filesystem(target_dir: str) -> None:
+        """
+        Raise if the given target dir does not reside on a
+        filesystem that supports all important features like
+        extended permissions(fscaps), ACLs or xattrs.
+        """
+        message = dedent('''\n
+            Target root/image directory is lacking filesystem features
+
+            The filesystem {0} in the target path {1}
+            does not support important features like extended permissions,
+            ACLs or xattrs. The image build may fail or the resulting
+            image misbehave.
+        ''')
+        target_dir = Path.first_exists(target_dir)
+        stat = Command.run(['stat', '-f', '-c', '%T', target_dir])
+        if stat:
+            target_fs = stat.output.strip()
+            supported_target_filesystem = (
+                'btrfs',
+                'ext2',
+                'ext2/ext3',
+                'ext3',
+                'ext4',
+                'overlayfs',
+                'tmpfs',
+                'xfs',
+            )
+            if target_fs not in supported_target_filesystem:
+                raise KiwiRuntimeError(message.format(target_fs, target_dir))
 
     def check_include_references_unresolvable(self) -> None:
         """
@@ -621,40 +655,6 @@ class RuntimeChecker:
                     )
                 )
 
-    def check_syslinux_installed_if_isolinux_is_used(self) -> None:
-        """
-        ISO images that are configured to use isolinux
-        requires the host to provide a set of syslinux
-        binaries.
-        """
-        message = dedent('''\n
-            Required syslinux module(s) not found
-
-            The ISO image build for this image setup uses isolinux
-            and therefore requires the syslinux modules to be
-            available on the build host. Please make sure your
-            build host has the syslinux package installed.
-        ''')
-        firmware = FirmWare(self.xml_state)
-        if Defaults.is_x86_arch(
-            Defaults.get_platform_name()
-        ) and not firmware.efi_mode():
-            image_builds_iso = False
-            build_type = self.xml_state.get_build_type_name()
-            if build_type == 'iso':
-                image_builds_iso = True
-            elif build_type == 'oem':
-                install_iso = self.xml_state.build_type.get_installiso()
-                install_stick = self.xml_state.build_type.get_installstick()
-                if install_iso or install_stick:
-                    image_builds_iso = True
-            if image_builds_iso:
-                syslinux_check_file = Path.which(
-                    'isohdpfx.bin', Defaults.get_syslinux_search_paths()
-                )
-                if not syslinux_check_file:
-                    raise KiwiRuntimeError(message)
-
     def check_dracut_module_versions_compatible_to_kiwi(
         self, root_dir: str
     ) -> None:
@@ -680,22 +680,22 @@ class RuntimeChecker:
             {1}
         ''')
         kiwi_dracut_modules = {
-            '90kiwi-dump': dracut_module_type(
+            '55kiwi-dump': dracut_module_type(
                 'dracut-kiwi-oem-dump', '9.20.1'
             ),
-            '90kiwi-live': dracut_module_type(
+            '55kiwi-live': dracut_module_type(
                 'dracut-kiwi-live', '9.20.1'
             ),
-            '90kiwi-overlay': dracut_module_type(
+            '55kiwi-overlay': dracut_module_type(
                 'dracut-kiwi-overlay', '9.20.1'
             ),
-            '90kiwi-repart': dracut_module_type(
+            '55kiwi-repart': dracut_module_type(
                 'dracut-kiwi-oem-repart', '9.20.1'
             ),
-            '99kiwi-dump-reboot': dracut_module_type(
+            '59kiwi-dump-reboot': dracut_module_type(
                 'dracut-kiwi-oem-dump', '9.20.1'
             ),
-            '99kiwi-lib': dracut_module_type(
+            '59kiwi-lib': dracut_module_type(
                 'dracut-kiwi-lib', '9.20.1'
             )
         }
@@ -745,14 +745,15 @@ class RuntimeChecker:
         message = dedent('''\n
             Required dracut module package missing in package list
 
-            The package '{0}' is required to build an installation
-            image for the selected oem image type. Please add the
-            following in your <packages type="image"> section to
-            your system XML description:
+            One of the packages '{0}' is required
+            to build an installation image for the selected oem image type.
+            Depending on your distribution, add the following in the
+            <packages type="image"> section:
 
-            <package name="{0}"/>
+            <package name="ONE_FROM_ABOVE"/>
         ''')
-        required_dracut_package = 'dracut-kiwi-oem-dump'
+        meta = Defaults.get_runtime_checker_metadata()
+        required_dracut_packages = meta['package_names']['dracut_oem_dump']
         initrd_system = self.xml_state.get_initrd_system()
         build_type = self.xml_state.get_build_type_name()
         if build_type == 'oem' and initrd_system == 'dracut':
@@ -763,48 +764,12 @@ class RuntimeChecker:
                 package_names = \
                     self.xml_state.get_bootstrap_packages() + \
                     self.xml_state.get_system_packages()
-                if required_dracut_package not in package_names:
+                if not RuntimeChecker._package_in_list(
+                    package_names, required_dracut_packages
+                ):
                     raise KiwiRuntimeError(
-                        message.format(required_dracut_package)
+                        message.format(required_dracut_packages)
                     )
-
-    def check_architecture_supports_iso_firmware_setup(self) -> None:
-        """
-        For creating ISO images a different bootloader setup is
-        performed depending on the configured firmware. If the
-        firmware is set to bios, isolinux is used and that limits
-        the architecture to x86 only. In any other case the appliance
-        configured bootloader is used. This check examines if the
-        host architecture is supported with the configured firmware
-        on request of an ISO image.
-        """
-        message = dedent('''\n
-            Unsupported firmware setup: {0} on {1} architecture
-
-            The selected firmware limits the creation of images to
-            the x86 platform. For the detected build host architecture
-            and the request to build a live or install ISO media
-            the EFI firmware must be used:
-
-            <type ... firmware="efi"/>
-        ''')
-        arch = Defaults.get_platform_name()
-        build_type = self.xml_state.get_build_type_name()
-        firmware = self.xml_state.build_type.get_firmware() or \
-            Defaults.get_default_firmware(arch)
-        if firmware == 'bios' and not Defaults.is_x86_arch(arch):
-            iso_build_requested = False
-            if build_type == 'iso':
-                iso_build_requested = True
-            elif build_type == 'oem':
-                install_iso = self.xml_state.build_type.get_installiso()
-                install_stick = self.xml_state.build_type.get_installstick()
-                if install_iso or install_stick:
-                    iso_build_requested = True
-            if iso_build_requested:
-                raise KiwiRuntimeError(
-                    message.format(firmware, arch)
-                )
 
     def check_dracut_module_for_disk_oem_in_package_list(self) -> None:
         """
@@ -817,14 +782,14 @@ class RuntimeChecker:
         message = dedent('''\n
             Required dracut module package missing in package list
 
-            The package '{0}' is required for the selected
-            oem image type. Please add the following in your
-            <packages type="image"> section to your system XML
-            description:
+            One of the packages '{0}' is required
+            for the selected oem image type. Depending on your distribution,
+            add the following in the <packages type="image"> section:
 
-            <package name="{0}"/>
+            <package name="ONE_FROM_ABOVE"/>
         ''')
-        required_dracut_package = 'dracut-kiwi-oem-repart'
+        meta = Defaults.get_runtime_checker_metadata()
+        required_dracut_packages = meta['package_names']['dracut_oem_repart']
         initrd_system = self.xml_state.get_initrd_system()
         disk_resize_requested = self.xml_state.get_oemconfig_oem_resize()
         build_type = self.xml_state.get_build_type_name()
@@ -833,9 +798,11 @@ class RuntimeChecker:
             package_names = \
                 self.xml_state.get_bootstrap_packages() + \
                 self.xml_state.get_system_packages()
-            if required_dracut_package not in package_names:
+            if not RuntimeChecker._package_in_list(
+                package_names, required_dracut_packages
+            ):
                 raise KiwiRuntimeError(
-                    message.format(required_dracut_package)
+                    message.format(required_dracut_packages)
                 )
 
     def check_dracut_module_for_live_iso_in_package_list(self) -> None:
@@ -849,23 +816,25 @@ class RuntimeChecker:
         message = dedent('''\n
             Required dracut module package missing in package list
 
-            The package '{0}' is required for the selected
-            live iso image type. Please add the following in your
-            <packages type="image"> section to your system XML
-            description:
+            One of the packages '{0}' is required
+            for the selected live iso image type. Depending on your distribution,
+            add the following in your <packages type="image"> section:
 
-            <package name="{0}"/>
+            <package name="ONE_FROM_ABOVE"/>
         ''')
-        required_dracut_package = 'dracut-kiwi-live'
+        meta = Defaults.get_runtime_checker_metadata()
+        required_dracut_packages = meta['package_names']['dracut_live']
         type_name = self.xml_state.get_build_type_name()
         type_flag = self.xml_state.build_type.get_flags()
         if type_name == 'iso' and type_flag != 'dmsquash':
             package_names = \
                 self.xml_state.get_bootstrap_packages() + \
                 self.xml_state.get_system_packages()
-            if required_dracut_package not in package_names:
+            if not RuntimeChecker._package_in_list(
+                package_names, required_dracut_packages
+            ):
                 raise KiwiRuntimeError(
-                    message.format(required_dracut_package)
+                    message.format(required_dracut_packages)
                 )
 
     def check_dracut_module_for_disk_overlay_in_package_list(self) -> None:
@@ -879,53 +848,27 @@ class RuntimeChecker:
         message = dedent('''\n
             Required dracut module package missing in package list
 
-            The package '{0}' is required for the selected
-            overlayroot activated image type. Please add the
-            following in your <packages type="image"> section to
-            your system XML description:
+            The package '{0}' is required
+            for the selected overlayroot activated image type.
+            Depending on your distribution, add the following in your
+            <packages type="image"> section:
 
-            <package name="{0}"/>
+            <package name="ONE_FROM_ABOVE"/>
         ''')
         initrd_system = self.xml_state.get_initrd_system()
-        required_dracut_package = 'dracut-kiwi-overlay'
+        meta = Defaults.get_runtime_checker_metadata()
+        required_dracut_packages = meta['package_names']['dracut_overlay']
         if initrd_system == 'dracut' and \
            self.xml_state.build_type.get_overlayroot():
             package_names = \
                 self.xml_state.get_bootstrap_packages() + \
                 self.xml_state.get_system_packages()
-            if required_dracut_package not in package_names:
+            if not RuntimeChecker._package_in_list(
+                package_names, required_dracut_packages
+            ):
                 raise KiwiRuntimeError(
-                    message.format(required_dracut_package)
+                    message.format(required_dracut_packages)
                 )
-
-    def check_efi_mode_for_disk_overlay_correctly_setup(self) -> None:
-        """
-        Disk images configured to use a root filesystem overlay
-        only supports the standard EFI mode and not secure boot.
-        That's because the shim setup performs changes to the
-        root filesystem which can not be applied during the
-        bootloader setup at build time because at that point
-        the root filesystem is a read-only squashfs source.
-        """
-        message = dedent('''\n
-            Secure Boot not supported with overlay disk image
-
-            Disk images configured to use a root filesystem overlay
-            only supports the standard EFI mode and not secure boot.
-            That's because the shim setup performs changes to the
-            root filesystem which can not be applied during the
-            bootloader setup at build time because at that point
-            the root filesystem is a read-only squashfs source
-
-            Thus please change the firmware attribute in the <type>
-            section of the system XML description as follows:
-
-            <type ... firmware="efi"/>
-        ''')
-        overlayroot = self.xml_state.build_type.get_overlayroot()
-        firmware = self.xml_state.build_type.get_firmware()
-        if overlayroot and firmware == 'uefi':
-            raise KiwiRuntimeError(message)
 
     def check_xen_uniquely_setup_as_server_or_guest(self) -> None:
         """
@@ -979,6 +922,11 @@ class RuntimeChecker:
         ''')
         if self.xml_state.build_type.get_mediacheck() is True:
             tool = 'tagmedia'
+            media_tagger = RuntimeConfig().get_iso_media_tag_tool()
+            if media_tagger == 'checkmedia':
+                tool = 'tagmedia'
+            elif media_tagger == 'isomd5sum':
+                tool = 'implantisomd5'
             if not Path.which(filename=tool, access_mode=os.X_OK):
                 raise KiwiRuntimeError(
                     message_tool_not_found.format(name=tool)
@@ -1041,6 +989,37 @@ class RuntimeChecker:
                         type_export.getvalue()
                     )
                 )
+
+    def check_efi_fat_image_has_correct_size(self) -> None:
+        """
+        Verify that the efifatimagesize does not exceed the max
+        El Torito load size of 65535 * 512 bytes
+        """
+        message = dedent('''\n
+            El Torito max load size exceeded
+
+            The configured efifatimagesize of '{0}MB' exceeds
+            the El Torito max load size of 65535 * 512 bytes (~31MB).
+        ''')
+        fat_image_mbsize = int(
+            self.xml_state.build_type
+                .get_efifatimagesize() or defaults.EFI_FAT_IMAGE_SIZE
+        )
+        if fat_image_mbsize > 31:
+            raise KiwiRuntimeError(
+                message.format(fat_image_mbsize)
+            )
+
+    @staticmethod
+    def _package_in_list(
+        package_list: List[str], search_list: List[str]
+    ) -> str:
+        result = ''
+        for search in search_list:
+            if search in package_list:
+                result = search
+                break
+        return result
 
     @staticmethod
     def _get_dracut_module_version_from_pdb(

@@ -1,11 +1,12 @@
 import sys
 import logging
-from mock import (
+from unittest.mock import (
     patch, Mock
 )
 from pytest import (
     raises, fixture
 )
+import pytest
 
 from .test_helper import argv_kiwi_tests
 
@@ -24,6 +25,9 @@ class TestRuntimeChecker:
         self._caplog = caplog
 
     def setup(self):
+        Defaults.set_runtime_checker_metadata(
+            '../data/runtime_checker_metadata.yml'
+        )
         self.description = XMLDescription(
             '../data/example_runtime_checker_config.xml'
         )
@@ -47,6 +51,16 @@ class TestRuntimeChecker:
         mock_Uri.return_value = uri
         with raises(KiwiRuntimeError):
             self.runtime_checker.check_image_include_repos_publicly_resolvable()
+
+    @patch('kiwi.runtime_checker.Command.run')
+    def test_check_target_dir_on_unsupported_filesystem(self, mock_Command_run):
+        stat = Mock()
+        stat.output = 'bogus'
+        mock_Command_run.return_value = stat
+        with raises(KiwiRuntimeError):
+            self.runtime_checker.check_target_dir_on_unsupported_filesystem(
+                '/some/root_dir'
+            )
 
     def test_invalid_target_dir_pointing_to_shared_cache_1(self):
         with raises(KiwiRuntimeError):
@@ -93,7 +107,7 @@ class TestRuntimeChecker:
         command = Mock()
         command.output = '1.2.3-1.2'
         mock_Command_run.return_value = command
-        mock_os_listdir.return_value = ['90kiwi-dump']
+        mock_os_listdir.return_value = ['55kiwi-dump']
         package_manager = Mock()
         package_manager.return_value = 'zypper'
         self.xml_state.get_package_manager = package_manager
@@ -312,6 +326,13 @@ class TestRuntimeChecker:
         with raises(KiwiRuntimeError):
             self.runtime_checker.check_xen_uniquely_setup_as_server_or_guest()
 
+    def test_check_efi_fat_image_has_correct_size(self):
+        self.xml_state.build_type.get_efifatimagesize = Mock(
+            return_value='200'
+        )
+        with raises(KiwiRuntimeError):
+            self.runtime_checker.check_efi_fat_image_has_correct_size()
+
     def test_check_xen_uniquely_setup_as_server_or_guest_for_xen(self):
         self.xml_state.build_type.get_firmware = Mock(
             return_value=None
@@ -337,26 +358,25 @@ class TestRuntimeChecker:
             runtime_checker.\
                 check_dracut_module_for_disk_overlay_in_package_list()
 
-    def test_check_efi_mode_for_disk_overlay_correctly_setup(self):
-        self.xml_state.build_type.get_overlayroot = Mock(
-            return_value=True
-        )
-        self.xml_state.build_type.get_firmware = Mock(
-            return_value='uefi'
-        )
-        with raises(KiwiRuntimeError):
-            self.runtime_checker.\
-                check_efi_mode_for_disk_overlay_correctly_setup()
-
+    @pytest.mark.parametrize("tool_name, tool_binary", [("isomd5sum", "implantisomd5"), ("checkmedia", "tagmedia")])
     @patch('kiwi.runtime_checker.Path.which')
-    def test_check_mediacheck_installed_tagmedia_missing(self, mock_which):
+    @patch('kiwi.runtime_checker.RuntimeConfig')
+    def test_check_mediacheck_installed_implantisomd5_missing(
+        self, mock_RuntimeConfig, mock_which, tool_name, tool_binary
+    ):
+        runtime_config = Mock()
+        runtime_config.get_iso_media_tag_tool.return_value = tool_name
+        mock_RuntimeConfig.return_value = runtime_config
+
         mock_which.return_value = False
         xml_state = XMLState(
             self.description.load(), ['vmxFlavour'], 'iso'
         )
         runtime_checker = RuntimeChecker(xml_state)
-        with raises(KiwiRuntimeError):
+        with raises(KiwiRuntimeError) as rt_err_ctx:
             runtime_checker.check_mediacheck_installed()
+
+        assert f"Required tool {tool_binary} not found in caller environment" in str(rt_err_ctx.value)
 
     def test_check_dracut_module_for_live_iso_in_package_list(self):
         xml_state = XMLState(
@@ -403,40 +423,6 @@ class TestRuntimeChecker:
         with raises(KiwiRuntimeError):
             runtime_checker.check_image_version_provided()
 
-    def test_check_architecture_supports_iso_firmware_setup(self):
-        Defaults.set_platform_name('aarch64')
-        xml_state = XMLState(
-            self.description.load(), ['vmxFlavour'], 'iso'
-        )
-        runtime_checker = RuntimeChecker(xml_state)
-        with raises(KiwiRuntimeError):
-            runtime_checker.check_architecture_supports_iso_firmware_setup()
-        xml_state = XMLState(
-            self.description.load(), ['xenDom0Flavour'], 'oem'
-        )
-        runtime_checker = RuntimeChecker(xml_state)
-        with raises(KiwiRuntimeError):
-            runtime_checker.check_architecture_supports_iso_firmware_setup()
-
-    @patch('kiwi.runtime_checker.Path.which')
-    def test_check_syslinux_installed_if_isolinux_is_used(
-        self, mock_Path_which
-    ):
-        Defaults.set_platform_name('x86_64')
-        mock_Path_which.return_value = None
-        xml_state = XMLState(
-            self.description.load(), ['vmxFlavour'], 'iso'
-        )
-        runtime_checker = RuntimeChecker(xml_state)
-        with raises(KiwiRuntimeError):
-            runtime_checker.check_syslinux_installed_if_isolinux_is_used()
-        xml_state = XMLState(
-            self.description.load(), ['xenDom0Flavour'], 'oem'
-        )
-        runtime_checker = RuntimeChecker(xml_state)
-        with raises(KiwiRuntimeError):
-            runtime_checker.check_syslinux_installed_if_isolinux_is_used()
-
     def test_check_image_type_unique(self):
         description = XMLDescription(
             '../data/example_runtime_checker_conflicting_types.xml'
@@ -454,6 +440,10 @@ class TestRuntimeChecker:
         runtime_checker = RuntimeChecker(xml_state)
         with raises(KiwiRuntimeError):
             runtime_checker.check_include_references_unresolvable()
+
+    def test_check_package_in_list(self):
+        assert RuntimeChecker._package_in_list(['a', 'b'], ['b']) == 'b'
+        assert RuntimeChecker._package_in_list(['a', 'b'], ['c']) == ''
 
     def teardown(self):
         sys.argv = argv_kiwi_tests

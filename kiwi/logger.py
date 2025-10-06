@@ -16,9 +16,10 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 from typing import (
-    Dict, Optional
+    Dict, Optional, List
 )
 import logging
+from kiwi.logger_socket import PlainTextSocketHandler
 import sys
 
 # project
@@ -31,7 +32,10 @@ from kiwi.logger_filter import (
     WarningFilter
 )
 
-from kiwi.exceptions import KiwiLogFileSetupFailed
+from kiwi.exceptions import (
+    KiwiLogFileSetupFailed,
+    KiwiLogSocketSetupFailed
+)
 
 
 class Logger(logging.Logger):
@@ -42,7 +46,7 @@ class Logger(logging.Logger):
     """
     def __init__(self, name: str):
         logging.Logger.__init__(self, name)
-        self.console_handlers: Dict = {}
+        self.log_handlers: Dict = {}
         self.logfile: Optional[str] = None
         # log INFO to stdout
         self._add_stream_handler(
@@ -93,15 +97,30 @@ class Logger(logging.Logger):
         """
         return self.log_flags
 
-    def setLogLevel(self, level: int) -> None:
+    def setLogLevel(
+        self, level: int, except_for: List[str] = [], only_for: List[str] = []
+    ) -> None:
         """
         Set custom log level for all console handlers
 
         :param int level: log level number
+        :param list except_for:
+            set log level to all handlers except for the given list
+        :param list only_for:
+            set log level to the given handlers only
+
+        if both except_for and only_for handlers are specified,
+        the except_for list will be ignored
         """
         self.log_level = level
-        for handler_type in self.console_handlers:
-            self.console_handlers[handler_type].setLevel(level)
+        if only_for:
+            for handler_type in self.log_handlers:
+                if handler_type in only_for:
+                    self.log_handlers[handler_type].setLevel(level)
+            return
+        for handler_type in self.log_handlers:
+            if handler_type not in except_for:
+                self.log_handlers[handler_type].setLevel(level)
 
     def setLogFlag(self, flag: str, value: bool = True) -> None:
         """
@@ -118,7 +137,7 @@ class Logger(logging.Logger):
         """
         Set color format for all console handlers
         """
-        for handler_type in self.console_handlers:
+        for handler_type in self.log_handlers:
             message_format = None
             if handler_type == 'debug':
                 message_format = \
@@ -128,7 +147,7 @@ class Logger(logging.Logger):
                     '$COLOR[ %(levelname)-8s]: %(asctime)-8s | %(message)s'
 
             if message_format:
-                self.console_handlers[handler_type].setFormatter(
+                self.log_handlers[handler_type].setFormatter(
                     ColorFormatter(message_format, '%H:%M:%S')
                 )
 
@@ -142,9 +161,6 @@ class Logger(logging.Logger):
             if filename == 'stdout':
                 # special case, log usual log file contents to stdout
                 handler = logging.StreamHandler(sys.__stdout__)
-                # deactivate standard console logger by setting
-                # the highest possible log entry level
-                self.setLogLevel(logging.CRITICAL)
             else:
                 handler = logging.FileHandler(
                     filename=filename, encoding='utf-8'
@@ -152,14 +168,42 @@ class Logger(logging.Logger):
                 self.logfile = filename
             handler.setFormatter(
                 logging.Formatter(
-                    '%(levelname)s: %(asctime)-8s | %(message)s', '%H:%M:%S'
+                    '[ %(levelname)-8s]: %(asctime)-8s | %(message)s',
+                    '%H:%M:%S'
                 )
             )
             handler.addFilter(LoggerSchedulerFilter())
             self.addHandler(handler)
+            self.log_handlers['file'] = handler
         except Exception as e:
             raise KiwiLogFileSetupFailed(
-                '%s: %s' % (type(e).__name__, format(e))
+                f'{type(e).__name__}: {format(e)}'
+            )
+
+    def set_log_socket(self, filename: str) -> None:
+        """
+        Set log socket handler
+
+        :param str filename:
+            UDS socket file path. Note if there is no server
+            listening on the socket the log handler setup
+            will fail
+        """
+        try:
+            handler = PlainTextSocketHandler(filename, None)
+            handler.makeSocket()
+            handler.setFormatter(
+                logging.Formatter(
+                    '[ %(levelname)-8s]: %(asctime)-8s | %(message)s',
+                    '%H:%M:%S'
+                )
+            )
+            handler.addFilter(LoggerSchedulerFilter())
+            self.addHandler(handler)
+            self.log_handlers['socket'] = handler
+        except Exception as e:
+            raise KiwiLogSocketSetupFailed(
+                'UDS socket: {0}:{1}: {2}'.format(filename, type(e).__name__, e)
             )
 
     def get_logfile(self) -> Optional[str]:
@@ -214,4 +258,4 @@ class Logger(logging.Logger):
         for rule in message_filter:
             handler.addFilter(rule)
         self.addHandler(handler)
-        self.console_handlers[handler_type] = handler
+        self.log_handlers[handler_type] = handler

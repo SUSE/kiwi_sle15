@@ -49,6 +49,8 @@ class ImageBuilder(metaclass=ABCMeta):
             name_token = ('live', 'LiveImageBuilder')
         elif image_type in Defaults.get_kis_image_types():
             name_token = ('kis', 'KisBuilder')
+        elif image_type in Defaults.get_enclaves_image_types():
+            name_token = ('enclave', 'EnclaveBuilder')
         elif image_type in Defaults.get_archive_image_types():
             name_token = ('archive', 'ArchiveBuilder')
         elif image_type in Defaults.get_container_image_types():
@@ -63,7 +65,7 @@ class ImageBuilder(metaclass=ABCMeta):
             return builder.__dict__[builder_name](
                 xml_state, target_dir, root_dir, custom_args
             )
-        except Exception:
+        except Exception as issue:
             raise KiwiRequestedTypeError(
-                f'Requested image type {image_type} not supported'
+                f'Requested image type {image_type} not supported: {issue}'
             )

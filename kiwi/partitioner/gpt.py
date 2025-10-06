@@ -96,7 +96,7 @@ class PartitionerGpt(PartitionerBase):
         """
         if flag_name not in self.flag_map:
             raise KiwiPartitionerGptFlagError(
-                'Unknown partition flag %s' % flag_name
+                f'Unknown partition flag {flag_name}'
             )
         if self.flag_map[flag_name]:
             Command.run(
@@ -113,6 +113,21 @@ class PartitionerGpt(PartitionerBase):
             )
         else:
             log.warning('Flag %s ignored on GPT', flag_name)
+
+    def set_uuid(self, partition_id: int, uuid: str) -> None:
+        """
+        Set partition UUID (TypeCode)
+
+        :param int partition_id: partition number
+        :param string uuid: UUID
+        """
+        Command.run(
+            [
+                'sgdisk',
+                '--typecode', f'{partition_id}:{uuid}',
+                self.disk_device
+            ]
+        )
 
     def set_hybrid_mbr(self) -> None:
         """

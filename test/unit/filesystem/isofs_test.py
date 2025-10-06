@@ -1,7 +1,7 @@
 import logging
 from pytest import fixture
-from mock import patch
-import mock
+from unittest.mock import patch
+import unittest.mock as mock
 
 from kiwi.filesystem.isofs import FileSystemIsoFs
 
@@ -58,5 +58,6 @@ class TestFileSystemIsoFs:
             self.isofs.create_on_file('myimage')
             iso_tool.create_iso.assert_called_once_with('myimage')
             iso_tool.add_efi_loader_parameters.assert_called_once_with(
-                'esp-image-file'
+                'esp-image-file',
+                {'efi_mode': 'uefi', 'efi_loader': 'esp-image-file'}
             )

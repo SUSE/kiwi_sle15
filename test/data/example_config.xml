@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<image schemaversion="7.5" name="LimeJeOS" displayname="Bob">
+<image schemaversion="8.3" name="LimeJeOS" displayname="Bob">
     <drivers>
         <file name="crypto/*"/>
         <file name="drivers/acpi/*"/>
@@ -58,7 +58,7 @@
         <type image="iso" firmware="efi"/>
     </preferences>
     <preferences profiles="vmxFlavour">
-        <type image="oem" primary="true" boot="oemboot/example-distribution" firmware="efi" kernelcmdline="splash" vga="0x303" editbootconfig="my_edit_boot_script" editbootinstall="/absolute/path/to/my_edit_boot_install" fsmountoptions="async" fscreateoptions="-O ^has_journal" btrfs_root_is_snapshot="true" spare_part="200M" spare_part_fs_attributes="no-copy-on-write" xen_server="true" formatoptions="force_size,super=man" filesystem="ext4" installiso="true" luks="linux" luks_version="luks2">
+        <type image="oem" primary="true" boot="oemboot/example-distribution" firmware="efi" kernelcmdline="splash" vga="0x303" editbootconfig="my_edit_boot_script" editbootinstall="/absolute/path/to/my_edit_boot_install" fsmountoptions="async" fscreateoptions="-O ^has_journal" spare_part="200M" spare_part_fs_attributes="no-copy-on-write" xen_server="true" formatoptions="force_size,super=man" filesystem="ext4" installiso="true" luks="linux" luks_version="luks2" luks_pbkdf="pbkdf2" btrfs_root_is_snapper_snapshot="true">
             <luksformat>
                 <option name="--cipher" value="aes-gcm-random"/>
                 <option name="--integrity" value="aead"/>
@@ -81,6 +81,7 @@
             <installmedia>
                 <initrd action="add">
                     <dracut module="network-legacy"/>
+                    <dracut driver="erofs"/>
                 </initrd>
             </installmedia>
         </type>
@@ -115,6 +116,16 @@
     </preferences>
     <preferences profiles="vmxSimpleFlavour">
         <type image="oem" filesystem="ext3" format="vmdk" kernelcmdline="splash" bootpartition="false">
+            <bootloader name="grub2">
+                <bootloadersettings>
+                    <shimoption name="--foo" value="bar"/>
+                    <shimoption name="--suse-we-adapt-you-succeed"/>
+                    <installoption name="--A" value="123"/>
+                    <installoption name="B"/>
+                    <configoption name="--joe"/>
+                    <configoption name="-x"/>
+                </bootloadersettings>
+            </bootloader>
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
@@ -126,6 +137,13 @@
                 <vmconfig-entry>numvcpus = "4"</vmconfig-entry>
                 <vmconfig-entry>cpuid.coresPerSocket = "2"</vmconfig-entry>
             </machine>
+            <initrd action="setup">
+                <dracut uefi="true"/>
+            </initrd>
+            <initrd action="add">
+                <dracut module="some"/>
+                <dracut driver="driver"/>
+            </initrd>
         </type>
         <type image="iso" mediacheck="true"/>
     </preferences>
@@ -146,6 +164,7 @@
                     <volume name="/tmp"/>
                     <volume name="/var/log"/>
                 </volumes>
+                <stopsignal>SIGINT</stopsignal>
                 <environment>
                     <env name="PATH" value="/bin:/usr/bin:/home/user/bin"/>
                     <env name="SOMEVAR" value="somevalue"/>
@@ -171,9 +190,23 @@
         <user groups="users" pwdformat="plain" password="mypwd" home="/home/tux" name="tux"/>
         <user groups="kiwi,admin:42,users" pwdformat="plain" password="mypwd" name="kiwi"/>
     </users>
+    <containers source="registry.suse.com" backend="podman">
+        <container name="rmtserver" tag="latest" path="home/mschaefer/images_pubcloud/pct"/>
+    </containers>
+    <containers source="registry.suse.com" backend="docker">
+        <container name="some"/>
+    </containers>
+    <containers source="docker.io" backend="podman">
+        <container name="foo" fetch_only="true"/>
+    </containers>
+    <containers source="registry.example.com" backend="container-snap">
+        <container name="test-app" tag="v1.0"/>
+    </containers>
     <repository priority="42" sourcetype="baseurl">
         <source path="iso:///image/CDs/dvd.iso">
             <signing key="file:key_a"/>
+            <signing key="file:///usr/share/distribution-gpg-keys/fedora/RPM-GPG-KEY-fedora-$releasever-primary"/>
+            <signing key="file:///usr/share/distribution-gpg-keys/fedora/RPM-GPG-KEY-fedora-${releasever}-primary"/>
         </source>
     </repository>
     <repository type="rpm-md" imageinclude="true" customize="script">
@@ -186,6 +219,7 @@
     </repository>
     <packages type="image" patternType="plusRecommended">
         <namedCollection name="base"/>
+        <namedCollection name="base_for_arch" arch="s390,aarch64"/>
         <product name="openSUSE"/>
         <package name="plymouth-branding-openSUSE" bootinclude="true"/>
         <package name="grub2-branding-openSUSE" bootinclude="true"/>
@@ -195,6 +229,8 @@
         <package name="openssh"/>
         <archive name="/absolute/path/to/image.tgz" bootinclude="true"/>
         <package name="foo" arch="s390,aarch64"/>
+        <file name="some"/>
+        <file name="/absolute/path/to/some" owner="bob:users" permissions="u+x"/>
     </packages>
     <packages type="iso">
         <package name="gfxboot-branding-openSUSE" bootinclude="true" bootdelete="true"/>
@@ -226,11 +262,18 @@
         <namedCollection name="bootstrap-collection"/>
         <product name="kiwi"/>
         <archive name="bootstrap.tgz"/>
+        <file name="some" target="/some/target"/>
+        <ignore name="some"/>
     </packages>
     <packages type="delete">
         <package name="kernel-debug"/>
     </packages>
     <packages type="uninstall">
         <package name="shadow"/>
+    </packages>
+    <packages type="systemfiles">
+        <ignore name="zypp"/>
+        <ignore name="yast"/>
+        <ignore name="rpm"/>
     </packages>
 </image>

@@ -17,6 +17,7 @@
 #
 import os
 import logging
+from typing import List, Optional
 
 # project
 from kiwi.utils.temporary import Temporary
@@ -43,20 +44,22 @@ class Compress:
     :param str uncompressed_filename:
         Uncompressed file name path
     """
-    def __init__(self, source_filename, keep_source_on_compress=False):
+    def __init__(
+        self, source_filename: str, keep_source_on_compress: bool = False
+    ) -> None:
         if not os.path.exists(source_filename):
             raise KiwiFileNotFound(
-                'compression source file %s not found' % source_filename
+                f'compression source file {source_filename} not found'
             )
         self.keep_source = keep_source_on_compress
         self.source_filename = source_filename
         self.supported_zipper = [
             'xz', 'gzip'
         ]
-        self.compressed_filename = None
-        self.uncompressed_filename = None
+        self.compressed_filename: Optional[str] = None
+        self.uncompressed_filename: Optional[str] = None
 
-    def xz(self, options=None):
+    def xz(self, options: Optional[List[str]] = None) -> str:
         """
         Create XZ compressed file
 
@@ -64,6 +67,7 @@ class Compress:
         """
         if not options:
             options = Defaults.get_xz_compression_options()
+        assert options
         if self.keep_source:
             options.append('--keep')
         Command.run(
@@ -72,7 +76,7 @@ class Compress:
         self.compressed_filename = self.source_filename + '.xz'
         return self.compressed_filename
 
-    def gzip(self):
+    def gzip(self) -> str:
         """
         Create gzip(max compression) compressed file
         """
@@ -87,7 +91,7 @@ class Compress:
         self.compressed_filename = self.source_filename + '.gz'
         return self.compressed_filename
 
-    def uncompress(self, temporary=False):
+    def uncompress(self, temporary: bool = False) -> str:
         """
         Uncompress with format autodetection
 
@@ -100,8 +104,7 @@ class Compress:
         zipper = self.get_format()
         if not zipper:
             raise KiwiCompressionFormatUnknown(
-                'could not detect compression format for %s' %
-                self.source_filename
+                f'could not detect compression format for {self.source_filename}'
             )
         if not temporary:
             Command.run([zipper, '-d', self.source_filename])
@@ -116,7 +119,7 @@ class Compress:
             self.uncompressed_filename = self.temp_file.name
         return self.uncompressed_filename
 
-    def get_format(self):
+    def get_format(self) -> Optional[str]:
         """
         Detect compression format
 
@@ -125,16 +128,9 @@ class Compress:
         :rtype: Optional[str]
         """
         for zipper in self.supported_zipper:
-            cmd = [zipper, '-l', self.source_filename]
-            try:
-                Command.run(cmd)
+            result = Command.run(
+                [zipper, '-l', self.source_filename], raise_on_error=False
+            )
+            if result.returncode == 0:
                 return zipper
-            except Exception as exc:
-                log.debug(
-                    'Error running "{cmd:s}", got a {exc_t:s}: {exc:s}'
-                    .format(
-                        cmd=' '.join(cmd),
-                        exc_t=type(exc).__name__,
-                        exc=str(exc)
-                    )
-                )
+        return None

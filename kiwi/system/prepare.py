@@ -17,12 +17,14 @@
 #
 import os
 import logging
+from contextlib import ExitStack
 from typing import (
     List, Any, Optional
 )
 from textwrap import dedent
 
 # project
+from kiwi.command import Command
 from kiwi.xml_parse import repository
 from kiwi.xml_state import XMLState
 from kiwi.system.root_init import RootInit
@@ -61,6 +63,8 @@ class SystemPrepare:
         """
         Setup and host bind new root system at given root_dir directory
         """
+        self.root_import = None
+
         log.info('Setup root directory: %s', root_dir)
         if not log.getLogLevel() == logging.DEBUG and not log.get_logfile():
             self.issue_message = dedent('''
@@ -78,28 +82,35 @@ class SystemPrepare:
             root_dir, allow_existing
         )
         root.create()
-        image_uri = xml_state.get_derived_from_image_uri()
-        if image_uri:
-            root_import = RootImport.new(
-                root_dir, image_uri, xml_state.build_type.get_image()
+        image_uris = xml_state.get_derived_from_image_uri()
+        delta_root = xml_state.build_type.get_delta_root()
+
+        if image_uris:
+            self.root_import = RootImport.new(
+                root_dir, image_uris, xml_state.build_type.get_image()
             )
-            root_import.sync_data()
+            if delta_root:
+                self.root_import.overlay_data()
+            else:
+                self.root_import.sync_data()
         root_bind = RootBind(
             root
         )
         root_bind.setup_intermediate_config()
-        root_bind.mount_kernel_file_systems()
+        root_bind.mount_kernel_file_systems(delta_root)
         root_bind.mount_shared_directory()
 
+        self.delta_root = delta_root
+        self.root_dir = root_dir
         self.xml_state = xml_state
         self.profiles = xml_state.profiles
         self.root_bind = root_bind
 
-        # A list of Uri references is stored inside of the System instance
-        # in order to delay the Uri destructors until the System instance
-        # dies. This is needed to keep bind mounted Uri locations alive
-        # for System operations
+        #: A list of Uri references
         self.uri_list: List[Uri] = []
+
+    def __enter__(self):
+        return self
 
     def setup_repositories(
         self, clear_cache: bool = False,
@@ -138,72 +149,79 @@ class SystemPrepare:
             repository_options.append(
                 f'_target_arch%{target_arch}'
             )
-        repo = Repository.new(
+        with Repository.new(
             self.root_bind, package_manager, repository_options
-        )
-        repo.setup_package_database_configuration()
-        if signing_keys:
-            repo.import_trusted_keys(signing_keys)
-        for xml_repo in repository_sections:
-            repo_type = xml_repo.get_type()
-            repo_source = xml_repo.get_source().get_path()
-            repo_user = xml_repo.get_username()
-            repo_secret = xml_repo.get_password()
-            repo_alias = xml_repo.get_alias()
-            repo_priority = xml_repo.get_priority()
-            repo_dist = xml_repo.get_distribution()
-            repo_components = xml_repo.get_components()
-            repo_repository_gpgcheck = xml_repo.get_repository_gpgcheck()
-            repo_package_gpgcheck = xml_repo.get_package_gpgcheck()
-            repo_customization_script = self._get_repo_customization_script(
-                xml_repo
-            )
-            repo_sourcetype = xml_repo.get_sourcetype()
-            repo_use_for_bootstrap = \
-                True if xml_repo.get_use_for_bootstrap() else False
-            log.info('Setting up repository %s', repo_source)
-            log.info('--> Type: {0}'.format(repo_type))
-            if repo_sourcetype:
-                log.info('--> SourceType: {0}'.format(repo_sourcetype))
-            if repo_priority:
-                log.info('--> Priority: {0}'.format(repo_priority))
-
-            uri = Uri(repo_source, repo_type)
-            repo_source_translated = uri.translate()
-            log.info('--> Translated: {0}'.format(repo_source_translated))
-            if not repo_alias:
-                repo_alias = uri.alias()
-            log.info('--> Alias: {0}'.format(repo_alias))
-
-            if not uri.is_remote() and not os.path.exists(
-                repo_source_translated
-            ):
-                log.warning(
-                    'repository %s does not exist and will be skipped',
-                    repo_source
+        ) as repo:
+            repo.setup_package_database_configuration()
+            if signing_keys:
+                repo.import_trusted_keys(signing_keys)
+            for xml_repo in repository_sections:
+                repo_type = xml_repo.get_type()
+                repo_source = xml_repo.get_source().get_path()
+                repo_architectures = xml_repo.get_architectures()
+                repo_user = xml_repo.get_username()
+                repo_secret = xml_repo.get_password()
+                repo_alias = xml_repo.get_alias()
+                repo_priority = xml_repo.get_priority()
+                repo_dist = xml_repo.get_distribution()
+                repo_components = xml_repo.get_components()
+                repo_repository_gpgcheck = xml_repo.get_repository_gpgcheck()
+                repo_package_gpgcheck = xml_repo.get_package_gpgcheck()
+                repo_customization_script = self._get_repo_customization_script(
+                    xml_repo
                 )
-                continue
+                repo_sourcetype = xml_repo.get_sourcetype()
+                log.info(
+                    'Setting up repository %s', Uri.print_sensitive(repo_source)
+                )
+                log.info('--> Type: {0}'.format(repo_type))
+                if repo_sourcetype:
+                    log.info('--> SourceType: {0}'.format(repo_sourcetype))
+                if repo_priority:
+                    log.info('--> Priority: {0}'.format(repo_priority))
 
-            if not uri.is_remote():
-                self.root_bind.mount_shared_directory(repo_source_translated)
+                uri = Uri(repo_source, repo_type)
+                repo_source_translated = uri.translate()
+                log.info(
+                    '--> Translated: {0}'.format(
+                        Uri.print_sensitive(repo_source_translated)
+                    )
+                )
+                if not repo_alias:
+                    repo_alias = uri.alias()
+                log.info('--> Alias: {0}'.format(repo_alias))
 
-            repo.add_repo(
-                repo_alias, repo_source_translated,
-                repo_type, repo_priority, repo_dist, repo_components,
-                repo_user, repo_secret, uri.credentials_file_name(),
-                repo_repository_gpgcheck, repo_package_gpgcheck,
-                repo_sourcetype, repo_use_for_bootstrap,
-                repo_customization_script
+                if not uri.is_remote() and not os.path.exists(
+                    repo_source_translated
+                ):
+                    log.warning(
+                        'repository %s does not exist and will be skipped',
+                        repo_source
+                    )
+                    continue
+
+                if not uri.is_remote():
+                    self.root_bind.mount_shared_directory(
+                        repo_source_translated
+                    )
+
+                repo.add_repo(
+                    repo_alias, repo_source_translated,
+                    repo_type, repo_priority, repo_dist, repo_components,
+                    repo_user, repo_secret, uri.credentials_file_name(),
+                    repo_repository_gpgcheck, repo_package_gpgcheck,
+                    repo_sourcetype, repo_customization_script,
+                    repo_architectures
+                )
+                if clear_cache:
+                    repo.delete_repo_cache(repo_alias)
+                self.uri_list.append(uri)
+            repo.cleanup_unused_repos()
+            return PackageManager.new(
+                repository=repo,
+                package_manager_name=package_manager,
+                release_version=release_version
             )
-            if clear_cache:
-                repo.delete_repo_cache(repo_alias)
-            self.uri_list.append(uri)
-        repo.cleanup_unused_repos()
-        return PackageManager.new(
-            repository=repo,
-            package_manager_name=package_manager,
-            release_version=release_version
-        )
 
     def install_bootstrap(
         self, manager: PackageManagerBase, plus_packages: List = None
@@ -235,6 +253,8 @@ class SystemPrepare:
         bootstrap_products = self.xml_state.get_bootstrap_products()
         bootstrap_archives = self.xml_state.get_bootstrap_archives()
         bootstrap_archives_target_dirs = self.xml_state.get_bootstrap_archives_target_dirs()
+        bootstrap_packages_ignored = self.xml_state.get_bootstrap_ignore_packages()
+        package_manager = self.xml_state.get_package_manager()
         # process package installations
         if collection_type == 'onlyRequired':
             manager.process_only_required()
@@ -244,7 +264,8 @@ class SystemPrepare:
             manager,
             bootstrap_packages,
             bootstrap_collections,
-            bootstrap_products
+            bootstrap_products,
+            bootstrap_packages_ignored
         )
         manager.setup_repository_modules(
             self.xml_state.get_collection_modules()
@@ -259,7 +280,8 @@ class SystemPrepare:
                 items_to_complete=all_install_items,
                 match_method=process.create_match_method(
                     manager.match_package_installed
-                )
+                ),
+                with_stderr=True if package_manager == 'dnf5' else False
             )
         except Exception as issue:
             if manager.has_failed(process.returncode()):
@@ -269,7 +291,9 @@ class SystemPrepare:
                         reason=f'{issue}: {manager.get_error_details()}'
                     )
                 )
-        manager.post_process_install_requests_bootstrap(self.root_bind)
+        manager.post_process_install_requests_bootstrap(
+            self.root_bind, self.delta_root
+        )
         # process archive installations
         if bootstrap_archives:
             try:
@@ -309,6 +333,7 @@ class SystemPrepare:
         system_archives = self.xml_state.get_system_archives()
         system_archives_target_dirs = self.xml_state.get_system_archives_target_dirs()
         system_packages_ignored = self.xml_state.get_system_ignore_packages()
+        package_manager = self.xml_state.get_package_manager()
         # process package installations
         if collection_type == 'onlyRequired':
             manager.process_only_required()
@@ -330,7 +355,8 @@ class SystemPrepare:
                     items_to_complete=all_install_items,
                     match_method=process.create_match_method(
                         manager.match_package_installed
-                    )
+                    ),
+                    with_stderr=True if package_manager == 'dnf5' else False
                 )
             except Exception as issue:
                 if manager.has_failed(process.returncode()):
@@ -356,7 +382,7 @@ class SystemPrepare:
                 )
 
     def pinch_system(
-        self, manager: PackageManagerBase = None, force: bool = False
+        self, manager: Optional[PackageManagerBase] = None, force: bool = False
     ) -> None:
         """
         Delete packages marked for deletion in the XML description. If force
@@ -370,6 +396,16 @@ class SystemPrepare:
         :raises KiwiPackagesDeletePhaseFailed:
             if the deletion packages process fails
         """
+        if self.delta_root:
+            # In delta mode create a reference tree to allow
+            # to diff on deleted data
+            Command.run(
+                [
+                    'rsync', '-a',
+                    f'{self.root_dir}_cow/',
+                    f'{self.root_dir}_cow_before_pinch'
+                ]
+            )
         to_become_deleted_packages = \
             self.xml_state.get_to_become_deleted_packages(force)
         if to_become_deleted_packages:
@@ -379,19 +415,21 @@ class SystemPrepare:
                 )
             )
             try:
-                if manager is None:
-                    package_manager = self.xml_state.get_package_manager()
-                    release_version = self.xml_state.get_release_version()
-                    manager = PackageManager.new(
-                        repository=Repository.new(
-                            self.root_bind, package_manager
-                        ),
-                        package_manager_name=package_manager,
-                        release_version=release_version
+                with ExitStack() as stack:
+                    if manager is None:
+                        package_manager = self.xml_state.get_package_manager()
+                        release_version = self.xml_state.get_release_version()
+                        repo = Repository.new(self.root_bind, package_manager)
+                        stack.push(repo)
+                        manager = PackageManager.new(
+                            repository=repo,
+                            package_manager_name=package_manager,
+                            release_version=release_version
+                        )
+                        stack.push(manager)
+                    self.delete_packages(
+                        manager, to_become_deleted_packages, force
                     )
-                self.delete_packages(
-                    manager, to_become_deleted_packages, force
-                )
             except Exception as issue:
                 raise KiwiPackagesDeletePhaseFailed(
                     self.issue_message.format(
@@ -413,6 +451,7 @@ class SystemPrepare:
         :raises KiwiSystemInstallPackagesFailed: if installation process fails
         """
         log.info('Installing system packages (chroot)')
+        package_manager = self.xml_state.get_package_manager()
         all_install_items = self._setup_requests(
             manager, packages
         )
@@ -425,7 +464,8 @@ class SystemPrepare:
                     items_to_complete=all_install_items,
                     match_method=process.create_match_method(
                         manager.match_package_installed
-                    )
+                    ),
+                    with_stderr=True if package_manager == 'dnf5' else False
                 )
             except Exception as issue:
                 raise KiwiSystemInstallPackagesFailed(
@@ -450,6 +490,7 @@ class SystemPrepare:
 
         :raises KiwiSystemDeletePackagesFailed: if installation process fails
         """
+        package_manager = self.xml_state.get_package_manager()
         all_delete_items = self._setup_requests(
             manager, packages
         )
@@ -468,7 +509,8 @@ class SystemPrepare:
                     items_to_complete=all_delete_items,
                     match_method=process.create_match_method(
                         manager.match_package_deleted
-                    )
+                    ),
+                    with_stderr=True if package_manager == 'dnf5' else False
                 )
                 manager.post_process_delete_requests(self.root_bind)
             except Exception as issue:
@@ -510,12 +552,13 @@ class SystemPrepare:
         """
         package_manager = self.xml_state.get_package_manager()
         release_version = self.xml_state.get_release_version()
-        manager = PackageManager.new(
-            repository=Repository.new(self.root_bind, package_manager),
-            package_manager_name=package_manager,
-            release_version=release_version
-        )
-        manager.clean_leftovers()
+        with Repository.new(self.root_bind, package_manager) as repo:
+            with PackageManager.new(
+                repository=repo,
+                package_manager_name=package_manager,
+                release_version=release_version
+            ) as manager:
+                manager.clean_leftovers()
 
     def _install_archives(self, archive_list, archive_target_dir_dict):
         log.info("Installing archives")
@@ -540,9 +583,10 @@ class SystemPrepare:
                 )
             target_dir = self.root_bind.root_dir
             if archive_target_dir_dict.get(archive):
-                target_dir = os.path.join(
-                    target_dir,
-                    archive_target_dir_dict.get(archive)
+                target_dir = os.path.normpath(
+                    os.sep.join(
+                        [target_dir, archive_target_dir_dict.get(archive)]
+                    )
                 )
             log.info('--> target dir: %s', target_dir)
             tar = ArchiveTar(archive_file)
@@ -581,18 +625,8 @@ class SystemPrepare:
             )
         return script_path
 
-    def __del__(self):
-        log.info('Cleaning up {:s} instance'.format(type(self).__name__))
-        try:
-            if hasattr(self, 'root_bind'):
-                self.root_bind.cleanup()
-        except Exception as exc:
-            log.info(
-                'Cleaning up {self_name:s} instance failed, got an exception '
-                'of type {exc_type:s}: {exc:s}'
-                .format(
-                    self_name=type(self).__name__,
-                    exc_type=type(exc).__name__,
-                    exc=str(exc)
-                )
-            )
+    def __exit__(self, exc_type, exc_value, traceback):
+        if hasattr(self, 'root_bind'):
+            self.root_bind.cleanup()
+        if self.root_import:
+            self.root_import.overlay_finalize(self.xml_state)

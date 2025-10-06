@@ -20,12 +20,12 @@ elements of the `systemdisk` element:
 .. code:: xml
 
    <image schemaversion="{schema_version}" name="openSUSE-Leap-15.1">
-     <type image="oem" filesystem="btrfs" preferlvm="true">
-       <systemdisk name="vgroup">
+     <type image="oem" filesystem="btrfs">
+       <systemdisk name="vgroup" preferlvm="true">
          <volume name="usr/lib" size="1G" label="library"/>
          <volume name="@root" freespace="500M"/>
          <volume name="etc_volume" mountpoint="etc" copy_on_write="false"/>
-         <volume name="bin_volume" size="all" mountpoint="/usr/bin"/>
+         <volume name="bin_volume" size="all" mountpoint="/usr/bin" quota="2G"/>
        </systemdisk>
      </type>
    </image>
@@ -73,6 +73,9 @@ attributes:
 - `copy_on_write`: Optional attribute to set the filesystem copy-on-write
   attribute for this volume.
 
+- `quota`: Optional attribute for the `btrfs` filesystem only. Allows
+  to specify a quota size for the generated volume.
+
 - `filesystem_check`: Optional attribute to indicate that this
   filesystem should perform the validation to become filesystem checked.
   The actual constraints if the check is performed or not depends on
@@ -81,10 +84,13 @@ attributes:
   filesystem check, which results in this filesystem to be never checked.
   The latter is the default.
 
+- `arch`: Optional attribute to create the volume only if it matches
+  the specified host architecture. Multiple architecture names can
+  be specified as comma separated list.
+
 .. warning::
    The size attributes for filesystem volumes, as for btrfs, are
    ignored and have no effect.
-
 
 The `systemdisk` element additionally supports the following optional
 attributes:

@@ -37,7 +37,8 @@ integrity_credentials_type = NamedTuple(
     'integrity_credentials_type', [
         ('keydescription', str),
         ('keyfile', str),
-        ('keyfile_algorithm', str)
+        ('keyfile_algorithm', str),
+        ('options', List[str])
     ]
 )
 
@@ -60,9 +61,7 @@ class IntegrityDevice(DeviceProvider):
         self, storage_provider: DeviceProvider, integrity_algorithm: str,
         credentials: integrity_credentials_type = None
     ) -> None:
-        # bind the underlaying block device providing class instance
-        # to this object (e.g loop) if present. This is done to guarantee
-        # the correct destructor order when the device should be released.
+        #: the underlaying device provider
         self.storage_provider = storage_provider
 
         self.integrity_device: Optional[str] = None
@@ -80,6 +79,11 @@ class IntegrityDevice(DeviceProvider):
         self.integrity_open_options = [
             '--integrity', self.integrity_algorithm
         ]
+        if credentials and credentials.options:
+            if 'legacy_hmac' in credentials.options:
+                self.integrity_format_options.append(
+                    '--integrity-legacy-hmac'
+                )
         if credentials and credentials.keyfile:
             integrity_key_options = [
                 '--integrity-key-file', credentials.keyfile,
@@ -92,6 +96,9 @@ class IntegrityDevice(DeviceProvider):
 
         self.integrity_metadata_file: Optional[IO[bytes]] = None
         self.credentials = credentials
+
+    def __enter__(self):
+        return self
 
     def get_device(self) -> Optional[MappedDevice]:
         """
@@ -292,15 +299,15 @@ class IntegrityDevice(DeviceProvider):
                     integrity[entry[0]] = entry[1]
         return integrity
 
-    def __del__(self):
+    def __exit__(self, exc_type, exc_value, traceback):
         if self.integrity_device:
-            log.info('Cleaning up %s instance', type(self).__name__)
             try:
                 Command.run(
                     ['integritysetup', 'close', self.integrity_name]
                 )
-            except Exception:
-                log.warning(
-                    'Shutdown of integrity map %s failed, %s still busy',
-                    self.integrity_name, self.integrity_device
+            except Exception as issue:
+                log.error(
+                    'Shutdown of integrity map {0}:{1} failed with {2}'.format(
+                        self.integrity_name, self.integrity_device, issue
+                    )
                 )

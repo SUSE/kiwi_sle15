@@ -1,35 +1,11 @@
 #!/bin/bash
-#================
-# FILE          : config.sh
-#----------------
-# PROJECT       : OpenSuSE KIWI Image System
-# COPYRIGHT     : (c) 2013 SUSE LINUX Products GmbH. All rights reserved
-#               :
-# AUTHOR        : Robert Schweikert <rjschwei@suse.com>
-#               :
-# BELONGS TO    : Operating System images
-#               :
-# DESCRIPTION   : configuration script for SUSE based
-#               : operating systems
-#               :
-#               :
-# STATUS        : BETA
-#----------------
+set -ex
+
+# shellcheck disable=SC1091
 #======================================
 # Functions...
 #--------------------------------------
 test -f /.kconfig && . /.kconfig
-test -f /.profile && . /.profile
-
-#======================================
-# Greeting...
-#--------------------------------------
-echo "Configure image: [$kiwi_iname]..."
-
-#======================================
-# Setup baseproduct link
-#--------------------------------------
-suseSetupProduct
 
 #=========================================
 # Set sysconfig options
@@ -61,10 +37,11 @@ echo 'DEFAULT_TIMEZONE="UTC"' >> /etc/sysconfig/clock
 [ -x /sbin/set_polkit_default_privs ] && /sbin/set_polkit_default_privs
 
 # Set the keep alive interval
-sed -i 's/#ClientAliveInterval 0/ClientAliveInterval 180/' /etc/ssh/sshd_config
+sed -i 's/#ClientAliveInterval 0/ClientAliveInterval 180/' \
+    /usr/etc/ssh/sshd_config
 
 # Disable default targetpw directive
-sed -i -e '/^Defaults targetpw/,/^$/ s/^/#/' /etc/sudoers
+sed -i -e '/^Defaults targetpw/,/^$/ s/^/#/' /usr/etc/sudoers
 
 # WALinuxAgent configuration settings
 # Disable agent auto-update
@@ -92,11 +69,6 @@ sed -i 's/# download.use_deltarpm = true/download.use_deltarpm = false/' /etc/zy
 #======================================
 # Activate services
 #--------------------------------------
-suseInsertService sshd
-suseInsertService haveged
-suseInsertService waagent
-suseRemoveService boot.lvm
-suseRemoveService boot.md
-suseRemoveService display-manager
-suseRemoveService kbd
-suseRemoveService smartd
+systemctl enable sshd
+systemctl enable haveged
+systemctl enable waagent

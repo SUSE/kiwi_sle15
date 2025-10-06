@@ -53,7 +53,7 @@ Image Description
    Specification to define an appliance. The image description is a
    collection of human readable files in a directory. At least one XML
    file :file:`config.xml` or :file:`.kiwi` is required. In addition
-   there may be as well other files like scripts or configuration data.
+   there may be other files like scripts or configuration data.
    These can be used to customize certain parts either of the {kiwi}
    build process or of the initial start-up behavior of the image.
 
@@ -64,7 +64,7 @@ Overlay Files
    :file:`root`. Additional overlay directories for selected profiles
    are supported too and are taken into account if the directory
    name matches the name of the profile. The content of each of the
-   directory structures is copied on top of the the existing file
+   directory structures is copied on top of the existing file
    system (overlayed) of the appliance root. This also includes
    permissions and attributes as a supplement.
 
@@ -93,3 +93,14 @@ To use and run {kiwi}, you need:
 * Git (package ``git``) to clone a repository.
 
 * Any virtualization technology to start the image. We recommend QEMU.
+
+The project officially tests and supports the following distributions:
+
+* `Fedora Linux <https://fedoraproject.org>`_ 40+
+* `CentOS Stream <https://centos.org>`_ 9+
+* `CentOS Stream Hyperscale <https://centos.org/hyperscale>`_ 9+
+* `openSUSE Tumbleweed <https://get.opensuse.org/tumbleweed/>`_ after April 2024
+* `openSUSE Leap 16.0+ <https://get.opensuse.org/leap/16.0/>`_
+* `Canonical Ubuntu Linux <https://ubuntu.com/>`_ 24.04+
+* `Debian GNU/Linux <https://debian.org>`_ 12+
+* `Arch Linux <https://archlinux.org>`_ after April 2024

@@ -22,6 +22,7 @@ from typing import List
 from kiwi.utils.temporary import Temporary
 from kiwi.command import Command
 from kiwi.partitioner.base import PartitionerBase
+from kiwi.utils.block import BlockID
 
 from kiwi.exceptions import (
     KiwiPartitionerMsDosFlagError
@@ -40,6 +41,8 @@ class PartitionerMsDos(PartitionerBase):
 
         Setup sfdisk partition type/flag map
         """
+        self.default_start = 2048
+        self.sector_size = 512
         self.flag_map = {
             'f.active': True,
             't.linux': '83',
@@ -86,9 +89,10 @@ class PartitionerMsDos(PartitionerBase):
         """
         if flag_name not in self.flag_map:
             raise KiwiPartitionerMsDosFlagError(
-                'Unknown partition flag %s' % flag_name
+                f'Unknown partition flag {flag_name}'
             )
-        if self.flag_map[flag_name]:
+        flag_val = self.flag_map[flag_name]
+        if flag_val:
             if flag_name == 'f.active':
                 Command.run(
                     [
@@ -97,10 +101,11 @@ class PartitionerMsDos(PartitionerBase):
                     ]
                 )
             else:
+                assert isinstance(flag_val, str), f"flag {flag_name} must be a string but got a {type(flag_val)}"
                 Command.run(
                     [
                         'sfdisk', '-c', self.disk_device,
-                        format(partition_id), self.flag_map[flag_name]
+                        format(partition_id), flag_val
                     ]
                 )
         else:
@@ -116,6 +121,45 @@ class PartitionerMsDos(PartitionerBase):
         """
         pass
 
+    def set_uuid(self, partition_id: int, uuid: str) -> None:
+        """
+        Set partition UUID
+
+        Nothing to be done here for MSDOS devices
+
+        :param int partition_id: unused
+        :param string uuid: unused
+        """
+        pass  # pragma: nocover
+
+    def set_start_sector(self, start_sector: int):
+        """
+        Set start sector of first partition as configured.
+        fdisk and friends are not able to work correctly if
+        the start sector of the first partition is any different
+        from 2048.
+
+        :param int start_sector: sector size
+        """
+        block_operation = BlockID(self.disk_device)
+        fdisk_input = Temporary().new_file()
+        with open(fdisk_input.name, 'w') as partition:
+            if block_operation.get_partition_count() >= 4:
+                # if the partition table is full fdisk does not ask
+                # for the partition number when there is only one choice
+                log.debug(f'fdisk: d 1 n p {start_sector} w q')
+                partition.write(
+                    'd\n1\nn\np\n{0}\n\nw\nq\n'.format(start_sector)
+                )
+            else:
+                # if the partition table has less than 4 partitions
+                # fdisk will ask for the partition number to change
+                log.debug(f'fdisk: d 1 n p 1 {start_sector} w q')
+                partition.write(
+                    'd\n1\nn\np\n1\n{0}\n\nw\nq\n'.format(start_sector)
+                )
+        self._call_fdisk(fdisk_input.name)
+
     def _create_primary(
         self, name: str, mbsize: int, type_name: str, flags: List[str] = []
     ) -> None:
@@ -124,19 +168,22 @@ class PartitionerMsDos(PartitionerBase):
         """
         self.partition_id += 1
         fdisk_input = Temporary().new_file()
-        if self.partition_id > 1:
-            # Undefined start sector value skips this for fdisk and
-            # use its default value
-            self.start_sector = None
+        if self.partition_id == 1 and self.start_sector:
+            if self.start_sector > self.default_start and mbsize != 'all_free':
+                # fdisk default start sector is self.default_start, increase
+                # the partition size such that after set_start_sector()
+                # the requested partition size is present
+                mbsize += int(
+                    (self.start_sector - self.default_start) * self.sector_size / (1024 * 1024)
+                )
         with open(fdisk_input.name, 'w') as partition:
             log.debug(
                 '%s: fdisk: n p %d cur_position +%sM w q',
                 name, self.partition_id, format(mbsize)
             )
             partition.write(
-                'n\np\n{0}\n{1}\n{2}\nw\nq\n'.format(
+                'n\np\n{0}\n\n{1}\nw\nq\n'.format(
                     self.partition_id,
-                    '' if not self.start_sector else self.start_sector,
                     '' if mbsize == 'all_free' else '+{0}M'.format(mbsize)
                 )
             )

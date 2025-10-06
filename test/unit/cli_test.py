@@ -1,6 +1,6 @@
 import sys
 import logging
-from mock import patch
+from unittest.mock import patch
 from pytest import (
     raises, fixture
 )
@@ -11,7 +11,6 @@ from kiwi.cli import Cli
 from kiwi.defaults import Defaults
 
 from kiwi.exceptions import (
-    KiwiCompatError,
     KiwiLoadCommandUndefined,
     KiwiCommandNotLoaded,
     KiwiUnknownServiceName
@@ -26,20 +25,20 @@ class TestCli:
     def setup(self):
         self.expected_global_args = {
             'help': False,
-            '--compat': False,
-            'compat': False,
             '--type': None,
             'image': False,
             'system': True,
             '-h': False,
             '--logfile': None,
+            '--logsocket': None,
+            '--loglevel': None,
             '--color-output': False,
-            '<legacy_args>': [],
             '--version': False,
             '--debug': False,
             '--debug-run-scripts-in-screen': False,
             'result': False,
             '--profile': [],
+            '--setenv': [],
             '--shared-cache-dir': '/var/cache/kiwi',
             '--temp-dir': '/var/tmp',
             '--target-arch': None,
@@ -49,6 +48,9 @@ class TestCli:
         }
         self.command_args = {
             '--add-repo': [],
+            '--add-repo-credentials': [],
+            '--set-type-attr': [],
+            '--set-release-version': None,
             '--allow-existing-root': False,
             '--description': 'description',
             '--help': False,
@@ -57,6 +59,7 @@ class TestCli:
             '--clear-cache': False,
             '--root': 'directory',
             '--set-repo': None,
+            '--set-repo-credentials': None,
             '--add-package': [],
             '--add-bootstrap-package': [],
             '--delete-package': [],
@@ -92,28 +95,6 @@ class TestCli:
         cli = Cli()
         assert cli.get_servicename() == 'system'
 
-    def test_get_servicename_compat_as_option(self):
-        sys.argv = [
-            sys.argv[0],
-            '--compat', '--',
-            '--build', 'description',
-            '--type', 'oem',
-            '-d', 'destination'
-        ]
-        cli = Cli()
-        assert cli.get_servicename() == 'compat'
-
-    def test_get_servicename_compat_as_service(self):
-        sys.argv = [
-            sys.argv[0],
-            'compat',
-            '--build', 'description',
-            '--type', 'oem',
-            '-d', 'destination'
-        ]
-        cli = Cli()
-        assert cli.get_servicename() == 'compat'
-
     def test_warning_on_use_of_legacy_disk_type(self):
         sys.argv = [
             sys.argv[0],
@@ -130,13 +111,13 @@ class TestCli:
     def test_set_target_arch(self):
         sys.argv = [
             sys.argv[0],
-            '--target-arch', 'artificial', 'system', 'build',
+            '--target-arch', 'x86_64', 'system', 'build',
             '--description', 'description',
             '--target-dir', 'directory'
         ]
         cli = Cli()
         cli.get_global_args()
-        assert Defaults.get_platform_name() == 'artificial'
+        assert Defaults.get_platform_name() == 'x86_64'
 
     def test_get_servicename_image(self):
         sys.argv = [
@@ -163,43 +144,8 @@ class TestCli:
     def test_get_command_args(self):
         assert self.cli.get_command_args() == self.command_args
 
-    def test_get_global_args(self):
-        self.cli.all_args['--config'] = 'config-file'
-        sys.argv = [
-            sys.argv[0],
-            '--config', 'config-file',
-            'system', 'build',
-            '--description', 'description',
-            '--target-dir', 'directory'
-        ]
-        cli = Cli()
-        assert cli.get_global_args() == self.expected_global_args
-
     def test_load_command(self):
         assert self.cli.load_command() == self.loaded_command
-
-    @patch('kiwi.cli.Cli.invoke_kiwicompat')
-    def test_load_command_compat_mode(self, mock_compat):
-        sys.argv = [
-            sys.argv[0],
-            '--compat', '--',
-            '--build', 'description',
-            '--type', 'oem',
-            '-d', 'destination'
-        ]
-        cli = Cli()
-        cli.load_command()
-        mock_compat.assert_called_once_with(
-            ['--build', 'description', '--type', 'oem', '-d', 'destination']
-        )
-
-    @patch('kiwi.cli.Path.which')
-    @patch('os.execvp')
-    def test_invoke_kiwicompat_exec_failed(self, mock_exec, mock_which):
-        mock_which.return_value = 'kiwicompat'
-        mock_exec.side_effect = Exception
-        with raises(KiwiCompatError):
-            self.cli.invoke_kiwicompat([])
 
     def test_load_command_unknown(self):
         self.cli.loaded = False

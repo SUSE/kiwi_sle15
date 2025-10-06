@@ -53,8 +53,9 @@ class ContainerBuilder:
         self.bundle_format = xml_state.get_build_type_bundle_format()
         self.container_config = xml_state.get_container_config()
         self.requested_container_type = xml_state.get_build_type_name()
+        self.delta_root = xml_state.build_type.get_delta_root()
         self.base_image = None
-        self.base_image_md5 = None
+        self.base_image_sha256 = None
         self.ensure_empty_tmpdirs = True
 
         self.container_config['xz_options'] = \
@@ -63,14 +64,14 @@ class ContainerBuilder:
         self.container_config['metadata_path'] = \
             xml_state.build_type.get_metadata_path()
 
-        if xml_state.get_derived_from_image_uri():
-            # The base image is expected to be unpacked by the kiwi
-            # prepare step and stored inside of the root_dir/image directory.
-            # In addition a md5 file of the image is expected too
+        if xml_state.get_derived_from_image_uri() and not self.delta_root:
+            # The base image(all derived imports) is expected to be unpacked
+            # by the kiwi prepare step and stored inside of the root_dir/image
+            # directory. In addition a sha256 file of the image is expected too
             self.base_image = Defaults.get_imported_root_image(
                 self.root_dir
             )
-            self.base_image_md5 = ''.join([self.base_image, '.md5'])
+            self.base_image_sha256 = ''.join([self.base_image, '.sha256'])
 
             if not os.path.exists(self.base_image):
                 raise KiwiContainerBuilderError(
@@ -78,10 +79,10 @@ class ContainerBuilder:
                         self.base_image
                     )
                 )
-            if not os.path.exists(self.base_image_md5):
+            if not os.path.exists(self.base_image_sha256):
                 raise KiwiContainerBuilderError(
-                    'Base image MD5 sum {0} not found at'.format(
-                        self.base_image_md5
+                    'Base image SHA256 sum {0} not found at'.format(
+                        self.base_image_sha256
                     )
                 )
 
@@ -91,6 +92,7 @@ class ContainerBuilder:
         self.system_setup = SystemSetup(
             xml_state=xml_state, root_dir=self.root_dir
         )
+        self.special_needs = ['appx', 'wsl']
         self.filename = ''.join(
             [
                 target_dir, '/',
@@ -98,7 +100,7 @@ class ContainerBuilder:
                 '.' + Defaults.get_platform_name(),
                 '-' + xml_state.get_image_version(),
                 '.', self.requested_container_type,
-                '.tar' if self.requested_container_type != 'appx' else ''
+                '.tar' if self.requested_container_type not in self.special_needs else ''
             ]
         )
         self.result = Result(xml_state)
@@ -114,6 +116,7 @@ class ContainerBuilder:
         * image="docker"
         * image="oci"
         * image="appx"
+        * image="wsl"
 
         :return: result
 
@@ -130,7 +133,7 @@ class ContainerBuilder:
             container_setup.setup()
         else:
             checksum = Checksum(self.base_image)
-            if not checksum.matches(checksum.md5(), self.base_image_md5):
+            if not checksum.matches(checksum.sha256(), self.base_image_sha256):
                 raise KiwiContainerBuilderError(
                     'base image file {0} checksum validation failed'.format(
                         self.base_image
@@ -144,7 +147,11 @@ class ContainerBuilder:
             self.requested_container_type, self.root_dir, self.container_config
         )
         self.filename = container_image.create(
-            self.filename, self.base_image, self.ensure_empty_tmpdirs
+            self.filename, self.base_image or '', self.ensure_empty_tmpdirs,
+            self.runtime_config.get_container_compression()
+            # appx containers already contains a compressed root
+            # wsl containers recommends gzip and we default to it
+            if self.requested_container_type not in self.special_needs else False
         )
         Result.verify_image_size(
             self.runtime_config.get_max_size_constraint(),
@@ -152,42 +159,39 @@ class ContainerBuilder:
         )
         if self.bundle_format:
             self.result.add_bundle_format(self.bundle_format)
-        compress = False
-        # appx handles compression in container_image.create
-        if self.requested_container_type != 'appx':
-            compress = self.runtime_config.get_container_compression()
         self.result.add(
             key='container',
             filename=self.filename,
             use_for_bundle=True,
-            compress=compress,
+            compress=False,
             shasum=True
         )
-        self.result.add(
-            key='image_packages',
-            filename=self.system_setup.export_package_list(
-                self.target_dir
-            ),
-            use_for_bundle=True,
-            compress=False,
-            shasum=False
-        )
-        self.result.add(
-            key='image_changes',
-            filename=self.system_setup.export_package_changes(
-                self.target_dir
-            ),
-            use_for_bundle=True,
-            compress=True,
-            shasum=False
-        )
-        self.result.add(
-            key='image_verified',
-            filename=self.system_setup.export_package_verification(
-                self.target_dir
-            ),
-            use_for_bundle=True,
-            compress=False,
-            shasum=False
-        )
+        if not self.delta_root:
+            self.result.add(
+                key='image_packages',
+                filename=self.system_setup.export_package_list(
+                    self.target_dir
+                ),
+                use_for_bundle=True,
+                compress=False,
+                shasum=False
+            )
+            self.result.add(
+                key='image_changes',
+                filename=self.system_setup.export_package_changes(
+                    self.target_dir
+                ),
+                use_for_bundle=True,
+                compress=True,
+                shasum=False
+            )
+            self.result.add(
+                key='image_verified',
+                filename=self.system_setup.export_package_verification(
+                    self.target_dir
+                ),
+                use_for_bundle=True,
+                compress=False,
+                shasum=False
+            )
         return self.result

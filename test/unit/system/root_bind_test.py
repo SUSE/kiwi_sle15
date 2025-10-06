@@ -1,6 +1,6 @@
 import sys
 import logging
-from mock import (
+from unittest.mock import (
     patch, call, Mock
 )
 from pytest import (
@@ -27,6 +27,14 @@ class TestRootBind:
         root = Mock()
         root.root_dir = 'root-dir'
         self.bind_root = RootBind(root)
+
+        # test expected real bind mount locations
+        assert self.bind_root.bind_locations == [
+            '/proc',
+            '/dev',
+            '/var/run/dbus',
+            '/sys'
+        ]
 
         # stub config files and bind locations
         self.bind_root.config_files = ['/etc/sysconfig/proxy']

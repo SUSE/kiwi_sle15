@@ -49,9 +49,12 @@ class Repository(metaclass=ABCMeta):
         name_map = {
             'zypper': ['zypper', 'Zypper'],
             'dnf': ['dnf', 'Dnf'],
-            'microdnf': ['dnf', 'Dnf'],
+            'dnf5': ['dnf5', 'Dnf5'],
+            'dnf4': ['dnf4', 'Dnf4'],
+            'microdnf': ['dnf4', 'Dnf4'],
             'apt': ['apt', 'Apt'],
-            'pacman': ['pacman', 'Pacman']
+            'pacman': ['pacman', 'Pacman'],
+            'apk': ['apk', 'Apk']
         }
         try:
             repository = importlib.import_module(

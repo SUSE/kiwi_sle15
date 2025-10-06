@@ -63,8 +63,7 @@ class FileSystemBuilder:
             self.requested_filesystem = self.requested_image_type
         if not self.requested_filesystem:
             raise KiwiFileSystemSetupError(
-                'No filesystem configured in %s type' %
-                self.requested_image_type
+                f'No filesystem configured in {self.requested_image_type} type'
             )
         self.filesystem_custom_parameters = {
             'mount_options': xml_state.get_fs_mount_option_list(),
@@ -73,6 +72,9 @@ class FileSystemBuilder:
         if self.requested_filesystem == 'squashfs':
             self.filesystem_custom_parameters['compression'] = \
                 xml_state.build_type.get_squashfscompression()
+        elif self.requested_filesystem == 'erofs':
+            self.filesystem_custom_parameters['compression'] = \
+                xml_state.build_type.get_erofscompression()
 
         self.system_setup = SystemSetup(
             xml_state=xml_state, root_dir=self.root_dir
@@ -89,7 +91,7 @@ class FileSystemBuilder:
         self.blocksize = xml_state.build_type.get_target_blocksize()
         self.filesystem_setup = FileSystemSetup(xml_state, root_dir)
         self.filesystems_no_device_node = [
-            'squashfs'
+            'squashfs', 'erofs'
         ]
         self.luks = xml_state.get_luks_credentials()
         self.result = Result(xml_state)
@@ -117,7 +119,7 @@ class FileSystemBuilder:
         supported_filesystems = Defaults.get_filesystem_image_types()
         if self.requested_filesystem not in supported_filesystems:
             raise KiwiFileSystemSetupError(
-                'Unknown filesystem: %s' % self.requested_filesystem
+                f'Unknown filesystem: {self.requested_filesystem}'
             )
         if self.requested_filesystem not in self.filesystems_no_device_node:
             self._operate_on_loop()
@@ -169,35 +171,39 @@ class FileSystemBuilder:
         return self.result
 
     def _operate_on_loop(self) -> None:
-        filesystem = None
-        loop_provider = LoopDevice(
+        with LoopDevice(
             self.filename,
             self.filesystem_setup.get_size_mbytes(),
             self.blocksize
-        )
-        loop_provider.create()
-        filesystem = FileSystem.new(
-            self.requested_filesystem, loop_provider,
-            self.root_dir + os.sep, self.filesystem_custom_parameters
-        )
-        filesystem.create_on_device(self.label)
-        self.root_uuid = loop_provider.get_uuid(loop_provider.get_device())
-        log.info(
-            f'--> Syncing data to filesystem on {loop_provider.get_device()}'
-        )
-        filesystem.sync_data(
-            Defaults.
-            get_exclude_list_for_root_data_sync() + Defaults.
-            get_exclude_list_from_custom_exclude_files(self.root_dir)
-        )
+        ) as loop_provider:
+            loop_provider.create()
+            with FileSystem.new(
+                self.requested_filesystem, loop_provider,
+                self.root_dir + os.sep, self.filesystem_custom_parameters
+            ) as filesystem:
+                filesystem.create_on_device(self.label)
+                self.root_uuid = loop_provider.get_uuid(
+                    loop_provider.get_device()
+                )
+                log.info(
+                    '--> Syncing data to filesystem on {0}'.format(
+                        loop_provider.get_device()
+                    )
+                )
+                filesystem.sync_data(
+                    Defaults.
+                    get_exclude_list_for_root_data_sync() + Defaults.
+                    get_exclude_list_from_custom_exclude_files(self.root_dir)
+                )
 
     def _operate_on_file(self) -> None:
         default_provider = DeviceProvider()
-        filesystem = FileSystem.new(
+        with FileSystem.new(
             self.requested_filesystem, default_provider,
             self.root_dir, self.filesystem_custom_parameters
-        )
-        filesystem.create_on_file(
-            self.filename, self.label,
-            Defaults.get_exclude_list_for_root_data_sync()
-        )
+        ) as filesystem:
+            filesystem.create_on_file(
+                self.filename, self.label,
+                Defaults.get_exclude_list_for_root_data_sync() + Defaults.
+                get_exclude_list_from_custom_exclude_files(self.root_dir)
+            )

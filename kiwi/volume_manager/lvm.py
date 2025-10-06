@@ -17,6 +17,9 @@
 #
 import os
 import logging
+from typing import (
+    Dict, List
+)
 
 # project
 import kiwi.defaults as defaults
@@ -29,7 +32,8 @@ from kiwi.filesystem import FileSystem
 from kiwi.path import Path
 
 from kiwi.exceptions import (
-    KiwiVolumeGroupConflict
+    KiwiVolumeGroupConflict,
+    KiwiCommandError
 )
 
 log = logging.getLogger('kiwi')
@@ -105,8 +109,7 @@ class VolumeManagerLVM(VolumeManagerBase):
 
         if self._volume_group_in_use_on_host_system(volume_group_name):
             raise KiwiVolumeGroupConflict(
-                'Requested volume group %s is in use on this host' %
-                volume_group_name
+                f'Requested volume group {volume_group_name} is in use on this host'
             )
         log.info(
             'Creating volume group %s', volume_group_name
@@ -228,7 +231,9 @@ class VolumeManagerLVM(VolumeManagerBase):
         for mount_path in Path.sort_by_hierarchy(sorted(volume_paths.keys())):
             self.mount_list.append(volume_paths[mount_path])
 
-    def get_fstab(self, persistency_type, filesystem_name):
+    def get_fstab(
+        self, persistency_type: str = 'by-label', filesystem_name: str = ''
+    ) -> List[str]:
         """
         Implements creation of the fstab entries. The method
         returns a list of fstab compatible entries
@@ -266,7 +271,7 @@ class VolumeManagerLVM(VolumeManagerBase):
 
         return fstab_entries
 
-    def get_volumes(self):
+    def get_volumes(self) -> Dict:
         """
         Return dict of volumes
 
@@ -296,22 +301,14 @@ class VolumeManagerLVM(VolumeManagerBase):
             volume_mount.mount(
                 options=[self.mount_options]
             )
-        self.volumes_mounted_initially = True
 
     def umount_volumes(self):
         """
         Umount lvm volumes
-
-        :return: True if all subvolumes are successfully unmounted
-
-        :rtype: bool
         """
-        all_volumes_umounted = True
         for volume_mount in reversed(self.mount_list):
             if volume_mount.is_mounted():
-                if not volume_mount.umount():
-                    all_volumes_umounted = False
-        return all_volumes_umounted
+                volume_mount.umount()
 
     def _is_volume_enabled_for_fs_check(self, volume_name):
         for volume in self.volumes:
@@ -327,16 +324,16 @@ class VolumeManagerLVM(VolumeManagerBase):
             # perform a second lookup of a label specified via the
             # rootfs_label from the type setup
             volume_label = self.custom_args['root_label']
-        filesystem = FileSystem.new(
+        with FileSystem.new(
             name=filesystem_name,
             device_provider=MappedDevice(
                 device=device_node, device_provider=self.device_provider_root
             ),
             custom_args=self.custom_filesystem_args
-        )
-        filesystem.create_on_device(
-            label=volume_label
-        )
+        ) as filesystem:
+            filesystem.create_on_device(
+                label=volume_label
+            )
 
     def _add_to_mount_list(self, volume_name, realpath):
         device_node = self.volume_map[volume_name]
@@ -392,18 +389,18 @@ class VolumeManagerLVM(VolumeManagerBase):
             if volume_name == volume.name and volume.label == 'SWAP':
                 return True
 
-    def __del__(self):
+    def __exit__(self, exc_type, exc_value, traceback):
         if self.volume_group:
-            log.info('Cleaning up %s instance', type(self).__name__)
-            if self.umount_volumes():
-                try:
-                    Command.run(
-                        ['vgchange'] + self.lvm_tool_options + [
-                            '-an', self.volume_group
-                        ]
+            try:
+                self.umount_volumes()
+                Command.run(
+                    ['vgchange'] + self.lvm_tool_options + [
+                        '-an', self.volume_group
+                    ]
+                )
+            except KiwiCommandError as issue:
+                log.error(
+                    'volume group {0} detach failed with {1}'.format(
+                        self.volume_group, issue
                     )
-                except Exception:
-                    log.warning(
-                        'volume group %s still busy', self.volume_group
-                    )
-                    return
+                )

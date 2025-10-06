@@ -22,10 +22,14 @@ from typing import (
 )
 
 # project
-from kiwi.utils.temporary import Temporary
+import kiwi.defaults as defaults
+from kiwi.utils.temporary import (
+    Temporary, TmpT
+)
 from kiwi.repository.base import RepositoryBase
 from kiwi.path import Path
 from kiwi.command import Command
+from kiwi.utils.toenv import ToEnv
 
 
 class RepositoryPacman(RepositoryBase):
@@ -48,13 +52,14 @@ class RepositoryPacman(RepositoryBase):
 
         :param list custom_args: pacman arguments
         """
+        self.runtime_pacman_config_file = TmpT(name='')
         self.custom_args = custom_args
         self.check_signatures = False
         self.repo_names: List = []
 
         self.runtime_pacman_config_file = Temporary(
-            path=self.root_dir
-        ).new_file()
+            path=self.root_dir, prefix='kiwi_pacman.config'
+        ).unmanaged_file()
 
         if 'check_signatures' in self.custom_args:
             self.custom_args.remove('check_signatures')
@@ -87,6 +92,7 @@ class RepositoryPacman(RepositoryBase):
         """
         pacman runtime configuration and environment
         """
+        ToEnv(self.root_dir, defaults.PACKAGE_MANAGER_ENV_VARS)
         return {
             'pacman_args': self.pacman_args,
             'command_env': os.environ
@@ -112,8 +118,8 @@ class RepositoryPacman(RepositoryBase):
         prio: int = None, dist: str = None, components: str = None,
         user: str = None, secret: str = None, credentials_file: str = None,
         repo_gpgcheck: bool = False, pkg_gpgcheck: bool = False,
-        sourcetype: str = None, use_for_bootstrap: bool = False,
-        customization_script: str = None
+        sourcetype: str = None, customization_script: str = None,
+        architectures: str = None
     ) -> None:
         """
         Add pacman repository
@@ -130,9 +136,9 @@ class RepositoryPacman(RepositoryBase):
         :param bool repo_gpgcheck: enable database signature validation
         :param bool pkg_gpgcheck: enable package signature validation
         :param str sourcetype: unused
-        :param bool use_for_bootstrap: unused
         :param str customization_script:
             custom script called after the repo file was created
+        :param str architectures: unused
         """
         repo_file = '{0}/{1}.repo'.format(
             self.shared_pacman_dir['repos-dir'], name
@@ -254,3 +260,10 @@ class RepositoryPacman(RepositoryBase):
 
         with open(self.runtime_pacman_config_file.name, 'w') as config:
             runtime_pacman_config.write(config)
+
+    def cleanup(self) -> None:
+        """
+        Delete intermediate pacman config file
+        """
+        if os.path.isfile(self.runtime_pacman_config_file.name):
+            os.unlink(self.runtime_pacman_config_file.name)

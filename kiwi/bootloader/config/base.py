@@ -15,6 +15,7 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
+from abc import ABC, abstractmethod
 import os
 import re
 import logging
@@ -26,6 +27,7 @@ from kiwi.storage.setup import DiskSetup
 from kiwi.path import Path
 from kiwi.defaults import Defaults
 from kiwi.utils.block import BlockID
+from kiwi.system.setup import SystemSetup
 
 from kiwi.exceptions import (
     KiwiBootLoaderTargetError
@@ -34,7 +36,7 @@ from kiwi.exceptions import (
 log = logging.getLogger('kiwi')
 
 
-class BootLoaderConfigBase:
+class BootLoaderConfigBase(ABC):
     """
     **Base class for bootloader configuration**
 
@@ -42,22 +44,29 @@ class BootLoaderConfigBase:
     :param string root_dir: root directory path name
     :param dict custom_args: custom bootloader arguments dictionary
     """
-    def __init__(self, xml_state, root_dir, boot_dir=None, custom_args=None):
+    def __init__(self, xml_state, root_dir, boot_dir=None, custom_args={}):
         self.root_dir = root_dir
         self.boot_dir = boot_dir or root_dir
         self.xml_state = xml_state
+        self.bootloader = xml_state.get_build_type_bootloader_name()
         self.arch = Defaults.get_platform_name()
 
+        self.system_is_mounted = False
         self.volumes_mount = []
         self.root_mount = None
         self.boot_mount = None
         self.efi_mount = None
         self.device_mount = None
         self.proc_mount = None
+        self.sys_mount = None
         self.tmp_mount = None
+        self.etc_kernel_mount = None
 
         self.root_filesystem_is_overlay = xml_state.build_type.get_overlayroot()
         self.post_init(custom_args)
+
+    def __enter__(self):
+        return self
 
     def post_init(self, custom_args):
         """
@@ -69,27 +78,32 @@ class BootLoaderConfigBase:
         """
         self.custom_args = custom_args
 
+    @abstractmethod
     def write(self):
         """
         Write config data to config file.
 
         Implementation in specialized bootloader class required
         """
-        raise NotImplementedError
 
-    def write_meta_data(self, root_device=None, boot_options=''):
+    def write_meta_data(
+        self, root_device=None, write_device=None, boot_options=''
+    ):
         """
         Write bootloader setup meta data files
 
         :param string root_device: root device node
+        :param string write_device: overlay root write device node
         :param string boot_options: kernel options as string
 
         Implementation in specialized bootloader class optional
         """
         pass
 
+    @abstractmethod
     def setup_disk_image_config(
-        self, boot_uuid, root_uuid, hypervisor, kernel, initrd, boot_options={}
+        self, boot_uuid=None, root_uuid=None, hypervisor=None,
+        kernel=None, initrd=None, boot_options={}
     ):
         """
         Create boot config file to boot from disk.
@@ -111,8 +125,8 @@ class BootLoaderConfigBase:
 
         Implementation in specialized bootloader class required
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def setup_install_image_config(
         self, mbrid, hypervisor, kernel, initrd
     ):
@@ -126,8 +140,8 @@ class BootLoaderConfigBase:
 
         Implementation in specialized bootloader class required
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def setup_live_image_config(
         self, mbrid, hypervisor, kernel, initrd
     ):
@@ -141,9 +155,11 @@ class BootLoaderConfigBase:
 
         Implementation in specialized bootloader class required
         """
-        raise NotImplementedError
 
-    def setup_disk_boot_images(self, boot_uuid, lookup_path=None):
+    @abstractmethod
+    def setup_disk_boot_images(
+        self, boot_uuid, efi_uuid=None, lookup_path=None
+    ):
         """
         Create bootloader images for disk boot
 
@@ -152,12 +168,13 @@ class BootLoaderConfigBase:
         path on a filesystem.
 
         :param string boot_uuid: boot device UUID
+        :param string efi_uuid: EFI device UUID
         :param string lookup_path: custom module lookup path
 
         Implementation in specialized bootloader class required
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def setup_install_boot_images(self, mbrid, lookup_path=None):
         """
         Create bootloader images for ISO boot an install media
@@ -167,8 +184,8 @@ class BootLoaderConfigBase:
 
         Implementation in specialized bootloader class required
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def setup_live_boot_images(self, mbrid, lookup_path=None):
         """
         Create bootloader images for ISO boot a live ISO image
@@ -178,8 +195,8 @@ class BootLoaderConfigBase:
 
         Implementation in specialized bootloader class required
         """
-        raise NotImplementedError
 
+    @abstractmethod
     def setup_sysconfig_bootloader(self):
         """
         Create or update etc/sysconfig/bootloader by parameters
@@ -187,7 +204,6 @@ class BootLoaderConfigBase:
 
         Implementation in specialized bootloader class required
         """
-        raise NotImplementedError
 
     def create_efi_path(self, in_sub_dir='boot/efi'):
         """
@@ -261,11 +277,18 @@ class BootLoaderConfigBase:
             return False
         return True
 
-    def get_boot_cmdline(self, boot_device=None):
+    def get_boot_cmdline(self, boot_device, write_device=None):
         """
         Boot commandline arguments passed to the kernel
 
-        :param string boot_device: boot device node
+        :param string boot_device:
+            boot device node. If no extra boot device exists
+            then boot device equals root device. In case of
+            an overlay setup the boot device equals the
+            readonly root device
+
+        :param string write_device:
+            optional overlay write device node
 
         :return: kernel boot arguments
 
@@ -275,7 +298,14 @@ class BootLoaderConfigBase:
         custom_cmdline = self.xml_state.build_type.get_kernelcmdline()
         if custom_cmdline:
             cmdline += ' ' + custom_cmdline
-        custom_root = self._get_root_cmdline_parameter(boot_device)
+        overlay_cmdline = self._get_root_overlay_cmdline_parameter(
+            boot_device, write_device
+        )
+        if overlay_cmdline:
+            cmdline += ' ' + overlay_cmdline
+        custom_root = self._get_root_cmdline_parameter(
+            boot_device
+        )
         if custom_root and custom_root not in cmdline:
             cmdline += ' ' + custom_root
         return cmdline.strip()
@@ -331,10 +361,7 @@ class BootLoaderConfigBase:
             log.warning('Switching to standard install')
             boot_id = 1
 
-        if loader and loader == 'isolinux':
-            return menu_list[boot_id].name
-        else:
-            return menu_list[boot_id].menu_id
+        return menu_list[boot_id].menu_id
 
     def get_boot_path(self, target='disk'):
         """
@@ -354,7 +381,7 @@ class BootLoaderConfigBase:
         """
         if target != 'disk' and target != 'iso':
             raise KiwiBootLoaderTargetError(
-                'Invalid boot loader target %s' % target
+                f'Invalid boot loader target {target}'
             )
         bootpath = '/boot'
         need_boot_partition = False
@@ -362,26 +389,13 @@ class BootLoaderConfigBase:
             disk_setup = DiskSetup(self.xml_state, self.boot_dir)
             need_boot_partition = disk_setup.need_boot_partition()
             if need_boot_partition:
-                # if an extra boot partition is used we will find the
-                # data directly in the root of this partition and not
-                # below the boot/ directory
-                bootpath = '/'
-
-        if target == 'disk':
-            if not need_boot_partition:
-                filesystem = self.xml_state.build_type.get_filesystem()
-                volumes = self.xml_state.get_volumes()
-                if filesystem == 'btrfs' and volumes:
-                    # grub boot data paths must not be in a subvolume
-                    # otherwise grub won't be able to find its config file
-                    grub2_boot_data_paths = ['boot', 'boot/grub', 'boot/grub2']
-                    for volume in volumes:
-                        if volume.name in grub2_boot_data_paths:
-                            raise KiwiBootLoaderTargetError(
-                                '{0} must not be a subvolume'.format(
-                                    volume.name
-                                )
-                            )
+                if self.bootloader != 'zipl':
+                    # if an extra boot partition is used we will find the
+                    # data directly in the root of this partition and not
+                    # below the boot/ directory. An exception to this case
+                    # is the zipl bootloader which finds its target
+                    # according to the mount path.
+                    bootpath = '/'
 
         if target == 'iso':
             bootpath = '/boot/' + self.arch + '/loader'
@@ -477,18 +491,17 @@ class BootLoaderConfigBase:
 
         if target == 'grub2':
             return gfxmode_map[gfxmode].grub2
-        elif target == 'isolinux':
-            return gfxmode_map[gfxmode].isolinux
         else:
             return gfxmode
 
     def _mount_system(
-        self, root_device, boot_device, efi_device=None, volumes=None
+        self, root_device, boot_device, efi_device=None,
+        volumes=None, root_volume_name=None
     ):
         self.root_mount = MountManager(
             device=root_device
         )
-        if 's390' in self.arch:
+        if 's390' in self.arch and self.bootloader == 'grub2_s390x_emu':
             self.boot_mount = MountManager(
                 device=boot_device,
                 mountpoint=self.root_mount.mountpoint + '/boot/zipl'
@@ -504,13 +517,13 @@ class BootLoaderConfigBase:
                 mountpoint=self.root_mount.mountpoint + '/boot/efi'
             )
 
-        self.root_mount.mount()
+        custom_root_mount_args = []
+        if root_volume_name and root_volume_name != '/':
+            custom_root_mount_args += [f'subvol={root_volume_name}']
+        self.root_mount.mount(options=custom_root_mount_args)
 
         if not self.root_mount.device == self.boot_mount.device:
             self.boot_mount.mount()
-
-        if efi_device:
-            self.efi_mount.mount()
 
         if volumes:
             for volume_path in Path.sort_by_hierarchy(
@@ -525,17 +538,28 @@ class BootLoaderConfigBase:
                     options=[volumes[volume_path]['volume_options']]
                 )
 
+        if efi_device:
+            self.efi_mount.mount()
+
         if self.root_filesystem_is_overlay:
             # In case of an overlay root system all parts of the rootfs
-            # are read-only by squashfs except for the extra boot partition.
-            # However tools like grub's mkconfig creates temporary files
-            # at call time and therefore /tmp needs to be writable during
-            # the call time of the tools
+            # are read-only. However tools like grub's mkconfig creates
+            # temporary files at call time and therefore /tmp needs to
+            # be writable during the call time of the tools
             self.tmp_mount = MountManager(
                 device='/tmp',
                 mountpoint=self.root_mount.mountpoint + '/tmp'
             )
             self.tmp_mount.bind_mount()
+
+            # There are also tools that writes to /etc/kernel, e.g
+            # systemd-boot. If it exists we map it to the ESP
+            etc_kernel = f'{self.root_mount.mountpoint}/etc/kernel'
+            if os.path.exists(etc_kernel):
+                self.etc_kernel_mount = MountManager(
+                    device=efi_device, mountpoint=etc_kernel
+                )
+                self.etc_kernel_mount.mount()
 
         self.device_mount = MountManager(
             device='/dev',
@@ -545,50 +569,133 @@ class BootLoaderConfigBase:
             device='/proc',
             mountpoint=self.root_mount.mountpoint + '/proc'
         )
+        self.sys_mount = MountManager(
+            device='/sys',
+            mountpoint=self.root_mount.mountpoint + '/sys'
+        )
         self.device_mount.bind_mount()
         self.proc_mount.bind_mount()
+        self.sys_mount.bind_mount()
+        self.system_is_mounted = True
+
+    def _umount_system(self):
+        if self.system_is_mounted:
+            # Rebuild security context
+            setup = SystemSetup(self.xml_state, self.root_mount.mountpoint)
+            setup.setup_selinux_file_contexts()
+            # Umount system
+            if self.efi_mount:
+                self.efi_mount.umount()
+            if self.boot_mount:
+                self.boot_mount.umount()
+            for volume_mount in reversed(self.volumes_mount):
+                volume_mount.umount()
+            if self.device_mount:
+                self.device_mount.umount()
+            if self.proc_mount:
+                self.proc_mount.umount()
+            if self.sys_mount:
+                self.sys_mount.umount()
+            if self.tmp_mount:
+                self.tmp_mount.umount()
+            if self.etc_kernel_mount:
+                self.etc_kernel_mount.umount()
+            if self.root_mount:
+                self.root_mount.umount()
+            self.system_is_mounted = False
 
     def _get_root_cmdline_parameter(self, boot_device):
+        """
+        root= argument passed to the kernel
+
+        :param string boot_device:
+            boot device node. If no extra boot device exists
+            then boot device equals root device. In case of
+            an overlay setup the boot device equals the
+            readonly root device
+        """
         cmdline = self.xml_state.build_type.get_kernelcmdline()
-        persistency_type = self.xml_state.build_type.get_devicepersistency()
         if cmdline and 'root=' in cmdline:
-            log.info(
+            log.warning(
                 'Kernel root device explicitly set via kernelcmdline'
             )
             root_search = re.search(r'(root=(.*)[ ]+|root=(.*)$)', cmdline)
             if root_search:
                 return root_search.group(1)
         if boot_device:
-            block_operation = BlockID(boot_device)
-            if persistency_type == 'by-label':
-                blkid_type = 'LABEL'
-            elif persistency_type == 'by-partuuid':
-                blkid_type = 'PARTUUID'
-            else:
-                blkid_type = 'UUID'
-            location = block_operation.get_blkid(blkid_type)
             if self.xml_state.build_type.get_overlayroot():
-                return f'root=overlay:{blkid_type}={location}'
+                # In case of an overlay setup the root partition is read-only
+                # In this case the root location will be specified by the
+                # partition uuid because not all read-only filesystems have one.
+                # Exception to this is if the overlay is also encrypted
+                # Exception to this is if the overlay is on verity
+                verity = self.xml_state.build_type.get_verity_blocks()
+                luks = self.xml_state.get_luks_credentials()
+                if luks is not None:
+                    return 'root=overlay:MAPPER=luks'
+                elif verity:
+                    return 'root=overlay:MAPPER=verityroot'
+                else:
+                    root_location = self._get_location(
+                        boot_device, 'by-partuuid'
+                    )
+                    return 'root=overlay:{0}={1}'.format(
+                        root_location['type'], root_location['name']
+                    )
             else:
-                return f'root={blkid_type}={location}'
+                root_location = self._get_location(boot_device)
+                return 'root={0}={1}'.format(
+                    root_location['type'], root_location['name']
+                )
         else:
             log.warning(
                 'No explicit root= cmdline provided'
             )
 
-    def __del__(self):
-        log.info('Cleaning up %s instance', type(self).__name__)
-        for volume_mount in reversed(self.volumes_mount):
-            volume_mount.umount()
-        if self.device_mount:
-            self.device_mount.umount()
-        if self.proc_mount:
-            self.proc_mount.umount()
-        if self.efi_mount:
-            self.efi_mount.umount()
-        if self.tmp_mount:
-            self.tmp_mount.umount()
-        if self.boot_mount:
-            self.boot_mount.umount()
-        if self.root_mount:
-            self.root_mount.umount()
+    def _get_root_overlay_cmdline_parameter(self, boot_device, write_device):
+        """
+        rd.root.overlay.write= argument passed to the kernel
+
+        :param string boot_device:
+            boot device node. If no extra boot device exists
+            then boot device equals root device. In case of
+            an overlay setup the boot device equals the
+            readonly root device
+
+        :param string write_device:
+            overlay write device
+        """
+        root_overlay_parameter = ''
+        cmdline = self.xml_state.build_type.get_kernelcmdline()
+        if self.xml_state.build_type.get_overlayroot():
+            if cmdline and 'rd.root.overlay.write=' in cmdline:
+                log.warning(
+                    'Overlay write device explicitly set via kernelcmdline'
+                )
+            elif write_device and write_device != boot_device:
+                write_location = self._get_location(write_device)
+                root_overlay_parameter = 'rd.root.overlay.write={0}'.format(
+                    write_location['node']
+                )
+        return root_overlay_parameter
+
+    def _get_location(self, device, persistency_type=''):
+        if not persistency_type:
+            persistency_type = self.xml_state.build_type.get_devicepersistency()
+        block_operation = BlockID(device)
+        if persistency_type == 'by-label':
+            blkid_type = 'LABEL'
+        elif persistency_type == 'by-partuuid':
+            blkid_type = 'PARTUUID'
+        else:
+            persistency_type = 'by-uuid'
+            blkid_type = 'UUID'
+        location = block_operation.get_blkid(blkid_type)
+        return {
+            'type': blkid_type,
+            'name': location,
+            'node': f'/dev/disk/{persistency_type}/{location}'
+        }
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        self._umount_system()

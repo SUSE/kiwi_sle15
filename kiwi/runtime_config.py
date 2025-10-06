@@ -17,6 +17,9 @@
 #
 import os
 import logging
+from typing import (
+    Literal, List, Optional
+)
 import yaml
 
 # project
@@ -48,7 +51,7 @@ class RuntimeConfig:
 
     :param bool reread: reread runtime config
     """
-    def __init__(self, reread=False):
+    def __init__(self, reread: bool = False):
         global RUNTIME_CONFIG
 
         if RUNTIME_CONFIG is None or reread:
@@ -74,7 +77,7 @@ class RuntimeConfig:
                 with open(config_file, 'r') as config:
                     RUNTIME_CONFIG = yaml.safe_load(config) or {}
 
-    def get_credentials_verification_metadata_signing_key_file(self):
+    def get_credentials_verification_metadata_signing_key_file(self) -> str:
         """
         Return verification metadata signing key file, used for
         signature creation of rootfs verification metadata:
@@ -94,7 +97,7 @@ class RuntimeConfig:
         )
         return signing_key_file if signing_key_file else ''
 
-    def get_obs_download_server_url(self):
+    def get_obs_download_server_url(self) -> str:
         """
         Return URL of buildservice download server in:
 
@@ -114,7 +117,7 @@ class RuntimeConfig:
         return obs_download_server_url if obs_download_server_url else \
             Defaults.get_obs_download_server_url()
 
-    def get_obs_api_server_url(self):
+    def get_obs_api_server_url(self) -> str:
         """
         Return URL of buildservice API server in:
 
@@ -134,7 +137,7 @@ class RuntimeConfig:
         return obs_api_server_url if obs_api_server_url else \
             Defaults.get_obs_api_server_url()
 
-    def get_obs_api_credentials(self):
+    def get_obs_api_credentials(self) -> List[str]:
         """
         Return OBS API credentials if configured:
 
@@ -147,10 +150,9 @@ class RuntimeConfig:
         :rtype: list
         """
         obs_users = self._get_attribute(element='obs', attribute='user') or []
-        if obs_users:
-            return obs_users
+        return obs_users
 
-    def is_obs_public(self):
+    def is_obs_public(self) -> bool:
         """
         Check if the buildservice configuration is public or private in:
 
@@ -169,7 +171,7 @@ class RuntimeConfig:
             obs_public = True
         return bool(obs_public)
 
-    def get_package_changes(self, default=True):
+    def get_package_changes(self, default: bool = True) -> bool:
         """
         Return boolean value to express if the image build and bundle
         should contain a .changes file. The .changes file contains
@@ -200,7 +202,7 @@ class RuntimeConfig:
                 bundle_package_changes = default
         return bool(bundle_package_changes)
 
-    def get_bundle_compression(self, default=True):
+    def get_bundle_compression(self, default: bool = True) -> bool:
         """
         Return boolean value to express if the image bundle should
         contain XZ compressed image results or not.
@@ -228,7 +230,7 @@ class RuntimeConfig:
             bundle_compress = default
         return bool(bundle_compress)
 
-    def get_xz_options(self):
+    def get_xz_options(self) -> Optional[List[str]]:
         """
         Return list of XZ compression options in:
 
@@ -249,7 +251,7 @@ class RuntimeConfig:
         xz_options = self._get_attribute(element='xz', attribute='options')
         return xz_options.split() if xz_options else None
 
-    def get_container_compression(self):
+    def get_container_compression(self) -> bool:
         """
         Return compression for container images
 
@@ -280,7 +282,7 @@ class RuntimeConfig:
             )
             return Defaults.get_container_compression()
 
-    def get_iso_tool_category(self):
+    def get_iso_tool_category(self) -> str:
         """
         Return tool category which should be used to build iso images
 
@@ -309,7 +311,38 @@ class RuntimeConfig:
             )
             return Defaults.get_iso_tool_category()
 
-    def get_oci_archive_tool(self):
+    def get_iso_media_tag_tool(self) -> Literal['checkmedia', 'isomd5sum']:
+        """
+        Return media tag tool used to checksum iso images
+
+        iso:
+          - media_tag_tool: checkmedia
+
+        if no or invalid configuration exists the default media tagger
+        from the Defaults class is returned
+
+        :return: A name
+
+        :rtype: str
+        """
+        iso_media_tag_tool = self._get_attribute(
+            element='iso', attribute='media_tag_tool'
+        )
+        if not iso_media_tag_tool:
+            return Defaults.get_iso_media_tag_tool()
+        elif 'checkmedia' in iso_media_tag_tool:
+            return iso_media_tag_tool
+        elif 'isomd5sum' in iso_media_tag_tool:
+            return iso_media_tag_tool
+        else:
+            log.warning(
+                'Skipping invalid iso media tag tool: {0}'.format(
+                    iso_media_tag_tool
+                )
+            )
+            return Defaults.get_iso_media_tag_tool()
+
+    def get_oci_archive_tool(self) -> str:
         """
         Return OCI archive tool which should be used on creation of
         container archives for OCI compliant images, e.g docker
@@ -329,7 +362,26 @@ class RuntimeConfig:
         )
         return oci_archive_tool or Defaults.get_oci_archive_tool()
 
-    def get_max_size_constraint(self):
+    def get_mapper_tool(self) -> str:
+        """
+        Return partition mapper tool
+
+        mapper:
+          - part_mapper: partx
+
+        if no configuration exists the default tool from the
+        Defaults class is returned
+
+        :return: A name
+
+        :rtype: str
+        """
+        part_mapper_tool = self._get_attribute(
+            element='mapper', attribute='part_mapper'
+        )
+        return part_mapper_tool or Defaults.get_part_mapper_tool()
+
+    def get_max_size_constraint(self) -> Optional[int]:
         """
         Returns the maximum allowed size of the built image. The value is
         returned in bytes and it is specified in build_constraints element
@@ -350,7 +402,7 @@ class RuntimeConfig:
         )
         return StringToSize.to_bytes(max_size) if max_size else None
 
-    def get_disabled_runtime_checks(self):
+    def get_disabled_runtime_checks(self) -> List[str]:
         """
         Returns disabled runtime checks. Checks can be disabled with:
 
@@ -362,10 +414,12 @@ class RuntimeConfig:
         """
         disabled_checks = self._get_attribute(
             element='runtime_checks', attribute='disable'
-        )
-        return disabled_checks or ''
+        ) or []
+        for check in disabled_checks:
+            log.warning(f'Runtime check: {check}: disabled')
+        return disabled_checks
 
-    def _get_attribute(self, element, attribute):
+    def _get_attribute(self, element: str, attribute: str):
         if RUNTIME_CONFIG:
             try:
                 if element in RUNTIME_CONFIG:
@@ -377,5 +431,5 @@ class RuntimeConfig:
                     f'{type(issue).__name__}: {issue}'
                 )
 
-    def _home_path(self):
-        return os.environ.get('HOME')
+    def _home_path(self) -> str:
+        return os.environ.get('HOME') or ''

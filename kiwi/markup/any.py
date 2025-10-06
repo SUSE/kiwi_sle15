@@ -17,6 +17,7 @@
 #
 from typing import Any
 import importlib
+import importlib.util
 
 # project
 from kiwi.utils.temporary import Temporary
@@ -40,7 +41,10 @@ class MarkupAny(MarkupBase):
         input format and can convert YAML, JSON and INI to XML
         """
         try:
-            self.anymarkup: Any = importlib.import_module('anymarkup')
+            anymarkup_mod = 'anymarkup'
+            if importlib.util.find_spec('anymarkup_core'):
+                anymarkup_mod = 'anymarkup_core'
+            self.anymarkup: Any = importlib.import_module(anymarkup_mod)
         except Exception as issue:
             raise KiwiAnyMarkupPluginError(issue)
         try:
@@ -65,6 +69,25 @@ class MarkupAny(MarkupBase):
         return self.apply_xslt_stylesheets(
             self.description_markup_processed.name
         )
+
+    def get_toml_description(self) -> str:
+        """
+        Return TOML description file name
+
+        :return: file path name
+
+        :rtype: str
+        """
+        xml_description_xslt_transformed = self.apply_xslt_stylesheets(
+            self.description_markup_processed.name
+        )
+        markup = self.anymarkup.parse_file(
+            xml_description_xslt_transformed, force_types=None
+        )
+        self.anymarkup.serialize_file(
+            markup, xml_description_xslt_transformed, format='toml'
+        )
+        return xml_description_xslt_transformed
 
     def get_yaml_description(self) -> str:
         """

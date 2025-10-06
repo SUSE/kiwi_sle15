@@ -15,8 +15,13 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
+import os
 import logging
 from collections import namedtuple
+from kiwi.command import CommandCallT
+from typing import (
+    NamedTuple, List, Callable
+)
 
 # project
 from kiwi.utils.codec import Codec
@@ -25,6 +30,11 @@ from kiwi.logger import Logger
 from kiwi.exceptions import KiwiCommandError
 
 log = logging.getLogger('kiwi')
+
+
+class PollT(NamedTuple):
+    stdout_line: str
+    stderr_line: str
 
 
 class CommandProcess:
@@ -37,7 +47,7 @@ class CommandProcess:
     :param subprocess command: instance of subprocess
     :param string log_topic: topic string for logging
     """
-    def __init__(self, command, log_topic='system'):
+    def __init__(self, command: CommandCallT, log_topic='system') -> None:
         self.command = CommandIterator(command)
         self.log_topic = log_topic
         self.items_processed = 0
@@ -46,7 +56,8 @@ class CommandProcess:
         """
         Iterate over process, raise on error and log output
         """
-        for line in self.command:
+        for lineT in self.command:
+            line = lineT.stdout_line
             if line:
                 log.debug('%s: %s', self.log_topic, line)
         if self.command.get_error_code() != 0:
@@ -54,7 +65,10 @@ class CommandProcess:
                 self.command.get_error_output()
             )
 
-    def poll_show_progress(self, items_to_complete, match_method):
+    def poll_show_progress(
+        self, items_to_complete: List[str], match_method: Callable,
+        with_stderr: bool = False
+    ):
         """
         Iterate over process and show progress in percent
         raise on error and log output
@@ -63,12 +77,16 @@ class CommandProcess:
         :param function match_method: method matching item
         """
         self._init_progress()
-        for line in self.command:
-            if line:
-                log.debug('%s: %s', self.log_topic, line)
-                self._update_progress(
-                    match_method, items_to_complete, line
-                )
+        for lineT in self.command:
+            lines = [lineT.stdout_line]
+            if with_stderr:
+                lines.append(lineT.stderr_line)
+            for line in lines:
+                if line:
+                    log.debug('%s: %s', self.log_topic, line)
+                    self._update_progress(
+                        match_method, items_to_complete, line
+                    )
         self._stop_progress()
         if self.command.get_error_code() != 0:
             raise KiwiCommandError(
@@ -82,7 +100,8 @@ class CommandProcess:
         """
         log.info(self.log_topic)
         log.debug('--------------out start-------------')
-        for line in self.command:
+        for lineT in self.command:
+            line = lineT.stdout_line
             if line:
                 log.debug(line)
         log.debug('--------------out stop--------------')
@@ -94,7 +113,8 @@ class CommandProcess:
         )
         if error_output:
             log.debug('--------------err start-------------')
-            log.debug(error_output)
+            for line in error_output.split(os.linesep):
+                log.debug(line)
             log.debug('--------------err stop--------------')
         return result(
             stderr=error_output, returncode=error_code
@@ -140,13 +160,6 @@ class CommandProcess:
                         '[ INFO    ]: Processing'
                     )
 
-    def __del__(self):
-        if self.command and self.command.get_error_code() is None:
-            log.info(
-                'Terminating subprocess %d', self.command.get_pid()
-            )
-            self.command.kill()
-
 
 class CommandIterator:
     """
@@ -154,15 +167,17 @@ class CommandIterator:
 
     :param subprocess command: instance of subprocess
     """
-    def __init__(self, command):
+    def __init__(self, command: CommandCallT) -> None:
         self.command = command
         self.command_error_output = bytes(b'')
         self.command_output_line = bytes(b'')
+        self.command_error_line = bytes(b'')
         self.output_eof_reached = False
         self.errors_eof_reached = False
 
-    def __next__(self):
-        line_read = None
+    def __next__(self) -> PollT:
+        line_stdout = ''
+        line_stderr = ''
         if self.command.process.poll() is not None:
             if self.output_eof_reached and self.errors_eof_reached:
                 raise StopIteration()
@@ -172,7 +187,7 @@ class CommandIterator:
             if not byte_read:
                 self.output_eof_reached = True
             elif byte_read == bytes(b'\n'):
-                line_read = Codec.decode(self.command_output_line)
+                line_stdout = Codec.decode(self.command_output_line)
                 self.command_output_line = bytes(b'')
             else:
                 self.command_output_line += byte_read
@@ -181,10 +196,18 @@ class CommandIterator:
             byte_read = self.command.error.read(1)
             if not byte_read:
                 self.errors_eof_reached = True
+            elif byte_read == bytes(b'\n'):
+                line_stderr = Codec.decode(self.command_error_line)
+                self.command_error_line = bytes(b'')
+                self.command_error_output += byte_read
             else:
+                self.command_error_line += byte_read
                 self.command_error_output += byte_read
 
-        return line_read
+        return PollT(
+            stdout_line=line_stdout,
+            stderr_line=line_stderr
+        )
 
     def get_error_output(self):
         """
@@ -196,7 +219,7 @@ class CommandIterator:
         """
         return Codec.decode(self.command_error_output)
 
-    def get_error_code(self):
+    def get_error_code(self) -> int:
         """
         Provide return value from processed command
 
@@ -206,7 +229,7 @@ class CommandIterator:
         """
         return self.command.process.returncode
 
-    def get_pid(self):
+    def get_pid(self) -> int:
         """
         Provide process ID of command while running
 
@@ -216,7 +239,7 @@ class CommandIterator:
         """
         return self.command.process.pid
 
-    def kill(self):
+    def kill(self) -> None:
         """
         Send kill signal SIGTERM to command process
         """

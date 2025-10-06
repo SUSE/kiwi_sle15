@@ -42,6 +42,9 @@ class OCIBuildah(OCIBase):
         self.imported_image = None
         self.working_container = None
 
+    def __enter__(self):
+        return self
+
     def import_container_image(self, container_image_ref):
         """
         Imports container image reference to the OCI containers storage.
@@ -68,7 +71,11 @@ class OCIBuildah(OCIBase):
             [
                 'skopeo', 'copy', container_image_ref,
                 'containers-storage:{0}'.format(self.imported_image)
-            ]
+            ] + (
+                [
+                    '--tmpdir', Defaults.get_temp_location()
+                ] if self._skopeo_provides_tmpdir_option() else []
+            )
         )
 
         if not self.working_container:
@@ -117,10 +124,16 @@ class OCIBuildah(OCIBase):
 
         # we are using 'skopeo copy' to export images instead of 'buildah push'
         # because buildah does not support multiple tags
-        Command.run([
-            'skopeo', 'copy', 'containers-storage:{0}'.format(export_image),
-            '{0}:{1}:{2}'.format(transport, filename, image_ref)
-        ] + extra_tags_opt)
+        Command.run(
+            [
+                'skopeo', 'copy', 'containers-storage:{0}'.format(export_image),
+                '{0}:{1}:{2}'.format(transport, filename, image_ref)
+            ] + extra_tags_opt + (
+                [
+                    '--tmpdir', Defaults.get_temp_location()
+                ] if self._skopeo_provides_tmpdir_option() else []
+            )
+        )
 
     def init_container(self):
         """
@@ -272,6 +285,11 @@ class OCIBuildah(OCIBase):
             for vol in oci_config['volumes']:
                 arguments.append('--volume={0}'.format(vol))
 
+        if 'stopsignal' in oci_config:
+            arguments.append(
+                '--stop-signal={0}'.format(oci_config['stopsignal'])
+            )
+
         if 'expose_ports' in oci_config:
             for port in oci_config['expose_ports']:
                 arguments.append('--port={0}'.format(port))
@@ -323,7 +341,7 @@ class OCIBuildah(OCIBase):
         """
         return "".join(random.choice(allchars) for x in range(chars_num))
 
-    def __del__(self):
+    def __exit__(self, exc_type, exc_value, traceback):
         if self.working_container:
             Command.run(['buildah', 'umount', self.working_container])
             Command.run(['buildah', 'rm', self.working_container])

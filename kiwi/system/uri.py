@@ -16,15 +16,16 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import os
+import re
 import logging
 from lxml import etree
 from urllib.parse import (
-    urlparse, ParseResult
+    urlparse, ParseResult, quote
 )
 from urllib.request import urlopen
 from urllib.request import Request
 import requests
-import hashlib
+from uuid import uuid4
 from typing import Optional
 
 # project
@@ -152,18 +153,36 @@ class Uri:
         elif uri.scheme == 'file':
             return self._local_path(uri.path)
         elif uri.scheme.startswith('http') or uri.scheme == 'ftp':
+            netloc = uri.netloc
+            uri_with_credentials_pattern = '^(.*):(.*)@(.*)$'
+            sensitive_match = re.match(uri_with_credentials_pattern, netloc)
+            if sensitive_match:
+                netloc = "{0}:{1}@{2}".format(
+                    quote(sensitive_match.group(1)),
+                    quote(sensitive_match.group(2)),
+                    sensitive_match.group(3)
+                )
             if self._get_credentials_uri() or not uri.query:
                 return ''.join(
-                    [uri.scheme, '://', uri.netloc, uri.path]
+                    [uri.scheme, '://', netloc, uri.path]
                 )
             else:
                 return ''.join(
-                    [uri.scheme, '://', uri.netloc, uri.path, '?', uri.query]
+                    [uri.scheme, '://', netloc, uri.path, '?', uri.query]
                 )
         else:
             raise KiwiUriStyleUnknown(
-                'URI schema %s not supported' % self.uri
+                f'URI schema {self.uri} not supported'
             )
+
+    @staticmethod
+    def print_sensitive(location: str) -> str:
+        uri_with_credentials_pattern = '^.*://(.*:.*)@.*'
+        sensitive_match = re.match(uri_with_credentials_pattern, location)
+        if sensitive_match:
+            return location.replace(sensitive_match.group(1), '******')
+        else:
+            return location
 
     def credentials_file_name(self) -> str:
         """
@@ -186,18 +205,18 @@ class Uri:
 
     def alias(self) -> str:
         """
-        Create hexdigest from URI as alias
+        Create hex representation of uuid4
 
         If the repository definition from the XML description does
         not provide an alias, kiwi creates one for you. However it's
         better to assign a human readable alias in the XML
         configuration
 
-        :return: alias name as hexdigest
+        :return: alias name as hex representation of uuid4
 
         :rtype: str
         """
-        return hashlib.md5(self.uri.encode()).hexdigest()
+        return uuid4().hex
 
     def is_remote(self) -> bool:
         """
@@ -210,7 +229,7 @@ class Uri:
         uri = urlparse(self.uri)
         if not uri.scheme:
             raise KiwiUriStyleUnknown(
-                'URI scheme not detected %s' % self.uri
+                f'URI scheme not detected {self.uri}'
             )
         if uri.scheme == 'obs' and Defaults.is_buildservice_worker():
             return False
@@ -220,7 +239,7 @@ class Uri:
             return False
         else:
             raise KiwiUriTypeUnknown(
-                'URI type %s unknown' % uri.scheme
+                f'URI type {uri.scheme} unknown'
             )
 
     def is_public(self) -> bool:
@@ -343,7 +362,7 @@ class Uri:
                     start_preference = preference
         except Exception as issue:
             raise KiwiUriOpenError(
-                f'Failed to resolve metalink URI: {issue}'
+                f'Failed to resolve metalink URI {uri}: {issue}'
             )
         selected_repo_source = selected_repo_source.replace(
             'repodata/repomd.xml', ''

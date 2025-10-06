@@ -41,7 +41,9 @@ from kiwi.exceptions import (
 boot_names_type = NamedTuple(
     'boot_names_type', [
         ('kernel_name', str),
-        ('initrd_name', str)
+        ('initrd_name', str),
+        ('kernel_version', str),
+        ('kernel_filename', str)
     ]
 )
 
@@ -82,7 +84,7 @@ class BootImageBase:
 
         if not os.path.exists(target_dir):
             raise KiwiTargetDirectoryNotFound(
-                'target directory %s not found' % target_dir
+                f'target directory {target_dir} not found'
             )
 
         self.initrd_base_name = ''.join(
@@ -112,6 +114,15 @@ class BootImageBase:
         implementing preparation and creation of an initrd
         """
         return False
+
+    def add_argument(self, option: str, value: str = '') -> None:
+        """
+        Add caller argument to boot image creation tool
+
+        :param str option: argument name
+        :param str value: optional argument value
+        """
+        pass
 
     def include_file(self, filename: str, install_media: bool = False) -> None:
         """
@@ -165,6 +176,30 @@ class BootImageBase:
         """
         pass
 
+    def include_driver(self, driver: str, install_media: bool = False) -> None:
+        """
+        Include driver to the boot image
+
+        For kiwi boot no drivers configuration is required. Thus in
+        such a case this method is a noop.
+
+        :param str driver: driver to include
+        :param bool install_media: include the driver for install initrds
+        """
+        pass
+
+    def omit_driver(self, driver: str, install_media: bool = False) -> None:
+        """
+        Omit driver to the boot image
+
+        For kiwi boot no drivers configuration is required. Thus in
+        such a case this method is a noop.
+
+        :param str driver: driver to omit
+        :param bool install_media: omit the driver for install initrds
+        """
+        pass
+
     def write_system_config_file(
         self, config: Dict, config_file: Optional[str] = None
     ) -> None:
@@ -194,7 +229,9 @@ class BootImageBase:
 
                 boot_names_type(
                     kernel_name='INSTALLED_KERNEL',
-                    initrd_name='DRACUT_OUTPUT_NAME'
+                    initrd_name='DRACUT_OUTPUT_NAME',
+                    kernel_version='KERNEL_VERSION',
+                    kernel_filename='KERNEL_FILE_NAME'
                 )
 
         :rtype: boot_names_type
@@ -205,25 +242,37 @@ class BootImageBase:
         kernel_info = kernel.get_kernel()
         if not kernel_info:
             if self.xml_state.get_initrd_system() == 'none':
-                return boot_names_type(kernel_name='none', initrd_name='none')
+                return boot_names_type(
+                    kernel_name='none', initrd_name='none',
+                    kernel_version='none', kernel_filename='none'
+                )
             raise KiwiDiskBootImageError(
-                'No kernel in boot image tree %s found' %
-                self.boot_root_directory
+                f'No kernel in boot image tree {self.boot_root_directory} found'
             )
         dracut_output_format = self._get_boot_image_output_file_format(
             kernel_info.version
         )
         return boot_names_type(
+            kernel_version=kernel_info.version,
             kernel_name=kernel_info.name,
             initrd_name=dracut_output_format.format(
                 kernel_version=kernel_info.version
-            )
+            ),
+            kernel_filename=kernel_info.filename
         )
 
     def prepare(self) -> None:
         """
         Prepare new root system to create initrd from. Implementation
         is only needed if there is no other root system available
+
+        Implementation in specialized boot image class
+        """
+        raise NotImplementedError
+
+    def create_uki(self, cmdline: str) -> str:
+        """
+        Create UKI EFI binary
 
         Implementation in specialized boot image class
         """
@@ -268,8 +317,7 @@ class BootImageBase:
         boot_config_file = boot_description_directory + '/config.xml'
         if not os.path.exists(boot_config_file):
             raise KiwiConfigFileNotFound(
-                'no Boot XML description found in %s' %
-                boot_description_directory
+                f'no Boot XML description found in {boot_description_directory}'
             )
         boot_description = XMLDescription(
             description=boot_config_file,
@@ -350,7 +398,7 @@ class BootImageBase:
         type_attributes = [
             'bootkernel',
             'bootprofile',
-            'btrfs_root_is_snapshot',
+            'btrfs_root_is_snapper_snapshot',
             'gpt_hybrid_mbr',
             'devicepersistency',
             'filesystem',

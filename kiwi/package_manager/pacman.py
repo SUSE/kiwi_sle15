@@ -18,11 +18,11 @@
 import re
 import logging
 from typing import (
-    List, Dict
+    List, Dict, Optional
 )
 
 # project
-from kiwi.command import command_call_type
+from kiwi.command import CommandCallT
 from kiwi.command import Command
 from kiwi.package_manager.base import PackageManagerBase
 from kiwi.system.root_bind import RootBind
@@ -42,7 +42,7 @@ class PackageManagerPacman(PackageManagerBase):
         pacman command environment from repository
         runtime configuration
     """
-    def post_init(self, custom_args: List = None) -> None:
+    def post_init(self, custom_args: Optional[List[str]] = None) -> None:
         """
         Post initialization method
 
@@ -50,9 +50,7 @@ class PackageManagerPacman(PackageManagerBase):
 
         :param list custom_args: custom pacman arguments
         """
-        self.custom_args = custom_args
-        if not custom_args:
-            self.custom_args = []
+        self.custom_args: List[str] = custom_args or []
 
         runtime_config = self.repository.runtime_config()
         self.pacman_args = runtime_config['pacman_args']
@@ -112,7 +110,7 @@ class PackageManagerPacman(PackageManagerBase):
 
     def process_install_requests_bootstrap(
         self, root_bind: RootBind = None, bootstrap_package: str = None
-    ) -> command_call_type:
+    ) -> CommandCallT:
         """
         Process package install requests for bootstrap phase (no chroot)
 
@@ -141,7 +139,7 @@ class PackageManagerPacman(PackageManagerBase):
             pacman_command, self.command_env
         )
 
-    def process_install_requests(self) -> command_call_type:
+    def process_install_requests(self) -> CommandCallT:
         """
         Process package install requests for image phase (chroot)
 
@@ -160,7 +158,7 @@ class PackageManagerPacman(PackageManagerBase):
             pacman_command, self.command_env
         )
 
-    def process_delete_requests(self, force: bool = False) -> command_call_type:
+    def process_delete_requests(self, force: bool = False) -> CommandCallT:
         """
         Process package delete requests (chroot)
 
@@ -197,7 +195,7 @@ class PackageManagerPacman(PackageManagerBase):
             self.command_env
         )
 
-    def update(self) -> command_call_type:
+    def update(self) -> CommandCallT:
         """
         Process package update requests (chroot)
 

@@ -42,6 +42,7 @@ class FirmWare:
         self.firmware = xml_state.build_type.get_firmware()
         self.efipart_mbytes = xml_state.build_type.get_efipartsize()
         self.efi_partition_table = xml_state.build_type.get_efiparttable()
+        self.gpt_hybrid_mbr = xml_state.build_type.get_gpt_hybrid_mbr()
         self.efi_csm = True if xml_state.build_type.get_eficsm() is None \
             else xml_state.build_type.get_eficsm()
 
@@ -67,6 +68,8 @@ class FirmWare:
         if 's390' in self.arch:
             if self.zipl_target_type and 'CDL' in self.zipl_target_type:
                 return 'dasd'
+            elif self.zipl_target_type and 'GPT' in self.zipl_target_type:
+                return 'gpt'
             else:
                 return 'msdos'
         elif 'ppc64' in self.arch:
@@ -89,6 +92,11 @@ class FirmWare:
             if (self.arch == 'x86_64' or re.match('i.86', self.arch)) and \
                (self.firmware == 'efi' or self.firmware == 'uefi') and \
                self.efi_csm:
+                return True
+            else:
+                return False
+        elif self.get_partition_table_type() == 'msdos':
+            if self.arch == 'x86_64' or re.match('i.86', self.arch):
                 return True
             else:
                 return False
@@ -166,7 +174,7 @@ class FirmWare:
 
         :rtype: int
         """
-        if self.legacy_bios_mode():
+        if self.legacy_bios_mode() and self.efi_mode():
             return Defaults.get_default_legacy_bios_mbytes()
         else:
             return 0

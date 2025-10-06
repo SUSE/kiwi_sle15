@@ -15,7 +15,7 @@
                 : configuration files. The schema is maintained
                 : in the relax compact syntax. Any changes should
                 : made in !! *** kiwi.rnc *** !!
-                : 
+                :
                 :
   STATUS        : Development
   ****************
@@ -31,9 +31,14 @@
       <param name="pattern">[a-zA-Z0-9_\-\.]{1,32}</param>
     </data>
   </define>
+  <define name="ecma-119-achar-128-text">
+    <data type="token">
+      <param name="pattern">[a-zA-Z0-9!-/:-?_ ]{1,128}</param>
+    </data>
+  </define>
   <define name="locale-name">
     <data type="token">
-      <param name="pattern">(POSIX|[a-z]{2,3}_[A-Z]{2})(,[a-z]{2,3}_[A-Z]{2})*</param>
+      <param name="pattern">(C|POSIX|[a-z]{2,3}_[A-Z]{2})(,[a-z]{2,3}_[A-Z]{2})*</param>
     </data>
   </define>
   <define name="mac-address-type">
@@ -78,7 +83,7 @@
   </define>
   <define name="arch-name">
     <data type="token">
-      <param name="pattern">(x86_64|i586|i686|ix86|aarch64|arm64|armv5el|armv5tel|armv6hl|armv6l|armv7hl|armv7l|ppc|ppc64|ppc64le|s390|s390x)(,(x86_64|i586|i686|ix86|aarch64|arm64|armv5el|armv5tel|armv6hl|armv6l|armv7hl|armv7l|ppc|ppc64|ppc64le|s390|s390x))*</param>
+      <param name="pattern">(x86_64|i586|i686|ix86|aarch64|arm64|amd64|armv5el|armv5tel|armv6hl|armv6l|armv7hl|armv7l|ppc|ppc64|ppc64le|s390|s390x|riscv64)(,(x86_64|i586|i686|ix86|aarch64|arm64|amd64|armv5el|armv5tel|armv6hl|armv6l|armv7hl|armv7l|ppc|ppc64|ppc64le|s390|s390x|riscv64))*</param>
     </data>
   </define>
   <define name="portnum-type">
@@ -145,7 +150,7 @@ second the location of the XSD Schema
     <define name="k.image.schemaversion.attribute">
       <attribute name="schemaversion">
         <a:documentation>The allowed Schema version (fixed value)</a:documentation>
-        <value>7.5</value>
+        <value>8.3</value>
       </attribute>
     </define>
     <define name="k.image.id">
@@ -178,7 +183,7 @@ named /etc/ImageID</a:documentation>
     </define>
     <define name="k.image">
       <element name="image">
-        <a:documentation>The root element of the configuration file   </a:documentation>
+        <a:documentation>The root element of the configuration file</a:documentation>
         <interleave>
           <ref name="k.image.attlist"/>
           <zeroOrMore>
@@ -202,6 +207,9 @@ named /etc/ImageID</a:documentation>
           </zeroOrMore>
           <zeroOrMore>
             <ref name="k.repository"/>
+          </zeroOrMore>
+          <zeroOrMore>
+            <ref name="k.containers"/>
           </zeroOrMore>
           <zeroOrMore>
             <ref name="k.packages"/>
@@ -250,8 +258,7 @@ along with it too</a:documentation>
   </define>
   <define name="k.displayname.attribute">
     <attribute name="displayname">
-      <a:documentation>A friendly display name. Used in the boot menu
-for isolinux and grub</a:documentation>
+      <a:documentation>A friendly display name. Used in the boot menu</a:documentation>
     </attribute>
   </define>
   <define name="k.arch.attribute">
@@ -501,9 +508,30 @@ file was fetched</a:documentation>
     <define name="k.file.arch.attribute">
       <ref name="k.arch.attribute"/>
     </define>
+    <define name="k.file.target.attribute">
+      <!-- include file as target to the root(/) of the image. -->
+      <attribute name="target"/>
+    </define>
+    <define name="k.file.owner.attribute">
+      <!-- set ownership to the file. The value is passed to chown -->
+      <attribute name="owner"/>
+    </define>
+    <define name="k.file.permissions.attribute">
+      <!-- set file permissions. The value is passed to chmod -->
+      <attribute name="permissions"/>
+    </define>
     <define name="k.file.attlist">
       <interleave>
         <ref name="k.file.name.attribute"/>
+        <optional>
+          <ref name="k.file.target.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.file.owner.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.file.permissions.attribute"/>
+        </optional>
         <optional>
           <ref name="k.file.arch.attribute"/>
         </optional>
@@ -780,6 +808,29 @@ operation happens only once and then never again</a:documentation>
   </div>
   <!--
     ==========================================
+    common element <oem-ramdisk-size>
+    
+  -->
+  <div>
+    <define name="k.oem-ramdisk-size.content">
+      <text/>
+    </define>
+    <define name="k.oem-ramdisk-size.attlist">
+      <empty/>
+    </define>
+    <define name="k.oem-ramdisk-size">
+      <element name="oem-ramdisk-size">
+        <a:documentation>For oemboot driven images: specify the size of the ramdisk
+The value is taken into account if the deployment of the
+image happens into a ramdisk. The value can be overwritten
+with the kernel boot parameter: ramdisk_size</a:documentation>
+        <ref name="k.oem-ramdisk-size.attlist"/>
+        <ref name="k.oem-ramdisk-size.content"/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
     common element <oem-device-filter>
     
   -->
@@ -1003,7 +1054,7 @@ recovery partition. Value is interpreted as MB</a:documentation>
     </define>
     <define name="k.oem-shutdown">
       <element name="oem-shutdown">
-        <a:documentation>For oemboot driven images: shutdown after first deployment 
+        <a:documentation>For oemboot driven images: shutdown after first deployment
 true/false</a:documentation>
         <ref name="k.oem-shutdown.attlist"/>
         <ref name="k.oem-shutdown.content"/>
@@ -1024,7 +1075,7 @@ true/false</a:documentation>
     </define>
     <define name="k.oem-shutdown-interactive">
       <element name="oem-shutdown-interactive">
-        <a:documentation>For oemboot driven images: shutdown after first deployment 
+        <a:documentation>For oemboot driven images: shutdown after first deployment
 true/false</a:documentation>
         <ref name="k.oem-shutdown-interactive.attlist"/>
         <ref name="k.oem-shutdown-interactive.content"/>
@@ -1087,7 +1138,7 @@ dump process, true/false</a:documentation>
     </define>
     <define name="k.oem-skip-verify">
       <element name="oem-skip-verify">
-        <a:documentation>For oemboot driven images: do not perform the md5
+        <a:documentation>For oemboot driven images: do not perform the checksum
 verification process, true/false</a:documentation>
         <ref name="k.oem-skip-verify.attlist"/>
         <ref name="k.oem-skip-verify.content"/>
@@ -1334,6 +1385,90 @@ the device is looked up in /dev/disk/by-* and /dev/mapper/*</a:documentation>
   </div>
   <!--
     ==========================================
+    common element <shimoption>
+    
+  -->
+  <div>
+    <define name="k.shimoption.name.attribute">
+      <attribute name="name"/>
+    </define>
+    <define name="k.shimoption.value.attribute">
+      <attribute name="value"/>
+    </define>
+    <define name="k.shimoption.attlist">
+      <interleave>
+        <ref name="k.shimoption.name.attribute"/>
+        <optional>
+          <ref name="k.shimoption.value.attribute"/>
+        </optional>
+      </interleave>
+    </define>
+    <define name="k.shimoption">
+      <element name="shimoption">
+        <a:documentation>A shim setup option specification</a:documentation>
+        <ref name="k.shimoption.attlist"/>
+        <empty/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    common element <installoption>
+    
+  -->
+  <div>
+    <define name="k.installoption.name.attribute">
+      <attribute name="name"/>
+    </define>
+    <define name="k.installoption.value.attribute">
+      <attribute name="value"/>
+    </define>
+    <define name="k.installoption.attlist">
+      <interleave>
+        <ref name="k.installoption.name.attribute"/>
+        <optional>
+          <ref name="k.installoption.value.attribute"/>
+        </optional>
+      </interleave>
+    </define>
+    <define name="k.installoption">
+      <element name="installoption">
+        <a:documentation>A install command option specification</a:documentation>
+        <ref name="k.installoption.attlist"/>
+        <empty/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    common element <configoption>
+    
+  -->
+  <div>
+    <define name="k.configoption.name.attribute">
+      <attribute name="name"/>
+    </define>
+    <define name="k.configoption.value.attribute">
+      <attribute name="value"/>
+    </define>
+    <define name="k.configoption.attlist">
+      <interleave>
+        <ref name="k.configoption.name.attribute"/>
+        <optional>
+          <ref name="k.configoption.value.attribute"/>
+        </optional>
+      </interleave>
+    </define>
+    <define name="k.configoption">
+      <element name="configoption">
+        <a:documentation>A config command option specification</a:documentation>
+        <ref name="k.configoption.attlist"/>
+        <empty/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
     common element <package>
     
   -->
@@ -1380,9 +1515,11 @@ the device is looked up in /dev/disk/by-* and /dev/mapper/*</a:documentation>
   <div>
     <define name="k.packagemanager.content">
       <choice>
+        <value>apk</value>
         <value>apt</value>
         <value>zypper</value>
-        <value>dnf</value>
+        <value>dnf4</value>
+        <value>dnf5</value>
         <value>microdnf</value>
         <value>pacman</value>
       </choice>
@@ -1493,6 +1630,109 @@ definition can be composed by other existing profiles.</a:documentation>
   </div>
   <!--
     ==========================================
+    common element <containers>
+    
+  -->
+  <div>
+    <define name="k.containers.profiles.attribute">
+      <ref name="k.profiles.attribute"/>
+    </define>
+    <define name="k.containers.arch.attribute">
+      <ref name="k.arch.attribute"/>
+    </define>
+    <define name="k.containers.source.attribute">
+      <attribute name="source">
+        <a:documentation>Name of registry source server</a:documentation>
+      </attribute>
+    </define>
+    <define name="k.containers.backend.attribute">
+      <attribute name="backend">
+        <a:documentation>Use container with specified container backend</a:documentation>
+        <choice>
+          <value>podman</value>
+          <value>docker</value>
+          <value>container-snap</value>
+        </choice>
+      </attribute>
+    </define>
+    <define name="k.containers.attlist">
+      <interleave>
+        <optional>
+          <ref name="k.containers.profiles.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.containers.arch.attribute"/>
+        </optional>
+        <ref name="k.containers.source.attribute"/>
+        <ref name="k.containers.backend.attribute"/>
+      </interleave>
+    </define>
+    <define name="k.containers">
+      <element name="containers">
+        <ref name="k.containers.attlist"/>
+        <oneOrMore>
+          <ref name="k.container"/>
+        </oneOrMore>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    common element <container>
+    
+  -->
+  <div>
+    <define name="k.container.arch.attribute">
+      <ref name="k.arch.attribute"/>
+    </define>
+    <define name="k.container.name.attribute">
+      <attribute name="name">
+        <a:documentation>Container name</a:documentation>
+      </attribute>
+    </define>
+    <define name="k.container.path.attribute">
+      <attribute name="path">
+        <a:documentation>Container path, default to '/' if not specified</a:documentation>
+      </attribute>
+    </define>
+    <define name="k.container.tag.attribute">
+      <attribute name="tag">
+        <a:documentation>Container tag, defaults to 'latest' if not specified</a:documentation>
+      </attribute>
+    </define>
+    <define name="k.container.fetch_only.attribute">
+      <attribute name="fetch_only">
+        <a:documentation>Only fetch the container but do not activate the
+loading of the container at first boot</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+    </define>
+    <define name="k.container.attlist">
+      <interleave>
+        <ref name="k.container.name.attribute"/>
+        <optional>
+          <ref name="k.container.arch.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.container.path.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.container.tag.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.container.fetch_only.attribute"/>
+        </optional>
+      </interleave>
+    </define>
+    <define name="k.container">
+      <element name="container">
+        <ref name="k.container.attlist"/>
+        <empty/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
     common element <repository>
     
   -->
@@ -1505,15 +1745,18 @@ definition can be composed by other existing profiles.</a:documentation>
     <define name="k.repository.profiles.attribute">
       <ref name="k.profiles.attribute"/>
     </define>
+    <define name="k.repository.arch.attribute">
+      <ref name="k.arch.attribute"/>
+    </define>
     <define name="k.repository.type.attribute">
       <attribute name="type">
         <a:documentation>Type of repository</a:documentation>
         <choice>
+          <value>apk</value>
           <value>apt-deb</value>
           <value>apt-rpm</value>
           <value>deb-dir</value>
           <value>mirrors</value>
-          <value>rpm-dir</value>
           <value>rpm-md</value>
         </choice>
       </attribute>
@@ -1521,11 +1764,13 @@ definition can be composed by other existing profiles.</a:documentation>
     <define name="k.repository.alias.attribute">
       <attribute name="alias">
         <a:documentation>Alias name to be used for this repository. This is an
-optional free form text. If not set the source attribute
-value is used and builds the alias name by running a md5 digest
+optional free-form text restricted to characters from the
+POSIX standard. If not set the source attribute
+value is used and builds the alias name by running a checksum digest
 of the defined URI of the repository. An alias name should be
 set if the source argument doesn't really explain what this
 repository contains.</a:documentation>
+        <ref name="safe-posix-name"/>
       </attribute>
     </define>
     <define name="k.repository.components.attribute">
@@ -1556,17 +1801,18 @@ or false, the default is false.</a:documentation>
     </define>
     <define name="k.repository.repository_gpgcheck.attribute">
       <attribute name="repository_gpgcheck">
-        <a:documentation>Specify whether or not this specific repository is configured to
-to run repository signature validation. If not set, no value is
-appended into the repository configuration file.</a:documentation>
+        <a:documentation>Specify whether or not this specific repository values
+the result of the repository signature validation.
+The default value is false.</a:documentation>
         <data type="boolean"/>
       </attribute>
     </define>
     <define name="k.repository.package_gpgcheck.attribute">
       <attribute name="package_gpgcheck">
-        <a:documentation>Specify whether or not this specific repository is configured
-to run package signature validation. If not set, no value is
-appended into the repository configuration file.</a:documentation>
+        <a:documentation>Specify whether or not this specific repository
+values the result of the package signature validation
+for each package taken from this repository. The default
+value is false.</a:documentation>
         <data type="boolean"/>
       </attribute>
     </define>
@@ -1614,22 +1860,16 @@ be a simple repository url</a:documentation>
         </choice>
       </attribute>
     </define>
-    <define name="k.repository.use_for_bootstrap.attribute">
-      <attribute name="use_for_bootstrap">
-        <a:documentation>Specify whether this repository should be the one used for
-bootstrapping or not. False by default. Only a single repository
-is allowed to be used for bootstrapping. If none is set the
-last one is picked.</a:documentation>
-        <data type="boolean"/>
+    <define name="k.repository.architectures.attribute">
+      <attribute name="architectures">
+        <a:documentation>Specifies for which architecture(s) this repository is
+supposed to provide packages. Multiple architecture names
+needs to be separated by a comma</a:documentation>
+        <ref name="arch-name"/>
       </attribute>
-      <sch:pattern id="use_for_bootstrap" is-a="repo_type">
-        <sch:param name="attr" value="use_for_bootstrap"/>
+      <sch:pattern id="architectures" is-a="repo_type">
+        <sch:param name="attr" value="architectures"/>
         <sch:param name="types" value="apt-deb"/>
-      </sch:pattern>
-      <sch:pattern id="single_deboostrap_repo">
-        <sch:rule context="image">
-          <sch:assert test="count(repository[@use_for_bootstrap='true'])&lt;=1">There can only be a single repository set for bootstrap ('use_for_bootstrap' attribute)</sch:assert>
-        </sch:rule>
       </sch:pattern>
     </define>
     <define name="k.repository.attlist">
@@ -1639,6 +1879,9 @@ last one is picked.</a:documentation>
         </optional>
         <optional>
           <ref name="k.repository.profiles.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.repository.arch.attribute"/>
         </optional>
         <optional>
           <ref name="k.repository.alias.attribute"/>
@@ -1677,7 +1920,7 @@ last one is picked.</a:documentation>
           <ref name="k.repository.username.attribute"/>
         </optional>
         <optional>
-          <ref name="k.repository.use_for_bootstrap.attribute"/>
+          <ref name="k.repository.architectures.attribute"/>
         </optional>
       </interleave>
     </define>
@@ -1750,7 +1993,7 @@ as well as a path specification</a:documentation>
     </define>
     <define name="k.rpm-check-signatures">
       <element name="rpm-check-signatures">
-        <a:documentation>Sets the used package manager to validate, or not, the 
+        <a:documentation>Sets the used package manager to validate, or not, the
 repository and/or package signatures. The behavior can be
 slightly different depending on the used package manager.
 This is a system wide package manager option, so that, this
@@ -1949,6 +2192,9 @@ volume management system</a:documentation>
       <sch:rule context="type[contains('$types', @image)]">
         <sch:assert test="@$attr">$attr attribute must be set for the following image types: $types</sch:assert>
       </sch:rule>
+      <sch:rule context="type[@format='vagrant']">
+        <sch:assert test="vagrantconfig[@provider]">&lt;vagrantconfig&gt; section is required for the vagrant format</sch:assert>
+      </sch:rule>
     </sch:pattern>
     <sch:pattern abstract="true" id="image_expandable">
       <sch:rule context="type[@$attr='true']">
@@ -2006,15 +2252,45 @@ By default the quota system is inactive</a:documentation>
         <sch:param name="types" value="oem"/>
       </sch:pattern>
     </define>
-    <define name="k.type.btrfs_root_is_snapshot.attribute">
-      <attribute name="btrfs_root_is_snapshot">
-        <a:documentation>Tell kiwi to install the system into a btrfs snapshot
-The snapshot layout is compatible with the snapper management
-toolkit. By default no snapshots are used</a:documentation>
+    <define name="k.type.btrfs_set_default_volume.attribute">
+      <attribute name="btrfs_set_default_volume">
+        <a:documentation>Tell kiwi to explicitly make a volume the default volume
+This can be either (/) or the root subvolume or the root
+snapshot depending on the specified btrfs configuration
+attributes. By default btrfs_set_default_volume is set to: true
+If no default volume should be set, this attribute can be
+used to turn it off</a:documentation>
         <data type="boolean"/>
       </attribute>
-      <sch:pattern id="btrfs_root_is_snapshot" is-a="image_type">
-        <sch:param name="attr" value="btrfs_root_is_snapshot"/>
+      <sch:pattern id="btrfs_set_default_volume" is-a="image_type">
+        <sch:param name="attr" value="btrfs_set_default_volume"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.btrfs_root_is_subvolume.attribute">
+      <attribute name="btrfs_root_is_subvolume">
+        <a:documentation>Tell kiwi to create a root volume to host (/) inside.
+The name of this subvolume is by default set to: '@'
+The name of the subvolume can be changed via
+a volume entry of the form '&lt;volume name="@root=NAME"/&gt;'
+By default the creation of a root subvolume is set to: true</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="btrfs_root_is_subvolume" is-a="image_type">
+        <sch:param name="attr" value="btrfs_root_is_subvolume"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.btrfs_root_is_snapper_snapshot.attribute">
+      <attribute name="btrfs_root_is_snapper_snapshot">
+        <a:documentation>Tell kiwi to install the system into a btrfs snapshot
+The snapshot layout is compatible with the snapper management
+toolkit and follows a concept by SUSE.
+By default no snapshots are used</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="btrfs_root_is_snapper_snapshot" is-a="image_type">
+        <sch:param name="attr" value="btrfs_root_is_snapper_snapshot"/>
         <sch:param name="types" value="oem"/>
       </sch:pattern>
     </define>
@@ -2023,7 +2299,7 @@ toolkit. By default no snapshots are used</a:documentation>
         <a:documentation>Tell kiwi to set the btrfs root filesystem snapshot read-only
 Once all data has been placed to the root filesystem snapshot
 it will be turned into read-only mode if this option is set to
-true. The option is only effective if btrfs_root_is_snapshot
+true. The option is only effective if btrfs_root_is_snapper_snapshot
 is also set to true. By default the root filesystem snapshot
 is writable</a:documentation>
         <data type="boolean"/>
@@ -2044,7 +2320,7 @@ desired target by calling: blockdev --report device</a:documentation>
       </attribute>
       <sch:pattern id="target_blocksize" is-a="image_type">
         <sch:param name="attr" value="target_blocksize"/>
-        <sch:param name="types" value="oem"/>
+        <sch:param name="types" value="oem kis"/>
       </sch:pattern>
     </define>
     <define name="k.type.target_removable.attribute">
@@ -2161,6 +2437,18 @@ size is set to 200 MB</a:documentation>
         <sch:param name="types" value="oem"/>
       </sch:pattern>
     </define>
+    <define name="k.type.efipartsize.attribute">
+      <attribute name="efipartsize">
+        <a:documentation>For images with an EFI fat partition this attribute
+specifies the size in MB. If not set the min efipart
+size is set to 20 MB</a:documentation>
+        <data type="nonNegativeInteger"/>
+      </attribute>
+      <sch:pattern id="efipartsize" is-a="image_type">
+        <sch:param name="attr" value="efipartsize"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
     <define name="k.type.eficsm.attribute">
       <attribute name="eficsm">
         <a:documentation>For images with an EFI layout, specify if the legacy
@@ -2173,16 +2461,16 @@ CSM mode is enabled</a:documentation>
         <sch:param name="types" value="oem iso"/>
       </sch:pattern>
     </define>
-    <define name="k.type.efipartsize.attribute">
-      <attribute name="efipartsize">
-        <a:documentation>For images with an EFI fat partition this attribute
-specifies the size in MB. If not set the min efipart
-size is set to 20 MB</a:documentation>
+    <define name="k.type.efifatimagesize.attribute">
+      <attribute name="efifatimagesize">
+        <a:documentation>For ISO images (live and install) the EFI boot requires
+an embedded FAT image. This attribute specifies the size
+in MB. If not set the min efifatimage size is set to 20 MB</a:documentation>
         <data type="nonNegativeInteger"/>
       </attribute>
-      <sch:pattern id="efipartsize" is-a="image_type">
-        <sch:param name="attr" value="efipartsize"/>
-        <sch:param name="types" value="oem"/>
+      <sch:pattern id="efifatimagesize" is-a="image_type">
+        <sch:param name="attr" value="efifatimagesize"/>
+        <sch:param name="types" value="oem iso"/>
       </sch:pattern>
     </define>
     <define name="k.type.dosparttable_extended_layout.attribute">
@@ -2204,7 +2492,7 @@ partitions needs to be created in an msdos table</a:documentation>
     <define name="k.type.efiparttable.attribute">
       <attribute name="efiparttable">
         <a:documentation>For images with an EFI firmware specifies the partition
-table type to use. If not set defaults to gpt partition 
+table type to use. If not set defaults to gpt partition
 table type.</a:documentation>
         <choice>
           <value>msdos</value>
@@ -2213,7 +2501,7 @@ table type.</a:documentation>
       </attribute>
       <sch:pattern id="efiparttable" is-a="image_type">
         <sch:param name="attr" value="efiparttable"/>
-        <sch:param name="types" value="oem"/>
+        <sch:param name="types" value="oem iso"/>
       </sch:pattern>
     </define>
     <define name="k.type.bootprofile.attribute">
@@ -2283,16 +2571,26 @@ structure</a:documentation>
           <value>ext3</value>
           <value>ext4</value>
           <value>squashfs</value>
+          <value>erofs</value>
           <value>xfs</value>
         </choice>
       </attribute>
       <sch:pattern id="filesystem" is-a="image_type">
         <sch:param name="attr" value="filesystem"/>
-        <sch:param name="types" value="oem pxe kis"/>
+        <sch:param name="types" value="oem pxe kis iso"/>
       </sch:pattern>
       <sch:pattern id="filesystem_mandatory" is-a="image_type_requirement">
         <sch:param name="attr" value="filesystem"/>
         <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.erofscompression.attribute">
+      <attribute name="erofscompression">
+        <a:documentation>Specifies the compression type for erofs</a:documentation>
+      </attribute>
+      <sch:pattern id="erofscompression" is-a="image_type">
+        <sch:param name="attr" value="erofscompression"/>
+        <sch:param name="types" value="oem pxe kis iso erofs"/>
       </sch:pattern>
     </define>
     <define name="k.type.squashfscompression.attribute">
@@ -2309,7 +2607,7 @@ structure</a:documentation>
       </attribute>
       <sch:pattern id="squashfscompression" is-a="image_type">
         <sch:param name="attr" value="squashfscompression"/>
-        <sch:param name="types" value="oem pxe kis iso"/>
+        <sch:param name="types" value="oem pxe kis iso squashfs"/>
       </sch:pattern>
     </define>
     <define name="k.type.verity_blocks.attribute">
@@ -2366,6 +2664,20 @@ serving the root filesystem</a:documentation>
         <sch:param name="attr" value="standalone_integrity"/>
       </sch:pattern>
     </define>
+    <define name="k.type.integrity_legacy_hmac.attribute">
+      <attribute name="integrity_legacy_hmac">
+        <a:documentation>In combination with the standalone_integrity attribute,
+Allow to use old flawed HMAC calculation (does not protect superblock)</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="integrity_legacy_hmac" is-a="image_type">
+        <sch:param name="attr" value="integrity_legacy_hmac"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+      <sch:pattern id="standalone_integrity_mandatory" is-a="integrity_legacy_hmac_requirement">
+        <sch:param name="attr" value="standalone_integrity"/>
+      </sch:pattern>
+    </define>
     <define name="k.type.integrity_keyfile.attribute">
       <attribute name="integrity_keyfile">
         <a:documentation>In combination with the standalone_integrity attribute,
@@ -2395,7 +2707,7 @@ The format of this key argument is:
     <define name="k.type.overlayroot.attribute">
       <attribute name="overlayroot">
         <a:documentation>Specifies to use an overlay root system consisting
-out of a squashfs compressed read-only root system
+out of a squashfs or erofs compressed read-only root system
 overlayed using the overlayfs filesystem into an
 extra read-write partition. Available for the disk
 image type oem</a:documentation>
@@ -2403,6 +2715,21 @@ image type oem</a:documentation>
       </attribute>
       <sch:pattern id="overlayroot" is-a="image_type">
         <sch:param name="attr" value="overlayroot"/>
+        <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.overlayroot_readonly_filesystem.attribute">
+      <attribute name="overlayroot_readonly_filesystem">
+        <a:documentation>Specifies the filesystem type to use as read-only
+filesystem in an overlayroot setup. By default
+squashfs is used</a:documentation>
+        <choice>
+          <value>squashfs</value>
+          <value>erofs</value>
+        </choice>
+      </attribute>
+      <sch:pattern id="overlayroot_readonly_filesystem" is-a="image_type">
+        <sch:param name="attr" value="overlayroot_readonly_filesystem"/>
         <sch:param name="types" value="oem"/>
       </sch:pattern>
     </define>
@@ -2484,8 +2811,7 @@ This will overwrite kiwi's default layout</a:documentation>
       <attribute name="bootfilesystem">
         <a:documentation>if an extra boot partition is required this attribute
 specify which filesystem should be used for it. The
-type of the bootloader might overwrite this setting
-e.g for the syslinux loader fat is required</a:documentation>
+type of the bootloader might overwrite this setting</a:documentation>
         <choice>
           <value>btrfs</value>
           <value>ext2</value>
@@ -2538,6 +2864,16 @@ a different set of live features.</a:documentation>
       <sch:pattern id="format" is-a="image_type">
         <sch:param name="attr" value="format"/>
         <sch:param name="types" value="oem"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.enclave_format.attribute">
+      <attribute name="enclave_format">
+        <a:documentation>Specifies the format of the virtual disk.</a:documentation>
+        <value>aws-nitro</value>
+      </attribute>
+      <sch:pattern id="enclave_format" is-a="image_type">
+        <sch:param name="attr" value="enclave_format"/>
+        <sch:param name="types" value="enclave"/>
       </sch:pattern>
     </define>
     <define name="k.type.formatoptions.attribute">
@@ -2614,7 +2950,7 @@ create a hybrid GPT/MBR partition table</a:documentation>
       </attribute>
       <sch:pattern id="gpt_hybrid_mbr" is-a="image_type">
         <sch:param name="attr" value="gpt_hybrid_mbr"/>
-        <sch:param name="types" value="oem"/>
+        <sch:param name="types" value="oem iso"/>
       </sch:pattern>
     </define>
     <define name="k.type.initrd_system.attribute">
@@ -2637,7 +2973,6 @@ initrd architecture.</a:documentation>
         <a:documentation>Specifies the image type</a:documentation>
         <choice>
           <value>btrfs</value>
-          <value>clicfs</value>
           <value>cpio</value>
           <value>docker</value>
           <value>ext2</value>
@@ -2648,10 +2983,13 @@ initrd architecture.</a:documentation>
           <value>pxe</value>
           <value>kis</value>
           <value>squashfs</value>
+          <value>erofs</value>
           <value>tbz</value>
           <value>xfs</value>
           <value>oci</value>
           <value>appx</value>
+          <value>enclave</value>
+          <value>wsl</value>
         </choice>
       </attribute>
       <sch:pattern id="metadata_path_mandatory" is-a="image_type_requirement">
@@ -2673,8 +3011,7 @@ that image type</a:documentation>
     <define name="k.type.installboot.attribute">
       <attribute name="installboot">
         <a:documentation>Specifies the bootloader default boot entry for the
-initial boot of a kiwi install image. This value is
-only evaluated for grub and ext|syslinux</a:documentation>
+initial boot of a kiwi install image.</a:documentation>
         <choice>
           <value>failsafe-install</value>
           <value>harddisk</value>
@@ -2760,7 +3097,7 @@ kernel command line options</a:documentation>
       </attribute>
       <sch:pattern id="kernelcmdline" is-a="image_type">
         <sch:param name="attr" value="kernelcmdline"/>
-        <sch:param name="types" value="oem iso pxe kis"/>
+        <sch:param name="types" value="oem iso pxe kis enclave"/>
       </sch:pattern>
     </define>
     <define name="k.type.luks_version.attribute">
@@ -2804,6 +3141,38 @@ distribution</a:documentation>
       </attribute>
       <sch:pattern id="luksOS" is-a="image_type">
         <sch:param name="attr" value="luksOS"/>
+        <sch:param name="types" value="oem iso pxe kis"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.luks_randomize.attribute">
+      <attribute name="luks_randomize">
+        <a:documentation>By default, all blocks of a LUKS volume will be filled
+with pseudo-random data. If you're shipping an image with
+a well-known key, which is going to be re-encrypted at
+deployment time, you can decrease the size of the image
+by setting this attribute to false.</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="luks_randomize" is-a="image_type">
+        <sch:param name="attr" value="luksversion"/>
+        <sch:param name="types" value="oem iso pxe kis"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.luks_pbkdf.attribute">
+      <attribute name="luks_pbkdf">
+        <a:documentation>When LUKS unlocks a key slot using a user provided
+password, it uses a so-called key derivation function
+to derive a symmetric encryption key from the password.
+Not all boot loaders support all KDF algorithms, hence
+this attribute can be used to select a specific algorithm.</a:documentation>
+        <choice>
+          <value>pbkdf2</value>
+          <value>argon2i</value>
+          <value>argon2id</value>
+        </choice>
+      </attribute>
+      <sch:pattern id="luks_pbkdf" is-a="image_type">
+        <sch:param name="attr" value="luks_pbkdf"/>
         <sch:param name="types" value="oem iso pxe kis"/>
       </sch:pattern>
     </define>
@@ -2889,6 +3258,18 @@ into the master block. There is space for 32 characters.</a:documentation>
         <sch:param name="types" value="iso oem"/>
       </sch:pattern>
     </define>
+    <define name="k.type.application_id.attribute">
+      <attribute name="application_id">
+        <a:documentation>for the iso/(oem install iso) type only:
+Specifies the Application ID to be written
+into the master block. There is space for 128 characters.</a:documentation>
+        <ref name="ecma-119-achar-128-text"/>
+      </attribute>
+      <sch:pattern id="application_id" is-a="image_type">
+        <sch:param name="attr" value="application_id"/>
+        <sch:param name="types" value="iso oem"/>
+      </sch:pattern>
+    </define>
     <define name="k.type.wwid_wait_timeout.attribute">
       <attribute name="wwid_wait_timeout">
         <a:documentation>Specifies the wait period in seconds after launching
@@ -2912,6 +3293,37 @@ to work on.</a:documentation>
         <sch:param name="types" value="docker oci"/>
       </sch:pattern>
     </define>
+    <define name="k.type.provide_system_files.attribute">
+      <attribute name="provide_system_files">
+        <a:documentation>Create a systemfiles metadata file containing the
+file list of all packages of the system</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="provide_system_files" is-a="image_type">
+        <sch:param name="attr" value="provide_system_files"/>
+        <sch:param name="types" value="docker oci"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.require_system_files.attribute">
+      <attribute name="require_system_files">
+        <a:documentation>Include an existing systemfiles metadata file</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="require_system_files" is-a="image_type">
+        <sch:param name="attr" value="require_system_files"/>
+        <sch:param name="types" value="docker oci"/>
+      </sch:pattern>
+    </define>
+    <define name="k.type.delta_root.attribute">
+      <attribute name="delta_root">
+        <a:documentation>Together with derived_from create a delta root tree</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="delta_root" is-a="image_type">
+        <sch:param name="attr" value="delta_root"/>
+        <sch:param name="types" value="docker oci"/>
+      </sch:pattern>
+    </define>
     <define name="k.type.ensure_empty_tmpdirs.attribute">
       <attribute name="ensure_empty_tmpdirs">
         <a:documentation>Whether to ensure /run and /tmp directories are empty in the
@@ -2926,6 +3338,7 @@ container image created by Kiwi.  Default is true.</a:documentation>
     <define name="k.type.publisher.attribute">
       <attribute name="publisher">
         <a:documentation>Specifies the publisher name of the ISO.</a:documentation>
+        <ref name="ecma-119-achar-128-text"/>
       </attribute>
       <sch:pattern id="publisher" is-a="image_type">
         <sch:param name="attr" value="publisher"/>
@@ -3017,10 +3430,13 @@ kiwi-ng result bundle ...</a:documentation>
           <ref name="k.type.efipartsize.attribute"/>
         </optional>
         <optional>
-          <ref name="k.type.efiparttable.attribute"/>
+          <ref name="k.type.efifatimagesize.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.eficsm.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.efiparttable.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.dosparttable_extended_layout.attribute"/>
@@ -3032,7 +3448,13 @@ kiwi-ng result bundle ...</a:documentation>
           <ref name="k.type.btrfs_quota_groups.attribute"/>
         </optional>
         <optional>
-          <ref name="k.type.btrfs_root_is_snapshot.attribute"/>
+          <ref name="k.type.btrfs_root_is_snapper_snapshot.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.btrfs_root_is_subvolume.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.btrfs_set_default_volume.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.btrfs_root_is_readonly_snapshot.attribute"/>
@@ -3056,6 +3478,9 @@ kiwi-ng result bundle ...</a:documentation>
           <ref name="k.type.flags.attribute"/>
         </optional>
         <optional>
+          <ref name="k.type.enclave_format.attribute"/>
+        </optional>
+        <optional>
           <ref name="k.type.format.attribute"/>
         </optional>
         <optional>
@@ -3069,6 +3494,9 @@ kiwi-ng result bundle ...</a:documentation>
         </optional>
         <optional>
           <ref name="k.type.squashfscompression.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.erofscompression.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.gcelicense.attribute"/>
@@ -3126,6 +3554,12 @@ kiwi-ng result bundle ...</a:documentation>
           <ref name="k.type.luksOS.attribute"/>
         </optional>
         <optional>
+          <ref name="k.type.luks_randomize.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.luks_pbkdf.attribute"/>
+        </optional>
+        <optional>
           <ref name="k.type.mdraid.attribute"/>
         </optional>
         <optional>
@@ -3133,6 +3567,9 @@ kiwi-ng result bundle ...</a:documentation>
         </optional>
         <optional>
           <ref name="k.type.overlayroot_write_partition.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.overlayroot_readonly_filesystem.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.overlayroot_readonly_partsize.attribute"/>
@@ -3148,6 +3585,9 @@ kiwi-ng result bundle ...</a:documentation>
         </optional>
         <optional>
           <ref name="k.type.embed_integrity_metadata.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.integrity_legacy_hmac.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.integrity_metadata_key_description"/>
@@ -3198,10 +3638,22 @@ kiwi-ng result bundle ...</a:documentation>
           <ref name="k.type.volid.attribute"/>
         </optional>
         <optional>
+          <ref name="k.type.application_id.attribute"/>
+        </optional>
+        <optional>
           <ref name="k.type.wwid_wait_timeout.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.derived_from.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.delta_root.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.provide_system_files.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.type.require_system_files.attribute"/>
         </optional>
         <optional>
           <ref name="k.type.ensure_empty_tmpdirs.attribute"/>
@@ -3258,6 +3710,9 @@ kiwi-ng result bundle ...</a:documentation>
           <optional>
             <ref name="k.installmedia"/>
           </optional>
+          <zeroOrMore>
+            <ref name="k.initrd"/>
+          </zeroOrMore>
           <optional>
             <ref name="k.luksformat"/>
           </optional>
@@ -3361,7 +3816,7 @@ to the user according to he specifing toolchain behaviour.</a:documentation>
     </define>
     <define name="k.version">
       <element name="version">
-        <a:documentation>A Version Number for the Image, Consists of Major.Minor.Release </a:documentation>
+        <a:documentation>A Version Number for the Image, Consists of Major.Minor.Release</a:documentation>
         <interleave>
           <ref name="k.version.attlist"/>
           <text/>
@@ -3618,6 +4073,8 @@ Allowed values are: t.linux</a:documentation>
           <value>ext4</value>
           <value>squashfs</value>
           <value>xfs</value>
+          <value>fat32</value>
+          <value>fat16</value>
         </choice>
       </attribute>
     </define>
@@ -3625,6 +4082,11 @@ Allowed values are: t.linux</a:documentation>
       <attribute name="clone">
         <a:documentation>Clone this partition N times</a:documentation>
         <ref name="number-type"/>
+      </attribute>
+    </define>
+    <define name="k.partition.label.attribute">
+      <attribute name="label">
+        <a:documentation>filesystem label</a:documentation>
       </attribute>
     </define>
     <define name="k.partition.attlist">
@@ -3642,6 +4104,9 @@ Allowed values are: t.linux</a:documentation>
         </optional>
         <optional>
           <ref name="k.partition.filesystem.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.partition.label.attribute"/>
         </optional>
         <optional>
           <ref name="k.partition.clone.attribute"/>
@@ -3662,6 +4127,11 @@ Allowed values are: t.linux</a:documentation>
     
   -->
   <div>
+    <sch:pattern abstract="true" id="btrfs_quota">
+      <sch:rule context="volume">
+        <sch:assert test="not(@quota) or ../../@filesystem='btrfs'">quota attribute is only available for the following image filesystem: btrfs</sch:assert>
+      </sch:rule>
+    </sch:pattern>
     <define name="k.volume.freespace.attribute">
       <attribute name="freespace">
         <a:documentation>free space to be added to this volume. The value is
@@ -3675,6 +4145,15 @@ postfix</a:documentation>
         <a:documentation>volume name. The name of the volume. if mountpoint is
 not specified the name specifies a path which has to
 exist inside the root directory.</a:documentation>
+      </attribute>
+    </define>
+    <define name="k.volume.parent.attribute">
+      <attribute name="parent">
+        <a:documentation>The name/path of the parent volume.
+Evaluated only for the btrfs volume manager to allow
+specifying the parent subvolume to nest this volume in.
+If not specified the parent is always the volume set
+as the default volume</a:documentation>
       </attribute>
     </define>
     <define name="k.volume.mountpoint.attribute">
@@ -3698,6 +4177,13 @@ add "M" and/or "G" as postfix</a:documentation>
         <data type="boolean"/>
       </attribute>
     </define>
+    <define name="k.volume.quota.attribute">
+      <attribute name="quota">
+        <a:documentation>Apply quota value to filesystem volume if supported</a:documentation>
+        <ref name="partition-size-type"/>
+      </attribute>
+      <sch:pattern id="quota" is-a="btrfs_quota"/>
+    </define>
     <define name="k.volume.filesystem_check">
       <attribute name="filesystem_check">
         <a:documentation>Indicate that this filesystem should perform the validation
@@ -3715,10 +4201,16 @@ The latter is the default.</a:documentation>
         <a:documentation>filesystem label name of the volume.</a:documentation>
       </attribute>
     </define>
+    <define name="k.volume.arch.attribute">
+      <ref name="k.arch.attribute"/>
+    </define>
     <define name="k.volume.attlist">
       <interleave>
         <optional>
           <ref name="k.volume.copy_on_write.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.volume.quota.attribute"/>
         </optional>
         <optional>
           <ref name="k.volume.filesystem_check"/>
@@ -3734,7 +4226,13 @@ The latter is the default.</a:documentation>
         </optional>
         <ref name="k.volume.name.attribute"/>
         <optional>
+          <ref name="k.volume.parent.attribute"/>
+        </optional>
+        <optional>
           <ref name="k.volume.size.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.volume.arch.attribute"/>
         </optional>
       </interleave>
     </define>
@@ -3824,7 +4322,7 @@ a standard image description created by a kiwi user.</a:documentation>
     </define>
     <define name="k.drivers">
       <element name="drivers">
-        <a:documentation>A Collection of Driver Files </a:documentation>
+        <a:documentation>A Collection of Driver Files</a:documentation>
         <interleave>
           <ref name="k.drivers.attlist"/>
           <oneOrMore>
@@ -3895,17 +4393,19 @@ references file names in linux lib directories to keep.</a:documentation>
     <define name="k.bootloader.name.attribute">
       <attribute name="name">
         <a:documentation>Specifies the bootloader used for booting the image.
-At the moment grub2, isolinux, and the combination of
-zipl plus userspace grub2(grub2_s390x_emu) are supported.
+At the moment grub2, systemd_boot(EFI only), zipl and the
+combination of zipl plus userspace grub2(grub2_s390x_emu)
+are supported.
 The special custom entry allows to skip the bootloader
 configuration and installation and leaves this up to the
 user which can be done by using the editbootinstall and
 editbootconfig custom scripts</a:documentation>
         <choice>
           <value>grub2</value>
-          <value>isolinux</value>
           <value>grub2_s390x_emu</value>
+          <value>systemd_boot</value>
           <value>custom</value>
+          <value>zipl</value>
         </choice>
       </attribute>
       <sch:pattern id="loader_name" is-a="bootloader_image_type">
@@ -3927,16 +4427,24 @@ setting only affects the oem and iso image types.</a:documentation>
         <sch:param name="types" value="oem iso"/>
       </sch:pattern>
     </define>
+    <define name="k.bootloader.bls.attribute">
+      <attribute name="bls">
+        <a:documentation>Specifies if the GRUB2 bootloader uses the boot loader specification</a:documentation>
+        <data type="boolean"/>
+      </attribute>
+      <sch:pattern id="bls" is-a="bootloader_name_type">
+        <sch:param name="attr" value="bls"/>
+        <sch:param name="types" value="grub2"/>
+      </sch:pattern>
+    </define>
     <define name="k.bootloader.console.attribute">
       <attribute name="console">
-        <a:documentation>Specifies the bootloader console.
-The value is available for grub and isolinux bootloader
-types.</a:documentation>
+        <a:documentation>Specifies the bootloader console.</a:documentation>
         <ref name="grub_console"/>
       </attribute>
       <sch:pattern id="loader_console" is-a="bootloader_name_type">
         <sch:param name="attr" value="console"/>
-        <sch:param name="types" value="grub2 isolinux grub2_s390x_emu"/>
+        <sch:param name="types" value="grub2 grub2_s390x_emu"/>
       </sch:pattern>
     </define>
     <define name="k.bootloader.serial_line.attribute">
@@ -3960,7 +4468,7 @@ to 10sec</a:documentation>
       </attribute>
       <sch:pattern id="timeout" is-a="bootloader_name_type">
         <sch:param name="attr" value="timeout"/>
-        <sch:param name="types" value="grub2 isolinux grub2_s390x_emu"/>
+        <sch:param name="types" value="grub2 grub2_s390x_emu systemd_boot zipl"/>
       </sch:pattern>
     </define>
     <define name="k.bootloader.timeout_style.attribute">
@@ -3973,6 +4481,7 @@ is displayed. The attribute is available for the grub loader.</a:documentation>
         <choice>
           <value>countdown</value>
           <value>hidden</value>
+          <value>menu</value>
         </choice>
       </attribute>
       <sch:pattern id="timeout_style" is-a="bootloader_name_type">
@@ -3989,16 +4498,28 @@ for 4k DASD devices use CDL</a:documentation>
           <value>FBA</value>
           <value>SCSI</value>
           <value>CDL</value>
+          <value>GPT</value>
         </choice>
       </attribute>
       <sch:pattern id="targettype" is-a="bootloader_name_type">
         <sch:param name="attr" value="targettype"/>
-        <sch:param name="types" value="grub2_s390x_emu"/>
+        <sch:param name="types" value="grub2_s390x_emu zipl"/>
       </sch:pattern>
+    </define>
+    <define name="k.bootloader.use_disk_password.attribute">
+      <attribute name="use_disk_password">
+        <a:documentation>When /boot is encrypted, make the boot loader store the
+password in its configuration file (in cleartext). This
+is useful for full disk encryption images</a:documentation>
+        <data type="boolean"/>
+      </attribute>
     </define>
     <define name="k.bootloader.attlist">
       <interleave>
         <ref name="k.bootloader.name.attribute"/>
+        <optional>
+          <ref name="k.bootloader.bls.attribute"/>
+        </optional>
         <optional>
           <ref name="k.bootloader.console.attribute"/>
         </optional>
@@ -4015,6 +4536,9 @@ for 4k DASD devices use CDL</a:documentation>
           <ref name="k.bootloader.targettype.attribute"/>
         </optional>
         <optional>
+          <ref name="k.bootloader.use_disk_password.attribute"/>
+        </optional>
+        <optional>
           <ref name="k.bootloader.grub_template.attribute"/>
         </optional>
       </interleave>
@@ -4025,7 +4549,12 @@ for 4k DASD devices use CDL</a:documentation>
 and to provide configuration parameters for it</a:documentation>
         <interleave>
           <ref name="k.bootloader.attlist"/>
-          <empty/>
+          <optional>
+            <ref name="k.bootloadersettings"/>
+          </optional>
+          <zeroOrMore>
+            <ref name="k.securelinux"/>
+          </zeroOrMore>
         </interleave>
       </element>
     </define>
@@ -4143,6 +4672,9 @@ section provides globally useful container information.</a:documentation>
           </optional>
           <optional>
             <ref name="k.volumes"/>
+          </optional>
+          <optional>
+            <ref name="k.stopsignal"/>
           </optional>
           <optional>
             <ref name="k.environment"/>
@@ -4320,6 +4852,30 @@ At least one volume must be configured</a:documentation>
   </div>
   <!--
     ==========================================
+    main block: <stopsignal>
+    
+  -->
+  <div>
+    <define name="k.stopsignal.attlist">
+      <empty/>
+    </define>
+    <define name="k.stopsignal">
+      <element name="stopsignal">
+        <a:documentation>The stopsignal element sets the system call signal that
+will be sent to the container to exit. This signal can be a
+signal name in the format SIG&lt;NAME&gt;, for instance SIGKILL,
+or an unsigned number that matches a position in the kernel's
+syscall table, for instance 9. The default is SIGTERM if not
+defined.</a:documentation>
+        <interleave>
+          <ref name="k.stopsignal.attlist"/>
+          <text/>
+        </interleave>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
     main block: <partitions>
     
   -->
@@ -4363,6 +4919,113 @@ of the storage device</a:documentation>
             <ref name="k.option"/>
           </oneOrMore>
         </interleave>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    main block: <bootloadersettings>
+    
+  -->
+  <div>
+    <define name="k.bootloadersettings.attlist">
+      <empty/>
+    </define>
+    <define name="k.bootloadersettings">
+      <element name="bootloadersettings">
+        <a:documentation>Additional bootloader settings</a:documentation>
+        <interleave>
+          <ref name="k.bootloadersettings.attlist"/>
+          <zeroOrMore>
+            <ref name="k.shimoption"/>
+          </zeroOrMore>
+          <zeroOrMore>
+            <ref name="k.installoption"/>
+          </zeroOrMore>
+          <zeroOrMore>
+            <ref name="k.configoption"/>
+          </zeroOrMore>
+        </interleave>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    main block: <securelinux>
+    
+  -->
+  <div>
+    <sch:pattern abstract="true" id="securelinux_loader_requirement">
+      <sch:rule context="securelinux">
+        <sch:assert test="../@name='zipl' or ../@name='grub2-s390x-emu'">&lt;securelinux&gt; section only available for the bootloader types: zipl and grub2-s390x-emu</sch:assert>
+      </sch:rule>
+    </sch:pattern>
+    <define name="k.securelinux.hkd_ca_cert.attribute">
+      <attribute name="hkd_ca_cert"/>
+    </define>
+    <define name="k.securelinux.hkd_sign_cert.attribute">
+      <attribute name="hkd_sign_cert"/>
+    </define>
+    <define name="k.securelinux.attlist">
+      <interleave>
+        <ref name="k.securelinux.hkd_ca_cert.attribute"/>
+        <ref name="k.securelinux.hkd_sign_cert.attribute"/>
+      </interleave>
+    </define>
+    <define name="k.securelinux">
+      <element name="securelinux">
+        <a:documentation>securelinux contains all elements to describe
+data required to setup a secure linux execution
+process for the individual architecture in the scope
+of the bootloader process</a:documentation>
+        <interleave>
+          <ref name="k.securelinux.attlist"/>
+          <oneOrMore>
+            <ref name="k.hkd_cert"/>
+          </oneOrMore>
+          <zeroOrMore>
+            <ref name="k.hkd_revocation_list"/>
+          </zeroOrMore>
+        </interleave>
+      </element>
+      <sch:pattern id="bootloader_matches" is-a="securelinux_loader_requirement"/>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    common element <hkd_cert>
+    
+  -->
+  <div>
+    <define name="k.hkd_cert.name.attribute">
+      <attribute name="name"/>
+    </define>
+    <define name="k.hkd_cert.attlist">
+      <ref name="k.hkd_cert.name.attribute"/>
+    </define>
+    <define name="k.hkd_cert">
+      <element name="hkd_cert">
+        <ref name="k.hkd_cert.attlist"/>
+        <empty/>
+      </element>
+    </define>
+  </div>
+  <!--
+    ==========================================
+    common element <hkd_revocation_list>
+    
+  -->
+  <div>
+    <define name="k.hkd_revocation_list.name.attribute">
+      <attribute name="name"/>
+    </define>
+    <define name="k.hkd_revocation_list.attlist">
+      <ref name="k.hkd_revocation_list.name.attribute"/>
+    </define>
+    <define name="k.hkd_revocation_list">
+      <element name="hkd_revocation_list">
+        <ref name="k.hkd_revocation_list.attlist"/>
+        <empty/>
       </element>
     </define>
   </div>
@@ -4567,6 +5230,9 @@ and setup the system disk.</a:documentation>
             <ref name="k.oem-resize-once"/>
           </optional>
           <optional>
+            <ref name="k.oem-ramdisk-size"/>
+          </optional>
+          <optional>
             <ref name="k.oem-device-filter"/>
           </optional>
           <optional>
@@ -4760,6 +5426,7 @@ installation initrd.</a:documentation>
           <value>omit</value>
           <value>add</value>
           <value>set</value>
+          <value>setup</value>
         </choice>
       </attribute>
     </define>
@@ -4790,8 +5457,28 @@ for the installation media.</a:documentation>
         <a:documentation>A module name</a:documentation>
       </attribute>
     </define>
+    <define name="k.dracut.driver.attribute">
+      <attribute name="driver">
+        <a:documentation>A kernel driver name</a:documentation>
+      </attribute>
+    </define>
+    <define name="k.dracut.uefi.attribute">
+      <attribute name="uefi">
+        <data type="boolean"/>
+      </attribute>
+    </define>
     <define name="k.dracut.attlist">
-      <ref name="k.dracut.module.attribute"/>
+      <interleave>
+        <optional>
+          <ref name="k.dracut.module.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.dracut.driver.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.dracut.uefi.attribute"/>
+        </optional>
+      </interleave>
     </define>
     <define name="k.dracut">
       <element name="dracut">
@@ -4983,6 +5670,7 @@ packages are only installed if this build type is requested.</a:documentation>
           <value>kis</value>
           <value>oci</value>
           <value>uninstall</value>
+          <value>systemfiles</value>
         </choice>
       </attribute>
     </define>
@@ -5006,7 +5694,7 @@ in /var/cache/kiwi/bootstrap/PACKAGE_NAME.ARCH.tar.xz
 The tarball will be unpacked and used as the bootstrap
 rootfs to begin with. The feature is currently only
 available with the apt package manager to allow an
-alternative bootstrap method for debootstrap</a:documentation>
+alternative bootstrap method</a:documentation>
       </attribute>
       <sch:pattern id="bootstrap_package" is-a="packages_type">
         <sch:param name="attr" value="bootstrap_package"/>
@@ -5039,6 +5727,9 @@ alternative bootstrap method for debootstrap</a:documentation>
           <ref name="k.packages.attlist"/>
           <zeroOrMore>
             <ref name="k.archive"/>
+          </zeroOrMore>
+          <zeroOrMore>
+            <ref name="k.file"/>
           </zeroOrMore>
           <zeroOrMore>
             <ref name="k.ignore"/>
@@ -5163,10 +5854,18 @@ drivers can bind itself to one of the listed namespaces.</a:documentation>
     <define name="k.users.profiles.attribute">
       <ref name="k.profiles.attribute"/>
     </define>
+    <define name="k.users.arch.attribute">
+      <ref name="k.arch.attribute"/>
+    </define>
     <define name="k.users.attlist">
-      <optional>
-        <ref name="k.users.profiles.attribute"/>
-      </optional>
+      <interleave>
+        <optional>
+          <ref name="k.users.arch.attribute"/>
+        </optional>
+        <optional>
+          <ref name="k.users.profiles.attribute"/>
+        </optional>
+      </interleave>
     </define>
     <define name="k.users">
       <element name="users">

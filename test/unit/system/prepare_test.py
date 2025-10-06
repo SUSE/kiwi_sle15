@@ -3,7 +3,7 @@ import os
 from pytest import (
     raises, fixture
 )
-from mock import (
+from unittest.mock import (
     patch, call, Mock, MagicMock, ANY
 )
 
@@ -67,7 +67,7 @@ class TestSystemPrepare:
             root_init
         )
         root_bind.setup_intermediate_config.assert_called_once_with()
-        root_bind.mount_kernel_file_systems.assert_called_once_with()
+        root_bind.mount_kernel_file_systems.assert_called_once_with(None)
 
     @patch('kiwi.system.prepare.RootInit')
     @patch('kiwi.system.prepare.RootBind')
@@ -121,7 +121,61 @@ class TestSystemPrepare:
             root_init
         )
         root_bind.setup_intermediate_config.assert_called_once_with()
-        root_bind.mount_kernel_file_systems.assert_called_once_with()
+        root_bind.mount_kernel_file_systems.assert_called_once_with(None)
+        assert system.issue_message == '{headline}: {reason}'
+
+    @patch('kiwi.system.prepare.RootImport.new')
+    @patch('kiwi.system.prepare.RootInit')
+    @patch('kiwi.system.prepare.RootBind')
+    @patch('kiwi.logger.Logger.get_logfile')
+    def test_init_with_derived_from_image_for_delta_root(
+        self, mock_get_logfile, mock_root_bind, mock_root_init, mock_root_import
+    ):
+        mock_get_logfile.return_value = 'logfile'
+        description = XMLDescription(
+            description='../data/example_config.xml',
+            derived_from='derived/description'
+        )
+        xml = description.load()
+
+        root_init = MagicMock()
+        mock_root_init.return_value = root_init
+        root_import = Mock()
+        root_import.overlay_data = Mock()
+
+        mock_root_import.return_value = root_import
+        root_bind = MagicMock()
+        root_bind.root_dir = 'root_dir'
+        mock_root_bind.return_value = root_bind
+        state = XMLState(
+            xml, profiles=['containerFlavour'], build_type='docker'
+        )
+        uri = Mock()
+        get_derived_from_image_uri = Mock(
+            return_value=uri
+        )
+        get_delta_root = Mock(
+            return_value=True
+        )
+        state.get_derived_from_image_uri = get_derived_from_image_uri
+        state.build_type.get_delta_root = get_delta_root
+        system = SystemPrepare(
+            xml_state=state, root_dir='root_dir',
+        )
+        mock_root_init.assert_called_once_with(
+            'root_dir', False
+        )
+        root_init.create.assert_called_once_with()
+        mock_root_import.assert_called_once_with(
+            'root_dir', uri,
+            state.build_type.get_image()
+        )
+        root_import.overlay_data.assert_called_once_with()
+        mock_root_bind.assert_called_once_with(
+            root_init
+        )
+        root_bind.setup_intermediate_config.assert_called_once_with()
+        root_bind.mount_kernel_file_systems.assert_called_once_with(True)
         assert system.issue_message == '{headline}: {reason}'
 
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
@@ -137,7 +191,9 @@ class TestSystemPrepare:
 
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     @patch('kiwi.system.prepare.ArchiveTar')
-    def test_install_bootstrap_archives_raises(self, mock_tar, mock_poll):
+    def test_install_bootstrap_archives_raises(
+        self, mock_tar, mock_poll
+    ):
         mock_tar.side_effect = Exception
         with raises(KiwiBootStrapPhaseFailed):
             self.system.install_bootstrap(self.manager)
@@ -162,7 +218,9 @@ class TestSystemPrepare:
 
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     @patch('kiwi.system.prepare.ArchiveTar')
-    def test_install_system_archives_raises(self, mock_tar, mock_poll):
+    def test_install_system_archives_raises(
+        self, mock_tar, mock_poll
+    ):
         mock_tar.side_effect = KiwiInstallPhaseFailed
         with raises(KiwiInstallPhaseFailed):
             self.system.install_system(self.manager)
@@ -200,7 +258,7 @@ class TestSystemPrepare:
             return_value='credentials-file'
         )
         repo = Mock()
-        mock_repo.return_value = repo
+        mock_repo.return_value.__enter__.return_value = repo
 
         self.system.setup_repositories(
             clear_cache=True,
@@ -229,12 +287,12 @@ class TestSystemPrepare:
             call(
                 'uri-alias', 'uri', None, 42,
                 None, None, None, None, 'credentials-file', None, None,
-                'baseurl', False, None
+                'baseurl', None, None
             ),
             call(
                 'uri-alias', 'uri', 'rpm-md', None,
                 None, None, None, None, 'credentials-file', None, None,
-                None, False, '../data/script'
+                None, '../data/script', None
             )
         ]
         assert repo.delete_repo_cache.call_args_list == [
@@ -270,7 +328,7 @@ class TestSystemPrepare:
             return_value='uri-alias'
         )
         repo = Mock()
-        mock_repo.return_value = repo
+        mock_repo.return_value.__enter__.return_value = repo
         with self._caplog.at_level(logging.WARNING):
             self.system.setup_repositories()
 
@@ -311,7 +369,7 @@ class TestSystemPrepare:
         )
         tar.extract.assert_called_once_with('root_dir')
         self.manager.post_process_install_requests_bootstrap.assert_called_once_with(
-            self.system.root_bind
+            self.system.root_bind, None
         )
 
     @patch('kiwi.system.prepare.RootInit')
@@ -341,7 +399,10 @@ class TestSystemPrepare:
 
         self.system.install_bootstrap(self.manager)
 
-        tar.extract.assert_called_once_with('root_dir/foo')
+        assert tar.extract.call_args_list == [
+            call('root_dir/foo'),
+            call('root_dir/etc')
+        ]
 
     @patch('kiwi.xml_state.XMLState.get_bootstrap_packages_sections')
     def test_install_bootstrap_skipped(self, mock_bootstrap_section):
@@ -355,7 +416,8 @@ class TestSystemPrepare:
     @patch('kiwi.system.prepare.ArchiveTar')
     @patch('os.path.exists')
     def test_install_bootstrap_archive_from_derived_description(
-        self, mock_exists, mock_tar, mock_poll, mock_collection_type
+        self, mock_exists, mock_tar, mock_poll,
+        mock_collection_type
     ):
         mock_exists.return_value = False
         self.system.install_bootstrap(self.manager)
@@ -415,6 +477,15 @@ class TestSystemPrepare:
         )
 
     @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
+    @patch('kiwi.system.prepare.Command.run')
+    def test_pinch_system_in_delta_root_mode(self, mock_Command_run, mock_poll):
+        self.system.delta_root = True
+        self.system.pinch_system(self.manager)
+        mock_Command_run.assert_called_once_with(
+            ['rsync', '-a', 'root_dir_cow/', 'root_dir_cow_before_pinch']
+        )
+
+    @patch('kiwi.system.prepare.CommandProcess.poll_show_progress')
     def test_pinch_system_raises(self, mock_poll):
         mock_poll.side_effect = Exception
         with raises(KiwiPackagesDeletePhaseFailed):
@@ -436,23 +507,26 @@ class TestSystemPrepare:
         self.system.update_system(self.manager)
         self.manager.update.assert_called_once_with()
 
-    def test_destructor(self):
-        self.system.__del__()
-        self.system.root_bind.cleanup.assert_called_once_with()
+    @patch('kiwi.system.prepare.RootBind')
+    @patch('kiwi.system.prepare.RootInit')
+    @patch('kiwi.logger.Logger.get_logfile')
+    def test_context_manager_exit(
+        self, mock_get_logfile, mock_RootInit, mock_RootBind
+    ):
+        root_bind = Mock()
+        mock_RootBind.return_value = root_bind
+        root_import = Mock()
+        with SystemPrepare(
+            xml_state=self.state, root_dir='root_dir', allow_existing=True
+        ) as system:
+            system.root_import = root_import
+        root_bind.cleanup.assert_called_once_with()
+        root_import.overlay_finalize.assert_called_once_with(self.state)
 
     @patch('kiwi.system.prepare.Repository.new')
     @patch('kiwi.system.prepare.PackageManager.new')
     def test_clean_package_manager_leftovers(self, mock_manager, mock_repo):
         manager = Mock()
-        mock_manager.return_value = manager
+        mock_manager.return_value.__enter__.return_value = manager
         self.system.clean_package_manager_leftovers()
         manager.clean_leftovers.assert_called_once_with()
-
-    def test_destructor_raising(self):
-        self.system.root_bind = Mock()
-        self.system.root_bind.cleanup.side_effect = ValueError("nothing")
-        with self._caplog.at_level(logging.INFO):
-            del self.system
-            assert 'Cleaning up SystemPrepare instance' in self._caplog.text
-            assert 'Cleaning up SystemPrepare instance failed, '
-            'got an exception of type ValueError: nothing' in self._caplog.text

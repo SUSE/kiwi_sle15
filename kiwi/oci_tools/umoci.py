@@ -43,7 +43,8 @@ class OCIUmoci(OCIBase):
             self.container_dir, Defaults.get_container_base_image_tag()
         )
         if CommandCapabilities.has_option_in_help(
-            'umoci', '--no-history', ['config', '--help']
+            'umoci', '--no-history', ['config', '--help'],
+            raise_on_error=False
         ):
             self.no_history_flag = ['--no-history']
         else:
@@ -55,11 +56,17 @@ class OCIUmoci(OCIBase):
 
         :param str container_image_ref: container image reference
         """
-        Command.run([
-            'skopeo', 'copy', container_image_ref, 'oci:{0}:{1}'.format(
-                self.container_dir, Defaults.get_container_base_image_tag()
+        Command.run(
+            [
+                'skopeo', 'copy', container_image_ref, 'oci:{0}:{1}'.format(
+                    self.container_dir, Defaults.get_container_base_image_tag()
+                )
+            ] + (
+                [
+                    '--tmpdir', Defaults.get_temp_location()
+                ] if self._skopeo_provides_tmpdir_option() else []
             )
-        ])
+        )
 
     def export_container_image(
         self, filename, transport, image_ref, additional_names=None
@@ -81,10 +88,16 @@ class OCIUmoci(OCIBase):
         # make sure the target tar file does not exist
         # skopeo doesn't support force overwrite
         Path.wipe(filename)
-        Command.run([
-            'skopeo', 'copy', 'oci:{0}'.format(self.working_image),
-            '{0}:{1}:{2}'.format(transport, filename, image_ref)
-        ] + extra_tags_opt)
+        Command.run(
+            [
+                'skopeo', 'copy', 'oci:{0}'.format(self.working_image),
+                '{0}:{1}:{2}'.format(transport, filename, image_ref)
+            ] + extra_tags_opt + (
+                [
+                    '--tmpdir', Defaults.get_temp_location()
+                ] if self._skopeo_provides_tmpdir_option() else []
+            )
+        )
 
     def init_container(self):
         """
@@ -124,9 +137,6 @@ class OCIUmoci(OCIBase):
             os.sep.join([self.oci_root_dir, 'rootfs']),
             exclude_list=exclude_list,
             options=Defaults.get_sync_options() + [
-                '--filter', '-x! user.*',
-                '--filter', '-x! security.ima*',
-                '--filter', '-x! security.capability*',
                 '--delete'
             ]
         )
@@ -224,6 +234,11 @@ class OCIUmoci(OCIBase):
         if 'volumes' in oci_config:
             for vol in oci_config['volumes']:
                 arguments.append('--config.volume={0}'.format(vol))
+
+        if 'stopsignal' in oci_config:
+            arguments.append(
+                '--config.stopsignal={0}'.format(oci_config['stopsignal'])
+            )
 
         if 'expose_ports' in oci_config:
             for port in oci_config['expose_ports']:

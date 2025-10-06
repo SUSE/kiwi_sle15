@@ -18,10 +18,13 @@
 """
 usage: kiwi-ng -h | --help
        kiwi-ng [--profile=<name>...]
+               [--setenv=<variable=value>...]
                [--temp-dir=<directory>]
                [--target-arch=<name>]
                [--type=<build_type>]
                [--logfile=<filename>]
+               [--logsocket=<socketfile>]
+               [--loglevel=<number>]
                [--debug]
                [--debug-run-scripts-in-screen]
                [--color-output]
@@ -29,25 +32,28 @@ usage: kiwi-ng -h | --help
                [--kiwi-file=<kiwifile>]
            image <command> [<args>...]
        kiwi-ng [--logfile=<filename>]
+               [--logsocket=<socketfile>]
+               [--loglevel=<number>]
                [--debug]
                [--debug-run-scripts-in-screen]
                [--color-output]
                [--config=<configfile>]
            result <command> [<args>...]
        kiwi-ng [--profile=<name>...]
+               [--setenv=<variable=value>...]
                [--shared-cache-dir=<directory>]
                [--temp-dir=<directory>]
                [--target-arch=<name>]
                [--type=<build_type>]
                [--logfile=<filename>]
+               [--logsocket=<socketfile>]
+               [--loglevel=<number>]
                [--debug]
                [--debug-run-scripts-in-screen]
                [--color-output]
                [--config=<configfile>]
                [--kiwi-file=<kiwifile>]
            system <command> [<args>...]
-       kiwi-ng compat <legacy_args>...
-       kiwi-ng --compat <legacy_args>...
        kiwi-ng -v | --version
        kiwi-ng help
 
@@ -60,11 +66,20 @@ global options:
         up at ~/.config/kiwi/config.yml or /etc/kiwi.yml
     --logfile=<filename>
         create a log file containing all log information including
-        debug information even if this is was not requested by the
+        debug information even if this was not requested by the
         debug switch. The special call: '--logfile stdout' sends all
         information to standard out instead of writing to a file
+    --logsocket=<socketfile>
+        send log data to the given Unix Domain socket in the same
+        format as with --logfile
+    --loglevel=<number>
+        specify logging level as number. Details about the
+        available log levels can be found at:
+        https://docs.python.org/3/library/logging.html#logging-levels
+        Setting a log level causes all message >= level to be
+        displayed.
     --debug
-        print debug information
+        print debug information, same as: '--loglevel 10'
     --debug-run-scripts-in-screen
         run scripts called by kiwi in a screen session
     -v --version
@@ -76,6 +91,9 @@ global options for services: image, system
     --profile=<name>
         profile name, multiple profiles can be selected by passing
         this option multiple times
+    --setenv=<variable=value>
+        export environment variable and its value into the caller
+        environment. This option can be specified multiple times
     --shared-cache-dir=<directory>
         specify an alternative shared cache directory. The directory
         is shared via bind mount between the build host and image
@@ -106,17 +124,15 @@ global options for services: image, system
 import logging
 import sys
 import os
-import pkg_resources
+from importlib.metadata import entry_points
 from docopt import docopt
 
 # project
 from kiwi.exceptions import (
     KiwiUnknownServiceName,
     KiwiCommandNotLoaded,
-    KiwiLoadCommandUndefined,
-    KiwiCompatError
+    KiwiLoadCommandUndefined
 )
-from kiwi.path import Path
 from kiwi.version import __version__
 from kiwi.help import Help
 from kiwi.defaults import Defaults
@@ -164,36 +180,9 @@ class Cli:
             return 'system'
         elif self.all_args.get('result') is True:
             return 'result'
-        elif self.all_args.get('--compat') is True:
-            return 'compat'
-        elif self.all_args.get('compat') is True:
-            return 'compat'
         else:
             raise KiwiUnknownServiceName(
                 'Unknown/Invalid Servicename'
-            )
-
-    def invoke_kiwicompat(self, compat_args):
-        """
-        Execute kiwicompat with provided legacy KIWI command line arguments
-
-        Example:
-
-        .. code:: python
-
-            invoke_kiwicompat(
-                '--build', 'description', '--type', 'vmx',
-                '-d', 'destination'
-            )
-
-        :param list compat_args: legacy kiwi command arguments
-        """
-        kiwicompat = Path.which('kiwicompat', access_mode=os.X_OK)
-        try:
-            os.execvp(kiwicompat, ['kiwicompat'] + compat_args)
-        except Exception as e:
-            raise KiwiCompatError(
-                '%s: %s' % (type(e).__name__, format(e))
             )
 
     def get_command(self):
@@ -255,7 +244,7 @@ class Cli:
                     Defaults.set_temp_location(value)
                 if arg == '--target-arch' and value:
                     Defaults.set_platform_name(value)
-                if arg == '--config' and value:
+                if arg == '--config' and value:  # pragma: no cover
                     Defaults.set_custom_runtime_config_file(value)
                 result[arg] = value
         return result
@@ -268,18 +257,18 @@ class Cli:
 
         :rtype: object
         """
-        discovered_tasks = {
-            entry_point.name: entry_point.load()
-            for entry_point in pkg_resources.iter_entry_points('kiwi.tasks')
-        }
+        discovered_tasks = {}
+        if sys.version_info >= (3, 12):
+            for entry in list(entry_points()):  # pragma: no cover
+                if entry.group == 'kiwi.tasks':
+                    discovered_tasks[entry.name] = entry.load()
+        else:  # pragma: no cover
+            module_entries = dict.get(entry_points(), 'kiwi.tasks')
+            for entry in module_entries:
+                discovered_tasks[entry.name] = entry.load()
+
         service = self.get_servicename()
         command = self.get_command()
-
-        if service == 'compat':
-            compat_arguments = self.all_args['<legacy_args>']
-            if '--' in compat_arguments:
-                compat_arguments.remove('--')
-            return self.invoke_kiwicompat(compat_arguments)
 
         if not command:
             raise KiwiLoadCommandUndefined(
@@ -313,5 +302,5 @@ class Cli:
             return docopt(self.command_loaded.__doc__, argv=argv)
         except Exception:
             raise KiwiCommandNotLoaded(
-                '%s command not loaded' % self.get_command()
+                f'{self.get_command()} command not loaded'
             )

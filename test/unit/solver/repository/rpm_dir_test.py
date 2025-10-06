@@ -1,4 +1,4 @@
-from mock import (
+from unittest.mock import (
     patch, Mock
 )
 from pytest import raises
@@ -12,6 +12,7 @@ from kiwi.exceptions import KiwiRpmDirNotRemoteError
 class TestSolverRepositoryRpmDir:
     def setup(self):
         self.uri = Mock()
+        self.uri.uri = 'http://example.org/some/path'
         self.solver = SolverRepositoryRpmDir(self.uri)
 
     def setup_method(self, cls):

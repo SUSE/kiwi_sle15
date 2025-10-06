@@ -19,13 +19,15 @@ import os
 import time
 import logging
 from textwrap import dedent
-from typing import List
+from typing import (
+    List, Dict
+)
 
 # project
 from kiwi.path import Path
 from kiwi.utils.temporary import Temporary
 from kiwi.command import Command
-from kiwi.exceptions import KiwiUmountBusyError
+from kiwi.exceptions import KiwiCommandError, KiwiUmountBusyError
 
 log = logging.getLogger('kiwi')
 
@@ -34,16 +36,22 @@ class MountManager:
     """
     **Implements methods for mounting, umounting and mount checking**
 
-    If a MountManager instance is used to mount a device the caller
-    must care for the time when umount needs to be called. The class
-    does not automatically release the mounted device, which is
-    intentional
+    The caller is responsible for unmounting the device if the MountManager is
+    used as is.
+
+    The class also supports to be used as a context manager, where the device is
+    unmounted once the context manager's with block is left
 
     * :param string device: device node name
     * :param string mountpoint: mountpoint directory name
+    * :param dict attributes: optional attributes to store
     """
-    def __init__(self, device: str, mountpoint: str = ''):
+    def __init__(
+        self, device: str, mountpoint: str = '',
+        attributes: Dict[str, str] = {}
+    ):
         self.device = device
+        self.attributes = attributes
         if not mountpoint:
             self.mountpoint_tempdir = Temporary(
                 prefix='kiwi_mount_manager.'
@@ -53,13 +61,43 @@ class MountManager:
             Path.create(mountpoint)
             self.mountpoint = mountpoint
 
+    def __enter__(self) -> "MountManager":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.umount()
+
+    def get_attributes(self) -> Dict[str, str]:
+        """
+        Return attributes dict for this mount manager
+        """
+        return self.attributes
+
     def bind_mount(self) -> None:
         """
         Bind mount the device to the mountpoint
         """
-        if not self.is_mounted():
+        if self.device and not self.is_mounted():
             Command.run(
                 ['mount', '-n', '--bind', self.device, self.mountpoint]
+            )
+
+    def overlay_mount(self, lower: str) -> None:
+        self.device = 'overlay'
+        self.lower = lower
+        self.upper = f'{self.mountpoint}_cow'
+        self.work = f'{self.mountpoint}_work'
+        Path.create(self.upper)
+        Path.create(self.work)
+        if not self.is_mounted():
+            Command.run(
+                [
+                    'mount', '-t', 'overlay',
+                    self.device, self.mountpoint, '-o',
+                    'lowerdir={0},upperdir={1},workdir={2}'.format(
+                        lower, self.upper, self.work
+                    )
+                ]
             )
 
     def tmpfs_mount(self) -> None:
@@ -77,7 +115,7 @@ class MountManager:
 
         :param list options: mount options
         """
-        if not self.is_mounted():
+        if self.device and not self.is_mounted():
             option_list = []
             if options:
                 option_list = ['-o'] + options
@@ -112,17 +150,24 @@ class MountManager:
         """
         if self.is_mounted():
             umounted_successfully = False
-            for busy in range(0, 10):
+            for busy in range(0, 5):
                 try:
                     Command.run(['umount', self.mountpoint])
                     umounted_successfully = True
                     break
-                except Exception:
+                except KiwiCommandError as err:
                     log.warning(
-                        '%d umount of %s failed, try again in 1sec',
-                        busy, self.mountpoint
+                        f'{busy} umount of {self.mountpoint} failed with: {err}'
                     )
                     time.sleep(1)
+            if not umounted_successfully:
+                try:
+                    Command.run(['umount', '--lazy', self.mountpoint])
+                    umounted_successfully = True
+                except KiwiCommandError as err:
+                    log.error(
+                        f'umount of {self.mountpoint} failed with: {err}'
+                    )
             if not umounted_successfully:
                 if raise_on_busy:
                     lsof = Path.which('lsof', access_mode=os.X_OK)
@@ -176,7 +221,4 @@ class MountManager:
             command=['mountpoint', '-q', self.mountpoint],
             raise_on_error=False
         )
-        if mountpoint_call.returncode == 0:
-            return True
-        else:
-            return False
+        return mountpoint_call.returncode == 0

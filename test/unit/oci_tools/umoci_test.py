@@ -1,8 +1,9 @@
-from mock import (
+from unittest.mock import (
     Mock, patch, call
 )
 
 from kiwi.oci_tools.umoci import OCIUmoci
+from kiwi.oci_tools.base import OCIBase
 
 
 class TestOCIUmoci:
@@ -59,9 +60,6 @@ class TestOCIUmoci:
             options=[
                 '--archive', '--hard-links', '--xattrs', '--acls',
                 '--one-file-system', '--inplace',
-                '--filter', '-x! user.*',
-                '--filter', '-x! security.ima*',
-                '--filter', '-x! security.capability*',
                 '--delete'
             ]
         )
@@ -118,6 +116,7 @@ class TestOCIUmoci:
             'workingdir': '/root',
             'expose_ports': ['80', '42'],
             'volumes': ['/var/log', '/tmp'],
+            'stopsignal': 'SIGINT',
             'environment': {'FOO': 'bar', 'PATH': '/bin'},
             'labels': {'a': 'value', 'b': 'value'},
         }
@@ -128,6 +127,7 @@ class TestOCIUmoci:
                 '--config.workingdir=/root', '--config.entrypoint=/bin/bash',
                 '--config.entrypoint=-x', '--config.cmd=ls', '--config.cmd=-l',
                 '--config.volume=/var/log', '--config.volume=/tmp',
+                '--config.stopsignal=SIGINT',
                 '--config.exposedports=80', '--config.exposedports=42',
                 '--config.env=FOO=bar', '--config.env=PATH=/bin',
                 '--config.label=a=value', '--config.label=b=value',
@@ -208,24 +208,35 @@ class TestOCIUmoci:
         ]
 
     @patch('kiwi.oci_tools.umoci.Command.run')
-    def test_import_container_image(self, mock_Command_run):
+    @patch.object(OCIBase, '_skopeo_provides_tmpdir_option')
+    def test_import_container_image(
+        self, mock_skopeo_provides_tmpdir_option, mock_Command_run
+    ):
+        mock_skopeo_provides_tmpdir_option.return_value = True
         self.oci.import_container_image('oci-archive:image.tar')
         mock_Command_run.assert_called_once_with([
             'skopeo', 'copy', 'oci-archive:image.tar',
-            'oci:tmpdir/oci_layout:base_layer'
+            'oci:tmpdir/oci_layout:base_layer',
+            '--tmpdir', '/var/tmp'
         ])
 
     @patch('kiwi.oci_tools.umoci.Path.wipe')
     @patch('kiwi.oci_tools.umoci.Command.run')
-    def test_export_container_image(self, mock_Command_run, mock_wipe):
+    @patch.object(OCIBase, '_skopeo_provides_tmpdir_option')
+    def test_export_container_image(
+        self, mock_skopeo_provides_tmpdir_option, mock_Command_run, mock_wipe
+    ):
+        mock_skopeo_provides_tmpdir_option.return_value = True
         self.oci.export_container_image(
             'image.tar', 'oci-archive', 'myimage:tag',
             ['myimage:tag2', 'myimage:tag3']
         )
         mock_Command_run.assert_called_once_with([
             'skopeo', 'copy', 'oci:tmpdir/oci_layout:base_layer',
-            'oci-archive:image.tar:myimage:tag', '--additional-tag',
-            'myimage:tag2', '--additional-tag', 'myimage:tag3'
+            'oci-archive:image.tar:myimage:tag',
+            '--additional-tag', 'myimage:tag2',
+            '--additional-tag', 'myimage:tag3',
+            '--tmpdir', '/var/tmp',
         ])
         mock_wipe.assert_called_once_with('image.tar')
 
@@ -235,3 +246,12 @@ class TestOCIUmoci:
         mock_Command_run.assert_called_once_with(
             ['umoci', 'gc', '--layout', 'tmpdir/oci_layout']
         )
+
+    @patch('kiwi.oci_tools.umoci.CommandCapabilities.has_option_in_help')
+    def test_context_manager_exit(
+        self, mock_CommandCapabilities_has_option_in_help
+    ):
+        mock_CommandCapabilities_has_option_in_help.return_value = True
+        with OCIUmoci():
+            pass
+            # just pass

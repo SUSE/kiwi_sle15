@@ -2,12 +2,13 @@ import io
 import os
 import logging
 from collections import namedtuple
-from mock import (
+from unittest.mock import (
     patch, call, MagicMock, Mock
 )
 from pytest import (
     raises, fixture
 )
+import pytest
 
 import kiwi
 
@@ -16,7 +17,8 @@ from kiwi.defaults import grub_loader_type
 from kiwi.xml_state import XMLState
 from kiwi.xml_description import XMLDescription
 from kiwi.bootloader.config.grub2 import BootLoaderConfigGrub2
-from kiwi.bootloader.template.grub2 import BootLoaderTemplateGrub2
+from kiwi.utils.sysconfig import SysConfig
+from kiwi.xml_state import DracutT
 
 from kiwi.exceptions import (
     KiwiBootLoaderGrubPlatformError,
@@ -26,7 +28,8 @@ from kiwi.exceptions import (
     KiwiBootLoaderGrubDataError,
     KiwiBootLoaderGrubFontError,
     KiwiBootLoaderGrubModulesError,
-    KiwiDiskGeometryError
+    KiwiDiskGeometryError,
+    KiwiCommandNotFound
 )
 
 
@@ -63,12 +66,90 @@ class TestBootLoaderConfigGrub2:
             'root_dir/boot/efi/': True,
             'root_dir/usr/share/grub2/powerpc-ieee1275': True
         }
-        self.glob_iglob = [
+        self.glob_iglob_shim_fallback = [
+            # get_mok_manager
+            [],
+            [],
+            [],
             ['root_dir/usr/lib64/efi/MokManager.efi'],
+            # get_shim_loader
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
             ['root_dir/usr/lib64/efi/shim.efi'],
+            # get_signed_grub_loader(disk)
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
             ['root_dir/usr/lib64/efi/grub.efi'],
+            # get_grub_efi_font_directory
             ['root_dir/boot/efi/EFI/DIST/fonts']
         ]
+        self.glob_iglob_noshim_fallback = [
+            # get_mok_manager
+            [],
+            [],
+            [],
+            ['root_dir/usr/lib64/efi/MokManager.efi'],
+            # get_signed_grub_loader(disk)
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            ['root_dir/usr/lib64/efi/grub.efi'],
+            # get_grub_efi_font_directory
+            ['root_dir/boot/efi/EFI/DIST/fonts']
+        ]
+        self.glob_iglob_shim_iso = [
+            # get_mok_manager
+            [],
+            [],
+            [],
+            ['root_dir/usr/lib64/efi/MokManager.efi'],
+            # get_shim_loader
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            ['root_dir/usr/lib64/efi/shim.efi'],
+            # get_signed_grub_loader(iso)
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            [],
+            ['root_dir/usr/lib64/efi/grub.efi'],
+            # get_grub_efi_font_directory
+            ['root_dir/boot/efi/EFI/DIST/fonts']
+        ]
+
         mock_theme.return_value = None
         kiwi.bootloader.config.grub2.Path = Mock()
         kiwi.bootloader.config.base.Path = Mock()
@@ -87,9 +168,7 @@ class TestBootLoaderConfigGrub2:
             return_value='0xffffffff'
         )
 
-        grub_template = BootLoaderTemplateGrub2()
         self.grub2 = Mock()
-        self.grub2.header_hybrid = grub_template.header_hybrid
         kiwi.bootloader.config.grub2.BootLoaderTemplateGrub2 = Mock(
             return_value=self.grub2
         )
@@ -112,9 +191,11 @@ class TestBootLoaderConfigGrub2:
         self.bootloader = BootLoaderConfigGrub2(
             self.state, 'root_dir', None, {
                 'grub_directory_name': 'grub2',
+                'grub_load_command': 'source',
                 'boot_is_crypto': True,
                 'crypto_disk': True,
-                'targetbase': 'rootdev'
+                'targetbase': 'rootdev',
+                'config_options': ['--set-trusted-boot']
             }
         )
         self.bootloader.cmdline = 'some-cmdline root=UUID=foo'
@@ -127,6 +208,17 @@ class TestBootLoaderConfigGrub2:
     def setup_method(self, cls, mock_theme, mock_firmware):
         self.setup()
 
+    def test_setup_sysconfig_bootloader_not_impl(self):
+        xml_state = MagicMock()
+        xml_state.build_type.get_firmware = Mock(
+            return_value=None
+        )
+
+        with pytest.raises(NotImplementedError):
+            BootLoaderConfigGrub2(
+                xml_state=xml_state, root_dir='root_dir'
+            ).setup_sysconfig_bootloader()
+
     @patch('kiwi.bootloader.config.grub2.Path.which')
     def test_post_init_grub2_boot_directory(self, mock_which):
         Defaults.set_platform_name('i686')
@@ -137,6 +229,17 @@ class TestBootLoaderConfigGrub2:
         mock_which.return_value = None
         bootloader = BootLoaderConfigGrub2(xml_state, 'root_dir')
         assert bootloader.boot_directory_name == 'grub'
+
+    @patch('kiwi.bootloader.config.grub2.Path.which')
+    def test_post_init_grub2_load_command(self, mock_which):
+        Defaults.set_platform_name('i686')
+        xml_state = MagicMock()
+        xml_state.build_type.get_firmware = Mock(
+            return_value=None
+        )
+        mock_which.return_value = None
+        bootloader = BootLoaderConfigGrub2(xml_state, 'root_dir')
+        assert bootloader.grub_load == 'source'
 
     def test_post_init_invalid_platform(self):
         Defaults.set_platform_name('unsupported-arch')
@@ -149,9 +252,9 @@ class TestBootLoaderConfigGrub2:
     @patch('kiwi.bootloader.config.grub2.DataSync')
     @patch('kiwi.bootloader.config.grub2.Path.which')
     @patch('os.path.exists')
-    @patch('shutil.copy')
+    @patch('shutil.copy2')
     def test_setup_install_boot_images_raises_no_efigrub(
-        self, mock_shutil_copy, mock_exists, mock_Path_which,
+        self, mock_shutil_copy2, mock_exists, mock_Path_which,
         mock_sync, mock_command, mock_grub, mock_shim
     ):
         Defaults.set_platform_name('x86_64')
@@ -228,6 +331,15 @@ class TestBootLoaderConfigGrub2:
         bootloader = BootLoaderConfigGrub2(xml_state, 'root_dir')
         assert bootloader.arch == 'riscv64'
 
+    def test_post_init_loongarch64_platform(self):
+        Defaults.set_platform_name('loongarch64')
+        xml_state = MagicMock()
+        xml_state.build_type.get_firmware = Mock(
+            return_value=None
+        )
+        bootloader = BootLoaderConfigGrub2(xml_state, 'root_dir')
+        assert bootloader.arch == 'loongarch64'
+
     @patch('os.path.exists')
     def test_post_init_dom0(self, mock_exists):
         Defaults.set_platform_name('x86_64')
@@ -240,7 +352,6 @@ class TestBootLoaderConfigGrub2:
         mock_exists.return_value = True
         self.bootloader.post_init(None)
         assert self.bootloader.multiboot is True
-        assert self.bootloader.hybrid_boot is False
         assert self.bootloader.xen_guest is False
 
     @patch('os.path.exists')
@@ -255,7 +366,6 @@ class TestBootLoaderConfigGrub2:
         mock_exists.return_value = True
         self.bootloader.post_init(None)
         assert self.bootloader.multiboot is False
-        assert self.bootloader.hybrid_boot is False
         assert self.bootloader.xen_guest is True
 
     @patch.object(BootLoaderConfigGrub2, '_setup_default_grub')
@@ -304,8 +414,13 @@ class TestBootLoaderConfigGrub2:
                 'some-data'
             )
 
+    @patch('kiwi.bootloader.config.grub2.DataSync.sync_data')
+    @patch('kiwi.bootloader.config.grub2.Temporary.new_dir')
     @patch('kiwi.bootloader.config.grub2.Command.run')
-    def test_create_embedded_fat_efi_image(self, mock_command):
+    def test_create_embedded_fat_efi_image(self, mock_command, mock_tmpdir, mock_syncdata):
+        tmpdir = Mock()
+        tmpdir.name = 'tmpdir'
+        mock_tmpdir.return_value = tmpdir
         self.bootloader._create_embedded_fat_efi_image('tmp-esp-image')
         assert mock_command.call_args_list == [
             call(
@@ -321,24 +436,39 @@ class TestBootLoaderConfigGrub2:
             call(
                 [
                     'mcopy', '-Do', '-s', '-i', 'tmp-esp-image',
-                    'root_dir/EFI', '::'
+                    'tmpdir', '::EFI'
                 ]
             )
         ]
 
     @patch('glob.iglob')
-    @patch('shutil.copy')
+    @patch('shutil.copy2')
     @patch('kiwi.bootloader.config.grub2.Path.create')
     @patch('kiwi.bootloader.config.grub2.Command.run')
     @patch('kiwi.bootloader.config.grub2.Defaults.get_signed_grub_loader')
+    @patch('kiwi.bootloader.config.grub2.Path.which')
     def test_copy_grub_config_to_efi_path(
-        self, mock_get_signed_grub_loader, mock_Command,
-        mock_Path_create, mock_shutil_copy, mock_glob
+        self, mock_Path_which, mock_get_signed_grub_loader, mock_Command,
+        mock_Path_create, mock_shutil_copy2, mock_glob
     ):
-        mock_get_signed_grub_loader.return_value = None
+        mock_get_signed_grub_loader.return_value = []
         mock_glob.return_value = []
 
-        # 1. run: check default handling
+        # 1. run: check strings command not found
+        mock_Path_which.return_value = ''
+        mock_get_signed_grub_loader.return_value = [
+            grub_loader_type(
+                'some-loader', 'some-binaryname', 'some-targetname'
+            )
+        ]
+        with raises(KiwiCommandNotFound):
+            self.bootloader._copy_grub_config_to_efi_path(
+                'root_dir', 'config_file'
+            )
+
+        # 2. run: check default handling
+        mock_get_signed_grub_loader.return_value = []
+        mock_Path_which.return_value = '/usr/bin/strings'
         self.bootloader._copy_grub_config_to_efi_path(
             'root_dir', 'config_file'
         )
@@ -346,18 +476,20 @@ class TestBootLoaderConfigGrub2:
         mock_Path_create.assert_called_once_with(
             'root_dir/EFI/BOOT'
         )
-        mock_shutil_copy.assert_called_once_with(
+        mock_shutil_copy2.assert_called_once_with(
             'config_file', 'root_dir/EFI/BOOT/grub.cfg'
         )
 
-        # 2. run: check with vendor directory read from grub binary
-        mock_shutil_copy.reset_mock()
+        # 3. run: check with vendor directory read from grub binary
+        mock_shutil_copy2.reset_mock()
         mock_Path_create.reset_mock()
         strings_out = Mock()
         strings_out.output = '/EFI/ubuntu'
-        mock_get_signed_grub_loader.return_value = grub_loader_type(
-            'some-loader', None
-        )
+        mock_get_signed_grub_loader.return_value = [
+            grub_loader_type(
+                'some-loader', 'some-binaryname', 'some-targetname'
+            )
+        ]
         mock_Command.return_value = strings_out
         self.bootloader._copy_grub_config_to_efi_path(
             'root_dir', 'config_file'
@@ -366,14 +498,14 @@ class TestBootLoaderConfigGrub2:
         mock_Path_create.assert_called_once_with(
             'root_dir/EFI/ubuntu'
         )
-        mock_shutil_copy.assert_called_once_with(
+        mock_shutil_copy2.assert_called_once_with(
             'config_file', 'root_dir/EFI/ubuntu/grub.cfg'
         )
 
-        # 3. run: check with installed vendor directory
-        mock_shutil_copy.reset_mock()
+        # 4. run: check with installed vendor directory
+        mock_shutil_copy2.reset_mock()
         mock_Path_create.reset_mock()
-        mock_get_signed_grub_loader.return_value = None
+        mock_get_signed_grub_loader.return_value = []
         mock_glob.return_value = ['root_dir/EFI/fedora/shim.efi']
         self.bootloader._copy_grub_config_to_efi_path(
             'root_dir', 'config_file'
@@ -382,15 +514,15 @@ class TestBootLoaderConfigGrub2:
         mock_Path_create.assert_called_once_with(
             'root_dir/EFI/fedora'
         )
-        mock_shutil_copy.assert_called_once_with(
+        mock_shutil_copy2.assert_called_once_with(
             'config_file', 'root_dir/EFI/fedora/grub.cfg'
         )
 
-    @patch('shutil.copy')
+    @patch('shutil.copy2')
     @patch('os.path.exists')
     @patch('kiwi.bootloader.config.grub2.Command.run')
     def test_setup_zipl2grub_conf_512_byte_target(
-        self, mock_Command_run, mock_exists, mock_shutil_copy
+        self, mock_Command_run, mock_exists, mock_shutil_copy2
     ):
         path_return_values = [True, False]
 
@@ -422,26 +554,26 @@ class TestBootLoaderConfigGrub2:
                 '    targetblocksize = 512\n' \
                 '    targetoffset = 2048' \
                 in file_handle.write.call_args[0][0]
-        mock_shutil_copy.assert_called_once_with(
+        mock_shutil_copy2.assert_called_once_with(
             'root_dir/etc/default/zipl2grub.conf.in',
             'root_dir/etc/default/zipl2grub.conf.in.orig'
         )
         path_return_values = [True, True]
-        mock_shutil_copy.reset_mock()
+        mock_shutil_copy2.reset_mock()
         with patch('builtins.open', create=True) as mock_open:
             file_handle = mock_open.return_value.__enter__.return_value
             file_handle.read.return_value = zipl_config
             self.bootloader._setup_zipl2grub_conf()
-        mock_shutil_copy.assert_called_once_with(
+        mock_shutil_copy2.assert_called_once_with(
             'root_dir/etc/default/zipl2grub.conf.in.orig',
             'root_dir/etc/default/zipl2grub.conf.in'
         )
 
-    @patch('shutil.copy')
+    @patch('shutil.copy2')
     @patch('os.path.exists')
     @patch('kiwi.bootloader.config.grub2.Command.run')
     def test_setup_zipl2grub_conf_4096_byte_target(
-        self, mock_Command_run, mock_exists, mock_shutil_copy
+        self, mock_Command_run, mock_exists, mock_shutil_copy2
     ):
         path_return_values = [True, False]
         command_return_values = [
@@ -554,13 +686,72 @@ class TestBootLoaderConfigGrub2:
     @patch('os.path.exists')
     @patch('kiwi.bootloader.config.grub2.SysConfig')
     @patch('kiwi.bootloader.config.grub2.Command.run')
+    def test_setup_default_grub_s390_secure_execution(
+        self, mock_Command_run, mock_sysconfig, mock_exists
+    ):
+        grep_grub_option = Mock()
+        grep_grub_option.returncode = 0
+        mock_Command_run.return_value = grep_grub_option
+        mock_exists.return_value = False
+        grub_default = SysConfig('some-file')
+        grub_default.write = Mock()
+        mock_sysconfig.return_value = grub_default
+        mock_exists.return_value = True
+        self.bootloader.terminal_input = 'serial'
+        self.bootloader.terminal_output = 'gfxterm'
+        self.bootloader.theme = 'openSUSE'
+        self.bootloader.displayname = 'Bob'
+        self.bootloader.arch = 's390x'
+        self.bootloader.host_key_certificates = [
+            {
+                'hkd_cert': ['/path/to/host.crt'],
+                'hkd_revocation_list': ['some1.crl', 'some2.crl'],
+                'hkd_ca_cert': '/path/to/DigiCertCA.crt',
+                'hkd_sign_cert': '/path/to/ibm-z-host-key-signing.crt'
+            }
+        ]
+        self.firmware.efi_mode.return_value = 'efi'
+
+        self.bootloader._setup_default_grub()
+
+        mock_sysconfig.assert_called_once_with('root_dir/etc/default/grub')
+        grub_default.write.assert_called_once_with()
+
+        assert grub_default.data_dict == {
+            'GRUB_BACKGROUND': '/boot/grub2/themes/openSUSE/background.png',
+            'GRUB_CMDLINE_LINUX_DEFAULT': '"some-cmdline"',
+            'GRUB_DISTRIBUTOR': '"Bob"',
+            'GRUB_ENABLE_BLSCFG': 'true',
+            'GRUB_ENABLE_CRYPTODISK': 'y',
+            'GRUB_GFXMODE': '800x600',
+            'GRUB_SERIAL_COMMAND': '"serial --speed=38400"',
+            'GRUB_TERMINAL_INPUT': '"serial"',
+            'GRUB_TERMINAL_OUTPUT': '"gfxterm"',
+            'GRUB_THEME': '/boot/grub2/themes/openSUSE/theme.txt',
+            'GRUB_TIMEOUT': 10,
+            'GRUB_TIMEOUT_STYLE': 'countdown',
+            'SUSE_BTRFS_SNAPSHOT_BOOTING': 'true',
+            'SUSE_S390_SE_CA_CERT': '/path/to/DigiCertCA.crt',
+            'SUSE_S390_SE_ENABLE': 'true',
+            'SUSE_S390_SE_HOST_KEY': '/path/to/host.crt',
+            'SUSE_S390_SE_HOST_KEY_SIGNING_KEY':
+                '/path/to/ibm-z-host-key-signing.crt',
+            'SUSE_S390_SE_REVOCATION_LIST': 'some1.crl,some2.crl',
+            'GRUB_DEFAULT': 'saved'
+        }
+
+    @patch('os.path.exists')
+    @patch('kiwi.bootloader.config.grub2.SysConfig')
+    @patch('kiwi.bootloader.config.grub2.Command.run')
     def test_setup_default_grub(
         self, mock_Command_run, mock_sysconfig, mock_exists
     ):
         grep_grub_option = Mock()
         grep_grub_option.returncode = 0
         mock_Command_run.return_value = grep_grub_option
-        grub_default = MagicMock()
+        mock_exists.return_value = False
+        grub_default = SysConfig('some-file')
+        grub_default.write = Mock()
         mock_sysconfig.return_value = grub_default
         mock_exists.return_value = True
         self.bootloader.terminal_input = 'serial'
@@ -573,28 +764,23 @@ class TestBootLoaderConfigGrub2:
 
         mock_sysconfig.assert_called_once_with('root_dir/etc/default/grub')
         grub_default.write.assert_called_once_with()
-        assert grub_default.__setitem__.call_args_list == [
-            call(
-                'GRUB_BACKGROUND',
-                '/boot/grub2/themes/openSUSE/background.png'
-            ),
-            call('GRUB_CMDLINE_LINUX_DEFAULT', '"some-cmdline"'),
-            call('GRUB_DISTRIBUTOR', '"Bob"'),
-            call('GRUB_ENABLE_BLSCFG', 'true'),
-            call('GRUB_ENABLE_CRYPTODISK', 'y'),
-            call('GRUB_GFXMODE', '800x600'),
-            call(
-                'GRUB_SERIAL_COMMAND', '"serial --speed=38400"'
-            ),
-            call('GRUB_TERMINAL_INPUT', '"serial"'),
-            call('GRUB_TERMINAL_OUTPUT', '"gfxterm"'),
-            call('GRUB_THEME', '/boot/grub2/themes/openSUSE/theme.txt'),
-            call('GRUB_TIMEOUT', 10),
-            call('GRUB_TIMEOUT_STYLE', 'countdown'),
-            call('GRUB_USE_INITRDEFI', 'true'),
-            call('GRUB_USE_LINUXEFI', 'true'),
-            call('SUSE_BTRFS_SNAPSHOT_BOOTING', 'true')
-        ]
+
+        assert grub_default.data_dict == {
+            'GRUB_BACKGROUND': '/boot/grub2/themes/openSUSE/background.png',
+            'GRUB_CMDLINE_LINUX_DEFAULT': '"some-cmdline"',
+            'GRUB_DISTRIBUTOR': '"Bob"',
+            'GRUB_ENABLE_BLSCFG': 'true',
+            'GRUB_ENABLE_CRYPTODISK': 'y',
+            'GRUB_GFXMODE': '800x600',
+            'GRUB_SERIAL_COMMAND': '"serial --speed=38400"',
+            'GRUB_TERMINAL_INPUT': '"serial"',
+            'GRUB_TERMINAL_OUTPUT': '"gfxterm"',
+            'GRUB_THEME': '/boot/grub2/themes/openSUSE/theme.txt',
+            'GRUB_TIMEOUT': 10,
+            'GRUB_TIMEOUT_STYLE': 'countdown',
+            'SUSE_BTRFS_SNAPSHOT_BOOTING': 'true',
+            'GRUB_DEFAULT': 'saved'
+        }
 
     @patch('os.path.exists')
     @patch('kiwi.bootloader.config.grub2.SysConfig')
@@ -733,10 +919,54 @@ class TestBootLoaderConfigGrub2:
 
     @patch('os.path.exists')
     @patch('kiwi.bootloader.config.grub2.SysConfig')
+    @patch('kiwi.bootloader.config.grub2.Command.run')
+    def test_setup_default_grub_use_of_bls(
+        self, mock_Command_run, mock_sysconfig, mock_exists
+    ):
+        grep_grub_option = Mock()
+        grep_grub_option.returncode = 0
+        mock_Command_run.return_value = grep_grub_option
+        mock_exists.return_value = False
+        grub_default = SysConfig('some-file')
+        grub_default.write = Mock()
+        mock_sysconfig.return_value = grub_default
+        mock_exists.return_value = True
+        self.bootloader.terminal_input = 'serial'
+        self.bootloader.terminal_output = 'gfxterm'
+        self.bootloader.theme = 'openSUSE'
+        self.bootloader.displayname = 'Bob'
+        self.bootloader.bls = True
+        self.firmware.efi_mode.return_value = 'efi'
+
+        self.bootloader._setup_default_grub()
+
+        mock_sysconfig.assert_called_once_with('root_dir/etc/default/grub')
+        grub_default.write.assert_called_once_with()
+
+        assert grub_default.data_dict == {
+            'GRUB_BACKGROUND': '/boot/grub2/themes/openSUSE/background.png',
+            'GRUB_CMDLINE_LINUX_DEFAULT': '"some-cmdline"',
+            'GRUB_DISTRIBUTOR': '"Bob"',
+            'GRUB_ENABLE_BLSCFG': 'true',
+            'GRUB_ENABLE_CRYPTODISK': 'y',
+            'GRUB_GFXMODE': '800x600',
+            'GRUB_SERIAL_COMMAND': '"serial --speed=38400"',
+            'GRUB_TERMINAL_INPUT': '"serial"',
+            'GRUB_TERMINAL_OUTPUT': '"gfxterm"',
+            'GRUB_THEME': '/boot/grub2/themes/openSUSE/theme.txt',
+            'GRUB_TIMEOUT': 10,
+            'GRUB_TIMEOUT_STYLE': 'countdown',
+            'SUSE_BTRFS_SNAPSHOT_BOOTING': 'true',
+            'GRUB_DEFAULT': 'saved'
+        }
+
+    @patch('os.path.exists')
+    @patch('kiwi.bootloader.config.grub2.SysConfig')
     def test_setup_sysconfig_bootloader(self, mock_sysconfig, mock_exists):
         sysconfig_bootloader = MagicMock()
         mock_sysconfig.return_value = sysconfig_bootloader
         mock_exists.return_value = True
+        self.bootloader.bls = False
         self.bootloader._setup_sysconfig_bootloader()
         mock_sysconfig.assert_called_once_with(
             'root_dir/etc/sysconfig/bootloader'
@@ -749,7 +979,8 @@ class TestBootLoaderConfigGrub2:
                 '"some-cmdline root=UUID=foo failsafe-options"'
             ),
             call('LOADER_LOCATION', 'mbr'),
-            call('LOADER_TYPE', 'grub2')
+            call('LOADER_TYPE', 'grub2'),
+            call('TRUSTED_BOOT', 'yes')
         ]
         self.firmware.efi_mode = Mock(
             return_value='uefi'
@@ -764,7 +995,8 @@ class TestBootLoaderConfigGrub2:
             ),
             call('LOADER_LOCATION', 'none'),
             call('LOADER_TYPE', 'grub2-efi'),
-            call('SECURE_BOOT', 'yes')
+            call('SECURE_BOOT', 'yes'),
+            call('TRUSTED_BOOT', 'yes')
         ]
 
     @patch('os.path.exists')
@@ -775,6 +1007,7 @@ class TestBootLoaderConfigGrub2:
         sysconfig_bootloader = MagicMock()
         mock_sysconfig.return_value = sysconfig_bootloader
         mock_exists.return_value = True
+        self.bootloader.bls = False
         self.bootloader._setup_sysconfig_bootloader()
         mock_sysconfig.assert_called_once_with(
             'root_dir/etc/sysconfig/bootloader'
@@ -787,7 +1020,8 @@ class TestBootLoaderConfigGrub2:
                 '"some-cmdline root=UUID=foo failsafe-options"'
             ),
             call('LOADER_LOCATION', 'mbr'),
-            call('LOADER_TYPE', 'grub2')
+            call('LOADER_TYPE', 'grub2'),
+            call('TRUSTED_BOOT', 'yes')
         ]
         self.firmware.efi_mode = Mock(
             return_value='efi'
@@ -802,7 +1036,22 @@ class TestBootLoaderConfigGrub2:
             ),
             call('LOADER_LOCATION', 'none'),
             call('LOADER_TYPE', 'grub2-efi'),
-            call('SECURE_BOOT', 'no')
+            call('SECURE_BOOT', 'no'),
+            call('TRUSTED_BOOT', 'yes')
+        ]
+        sysconfig_bootloader.__setitem__.reset_mock()
+        self.bootloader.bls = True
+        self.bootloader._setup_sysconfig_bootloader()
+        assert sysconfig_bootloader.__setitem__.call_args_list == [
+            call('DEFAULT_APPEND', '"some-cmdline root=UUID=foo"'),
+            call(
+                'FAILSAFE_APPEND',
+                '"some-cmdline root=UUID=foo failsafe-options"'
+            ),
+            call('LOADER_LOCATION', 'none'),
+            call('LOADER_TYPE', 'grub2-bls'),
+            call('SECURE_BOOT', 'no'),
+            call('TRUSTED_BOOT', 'yes')
         ]
 
     @patch('os.path.exists')
@@ -837,6 +1086,38 @@ class TestBootLoaderConfigGrub2:
         self.bootloader.setup_live_image_config(self.mbrid)
         self.grub2.get_iso_template.assert_called_once()
 
+    @patch('os.path.exists')
+    def test_setup_install_image_config_custom_template(self, mock_exists):
+        bootloader = Mock()
+        bootloader.get_grub_template.return_value = "example.template"
+        self.bootloader.xml_state.build_type.bootloader.append(bootloader)
+        mock_exists.return_value = True
+        self.bootloader.multiboot = False
+        with patch('builtins.open') as mock_open:
+            mock_open.return_value = MagicMock(spec=io.IOBase)
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.read.return_value = "example template contents"
+            self.bootloader.setup_install_image_config(self.mbrid)
+        assert self.bootloader.config == "example template contents"
+
+    @patch('os.path.exists')
+    def test_setup_install_image_config_custom_template_file_does_not_exist(self, mock_exists):
+        bootloader = Mock()
+        bootloader.get_grub_template.return_value = "example.template"
+        self.bootloader.xml_state.build_type.bootloader.append(bootloader)
+        mock_exists.return_value = False
+        self.bootloader.multiboot = False
+        with raises(KiwiFileNotFound):
+            self.bootloader.setup_install_image_config(self.mbrid)
+
+    def test_setup_install_image_config_custom_template_not_set(self):
+        bootloader = Mock()
+        bootloader.get_grub_template.return_value = ""
+        self.bootloader.xml_state.build_type.bootloader.append(bootloader)
+        self.bootloader.multiboot = False
+        self.bootloader.setup_install_image_config(self.mbrid)
+        self.grub2.get_install_template.assert_called_once()
+
     def test_setup_live_image_config_multiboot(self):
         self.bootloader.multiboot = True
         self.bootloader.setup_live_image_config(self.mbrid)
@@ -857,10 +1138,10 @@ class TestBootLoaderConfigGrub2:
         self.bootloader.multiboot = False
         self.bootloader.setup_live_image_config(self.mbrid)
         self.grub2.get_iso_template.assert_called_once_with(
-            True, True, True, True, None
+            True, True, True, None
         )
         mock_copy_grub_config_to_efi_path.assert_called_once_with(
-            'root_dir', 'earlyboot.cfg'
+            'root_dir', 'earlyboot.cfg', 'iso'
         )
 
     def test_setup_install_image_config_multiboot(self):
@@ -876,13 +1157,18 @@ class TestBootLoaderConfigGrub2:
     @patch.object(BootLoaderConfigGrub2, '_copy_grub_config_to_efi_path')
     @patch('kiwi.bootloader.config.grub2.Command.run')
     @patch('kiwi.bootloader.config.grub2.Path.which')
+    @patch('kiwi.bootloader.config.grub2.Path.create')
     @patch('kiwi.defaults.Defaults.get_vendor_grubenv')
     @patch('glob.iglob')
     def test_setup_disk_image_config(
-        self, mock_iglob, mock_get_vendor_grubenv, mock_Path_which,
+        self, mock_iglob, mock_get_vendor_grubenv,
+        mock_Path_create, mock_Path_which,
         mock_Command_run, mock_copy_grub_config_to_efi_path,
         mock_mount_system
     ):
+        self.state.get_dracut_config = Mock(
+            return_value=DracutT(uefi=False, modules=[], drivers=[])
+        )
         mock_iglob.return_value = ['some_entry.conf']
         mock_get_vendor_grubenv.return_value = 'grubenv'
         mock_Path_which.return_value = '/path/to/grub2-mkconfig'
@@ -931,14 +1217,15 @@ class TestBootLoaderConfigGrub2:
                 }
             )
             mock_mount_system.assert_called_once_with(
-                'rootdev', 'bootdev', None, None
+                'rootdev', 'bootdev', None, None, None
             )
+            os.environ.update({'GRUB_DISABLE_OS_PROBER': 'true'})
             assert mock_Command_run.call_args_list == [
                 call(
                     [
                         'chroot', self.bootloader.root_mount.mountpoint,
                         'grub2-mkconfig', '-o', '/boot/grub2/grub.cfg'
-                    ]
+                    ], os.environ
                 ),
                 call(
                     [
@@ -950,32 +1237,11 @@ class TestBootLoaderConfigGrub2:
             mock_copy_grub_config_to_efi_path.assert_called_once_with(
                 'efi_mount_point', 'earlyboot.cfg'
             )
-            assert file_handle_grub.write.call_args_list == [
-                # first write of grub.cfg, adapting to linux/initrd as variables
-                call(
-                    'set linux=linux\n'
-                    'set initrd=initrd\n'
-                    'if [ "${grub_cpu}" = "x86_64" -o '
-                    '"${grub_cpu}" = "i386" ]; then\n'
-                    '    if [ "${grub_platform}" = "efi" ]; then\n'
-                    '        set linux=linuxefi\n'
-                    '        set initrd=initrdefi\n'
-                    '    fi\n'
-                    'fi\n'
-                    'export linux initrd\n'
-                ),
-                call(
-                    'root=rootdev nomodeset console=ttyS0 console=tty0'
-                    '\n'
-                    'root=PARTUUID=xx'
-                ),
-                # second write of grub.cfg, setting overlay root
-                call(
-                    'root=overlay:UUID=ID nomodeset console=ttyS0 console=tty0'
-                    '\n'
-                    'root=overlay:UUID=ID'
-                )
-            ]
+            file_handle_grub.write.assert_called_once_with == (
+                'root=overlay:UUID=ID nomodeset console=ttyS0 console=tty0'
+                '\n'
+                'root=overlay:UUID=ID'
+            )
             file_handle_grubenv.write.assert_called_once_with(
                 'root=overlay:UUID=ID'
             )
@@ -986,62 +1252,48 @@ class TestBootLoaderConfigGrub2:
             assert 'initrd /boot/initrd' in \
                 file_handle_menu.write.call_args_list[1][0][0].split(os.linesep)
 
-    @patch.object(BootLoaderConfigGrub2, '_mount_system')
-    @patch.object(BootLoaderConfigGrub2, '_copy_grub_config_to_efi_path')
-    @patch('kiwi.bootloader.config.grub2.Command.run')
-    @patch('kiwi.bootloader.config.grub2.Path.which')
-    def test_setup_disk_image_config_validate_linuxefi(
-        self, mock_Path_which, mock_Command_run,
-        mock_copy_grub_config_to_efi_path, mock_mount_system
-    ):
-        mock_Path_which.return_value = '/path/to/grub2-mkconfig'
-        self.firmware.efi_mode = Mock(
-            return_value='uefi'
-        )
-        self.bootloader.root_mount = Mock()
-        self.bootloader.root_mount.mountpoint = 'root_mount_point'
-        self.bootloader.efi_mount = Mock()
-        self.bootloader.efi_mount.mountpoint = 'efi_mount_point'
-        with patch('builtins.open', create=True) as mock_open:
-            mock_open.return_value = MagicMock(spec=io.IOBase)
-            file_handle = mock_open.return_value.__enter__.return_value
-            file_handle.read.return_value = os.linesep.join(
-                [
-                    '\tlinuxefi ${rel_dirname}/${basename} ...',
-                    '\tlinux ${rel_dirname}/${basename} ...',
-                    '\tlinux16 ${rel_dirname}/${basename} ...',
-                    '\tinitrdefi ${rel_dirname}/${initrd}',
-                    '\tinitrd ${rel_dirname}/${initrd}',
-                    '\tinitrd16 ${rel_dirname}/${initrd}'
-                ]
-            )
+            self.bootloader.bootpartition = True
+            file_handle_menu.reset_mock()
+
             self.bootloader.setup_disk_image_config(
                 boot_options={
                     'root_device': 'rootdev', 'boot_device': 'bootdev'
                 }
             )
-            assert file_handle.write.call_args_list == [
-                call(
-                    'set linux=linux\n'
-                    'set initrd=initrd\n'
-                    'if [ "${grub_cpu}" = "x86_64" -o '
-                    '"${grub_cpu}" = "i386" ]; then\n'
-                    '    if [ "${grub_platform}" = "efi" ]; then\n'
-                    '        set linux=linuxefi\n'
-                    '        set initrd=initrdefi\n'
-                    '    fi\n'
-                    'fi\n'
-                    'export linux initrd\n'
-                ),
-                call(
-                    '\t$linux ${rel_dirname}/${basename} ...\n'
-                    '\t$linux ${rel_dirname}/${basename} ...\n'
-                    '\t$linux ${rel_dirname}/${basename} ...\n'
-                    '\t$initrd ${rel_dirname}/${initrd}\n'
-                    '\t$initrd ${rel_dirname}/${initrd}\n'
-                    '\t$initrd ${rel_dirname}/${initrd}'
+
+            assert 'linux /vmlinuz' in \
+                file_handle_menu.write.call_args_list[1][0][0].split(os.linesep)
+            assert 'initrd /initrd' in \
+                file_handle_menu.write.call_args_list[1][0][0].split(os.linesep)
+
+            # test UKI setup
+            self.state.get_dracut_config.return_value = DracutT(
+                uefi=True, modules=[], drivers=[]
+            )
+            boot_image = Mock()
+            self.bootloader.setup_disk_image_config(
+                boot_options={
+                    'root_device': 'rootdev',
+                    'boot_device': 'bootdev',
+                    'boot_image': boot_image
+                }
+            )
+            boot_image.create_uki.assert_called_once_with(
+                'some-cmdline root=UUID=foo'
+            )
+
+            # test read-only device
+            file_handle_grub.write.side_effect = OSError('readonly system')
+            file_handle_grubenv.write.side_effect = OSError('readonly system')
+            file_handle_menu.write.side_effect = OSError('readonly system')
+
+            with self._caplog.at_level(logging.INFO):
+                self.bootloader.setup_disk_image_config(
+                    boot_options={
+                        'root_device': 'rootdev', 'boot_device': 'bootdev'
+                    }
                 )
-            ]
+                assert 'readonly system' in self._caplog.text
 
     @patch.object(BootLoaderConfigGrub2, '_copy_grub_config_to_efi_path')
     def test_setup_install_image_config_standard(
@@ -1054,10 +1306,10 @@ class TestBootLoaderConfigGrub2:
         self.bootloader.multiboot = False
         self.bootloader.setup_install_image_config(self.mbrid)
         self.grub2.get_install_template.assert_called_once_with(
-            True, True, True, False, True
+            True, True, False, True
         )
         mock_copy_grub_config_to_efi_path.assert_called_once_with(
-            'root_dir', 'earlyboot.cfg'
+            'root_dir', 'earlyboot.cfg', 'iso'
         )
 
     def test_setup_iso_image_config_substitute_error(self):
@@ -1152,7 +1404,7 @@ class TestBootLoaderConfigGrub2:
         Defaults.set_platform_name('x86_64')
         mock_Path_which.return_value = '/path/to/grub2-mkimage'
         mock_get_boot_path.return_value = '/boot'
-        mock_get_unsigned_grub_loader.return_value = None
+        mock_get_unsigned_grub_loader.return_value = []
         self.firmware.efi_mode = Mock(
             return_value='efi'
         )
@@ -1160,6 +1412,7 @@ class TestBootLoaderConfigGrub2:
         self.os_exists['root_dir/boot/grub2/fonts/unicode.pf2'] = False
         self.os_exists['root_dir/usr/share/grub2/unicode.pf2'] = True
         self.os_exists['root_dir/usr/share/grub2/x86_64-efi'] = True
+        self.os_exists['root_dir/usr/share/grub2/i386-efi'] = True
         self.os_exists['root_dir/usr/share/grub2/x86_64-xen'] = True
         self.os_exists['root_dir/usr/share/grub2/x86_64-efi/linuxefi.mod'] = \
             True
@@ -1191,7 +1444,7 @@ class TestBootLoaderConfigGrub2:
                     'search_label', 'search_fs_file', 'search',
                     'search_fs_uuid', 'ls', 'normal', 'gzio', 'png', 'fat',
                     'gettext', 'font', 'minicmd', 'gfxterm', 'gfxmenu',
-                    'all_video', 'xfs', 'btrfs', 'lvm', 'luks',
+                    'all_video', 'xfs', 'btrfs', 'squash4', 'lvm', 'luks',
                     'gcry_rijndael', 'gcry_sha256', 'gcry_sha512', 'crypto',
                     'cryptodisk', 'test', 'true', 'loadenv', 'multiboot',
                     'part_gpt', 'part_msdos', 'efi_gop', 'efi_uga', 'linuxefi'
@@ -1210,7 +1463,7 @@ class TestBootLoaderConfigGrub2:
     ):
         Defaults.set_platform_name('x86_64')
         mock_Path_which.return_value = '/path/to/grub2-mkimage'
-        mock_get_unsigned_grub_loader.return_value = None
+        mock_get_unsigned_grub_loader.return_value = []
         data = Mock()
         mock_sync.return_value = data
         self.firmware.efi_mode = Mock(
@@ -1220,6 +1473,7 @@ class TestBootLoaderConfigGrub2:
         self.os_exists['root_dir/usr/share/grub2/unicode.pf2'] = True
         self.os_exists['root_dir/usr/share/grub2/i386-pc'] = True
         self.os_exists['root_dir/usr/share/grub2/x86_64-efi'] = True
+        self.os_exists['root_dir/usr/share/grub2/i386-efi'] = True
         self.os_exists['root_dir/usr/share/grub2/x86_64-efi/linuxefi.mod'] = \
             True
 
@@ -1243,8 +1497,8 @@ class TestBootLoaderConfigGrub2:
                 call('cryptomount -u 0815\n'),
                 call('set root="cryptouuid/0815"\n'),
                 call('search --fs-uuid --set=root 0815\n'),
-                call('set prefix=($root)//grub2\n'),
-                call('configfile ($root)//grub2/grub.cfg\n')
+                call('set prefix=($root)/grub2\n'),
+                call('source ($root)/grub2/grub.cfg\n')
             ]
         assert mock_command.call_args_list == [
             call(
@@ -1259,13 +1513,13 @@ class TestBootLoaderConfigGrub2:
                     '-O', 'x86_64-efi',
                     '-o', '/boot/efi/EFI/BOOT/bootx64.efi',
                     '-c', '/boot/efi/EFI/BOOT/earlyboot.cfg',
-                    '-p', '//grub2',
+                    '-p', '/grub2',
                     '-d', '/usr/share/grub2/x86_64-efi',
                     'ext2', 'iso9660', 'linux', 'echo', 'configfile',
                     'search_label', 'search_fs_file', 'search',
                     'search_fs_uuid', 'ls', 'normal', 'gzio', 'png', 'fat',
                     'gettext', 'font', 'minicmd', 'gfxterm', 'gfxmenu',
-                    'all_video', 'xfs', 'btrfs', 'lvm', 'luks',
+                    'all_video', 'xfs', 'btrfs', 'squash4', 'lvm', 'luks',
                     'gcry_rijndael', 'gcry_sha256', 'gcry_sha512', 'crypto',
                     'cryptodisk', 'test', 'true', 'loadenv', 'part_gpt',
                     'part_msdos', 'efi_gop', 'efi_uga', 'linuxefi'
@@ -1280,14 +1534,23 @@ class TestBootLoaderConfigGrub2:
             call(
                 'root_dir/usr/share/grub2/x86_64-efi/',
                 'root_dir/boot/grub2/x86_64-efi'
+            ),
+            call(
+                'root_dir/usr/share/grub2/i386-efi/',
+                'root_dir/boot/grub2/i386-efi'
             )
         ]
         assert data.sync_data.call_args_list == [
             call(exclude=['*.module'], options=['-a']),
+            call(exclude=['*.module'], options=['-a']),
             call(exclude=['*.module'], options=['-a'])
         ]
 
-        mock_get_unsigned_grub_loader.return_value = 'custom_grub_image'
+        mock_get_unsigned_grub_loader.return_value = [
+            grub_loader_type(
+                'custom_grub_image', 'some-binaryname', 'bootx64.efi'
+            )
+        ]
         mock_command.reset_mock()
 
         with patch('builtins.open', create=True) as mock_open:
@@ -1302,8 +1565,8 @@ class TestBootLoaderConfigGrub2:
                 call('cryptomount -u 0815\n'),
                 call('set root="cryptouuid/0815"\n'),
                 call('search --fs-uuid --set=root 0815\n'),
-                call('set prefix=($root)//grub2\n'),
-                call('configfile ($root)//grub2/grub.cfg\n')
+                call('set prefix=($root)/grub2\n'),
+                call('source ($root)/grub2/grub.cfg\n')
             ]
             mock_open.assert_called_once_with(
                 'root_dir/boot/efi/EFI/BOOT/grub.cfg', 'w'
@@ -1323,6 +1586,23 @@ class TestBootLoaderConfigGrub2:
                 ]
             )
         ]
+
+        self.state.get_dracut_config = Mock(
+            return_value=DracutT(uefi=True, modules=[], drivers=[])
+        )
+        with patch('builtins.open', create=True) as mock_open:
+            mock_open.return_value = MagicMock(spec=io.IOBase)
+            file_handle = mock_open.return_value.__enter__.return_value
+            self.bootloader.setup_disk_boot_images('0815', '0815')
+
+            assert file_handle.write.call_args_list == [
+                call('search --no-floppy --set=root --fs-uuid 0815\n'),
+                call('chainloader ($root)/EFI/Linux/kiwi.efi\n'),
+                call('boot\n')
+            ]
+            mock_open.assert_called_once_with(
+                'root_dir/boot/efi/EFI/BOOT/grub.cfg', 'w'
+            )
 
     @patch('kiwi.bootloader.config.base.BootLoaderConfigBase.get_boot_path')
     @patch('kiwi.bootloader.config.grub2.Command.run')
@@ -1453,13 +1733,6 @@ class TestBootLoaderConfigGrub2:
                         'root_dir/usr/share/grub2/i386-pc/',
                         'root_dir/boot/grub2/i386-pc'
                     ]
-                ),
-                call(
-                    [
-                        'rsync', '-a', '--exclude', '/*.module',
-                        'root_dir/usr/share/grub2/x86_64-efi/',
-                        'root_dir/boot/grub2/x86_64-efi'
-                    ]
                 )
             ]
 
@@ -1470,8 +1743,9 @@ class TestBootLoaderConfigGrub2:
     @patch('glob.iglob')
     @patch('os.chmod')
     @patch('os.stat')
+    @patch('os.path.isfile')
     def test_setup_disk_boot_images_bios_plus_efi_secure_boot_no_shim_install(
-        self, mock_stat, mock_chmod, mock_glob,
+        self, mock_isfile, mock_stat, mock_chmod, mock_glob,
         mock_exists, mock_command, mock_which, mock_get_boot_path
     ):
         # we expect the copy of shim.efi and grub.efi from the fallback
@@ -1479,6 +1753,7 @@ class TestBootLoaderConfigGrub2:
         Defaults.set_platform_name('x86_64')
         mock_get_boot_path.return_value = '/boot'
         mock_which.return_value = None
+        mock_isfile.return_value = False
         self.firmware.efi_mode = Mock(
             return_value='uefi'
         )
@@ -1490,7 +1765,7 @@ class TestBootLoaderConfigGrub2:
             return self.os_exists[arg]
 
         def side_effect_glob(arg):
-            return self.glob_iglob.pop()
+            return self.glob_iglob_shim_fallback.pop()
 
         mock_glob.side_effect = side_effect_glob
         mock_exists.side_effect = side_effect
@@ -1508,12 +1783,11 @@ class TestBootLoaderConfigGrub2:
                     call('set root="cryptouuid/uuid"\n'),
                     call('search --fs-uuid --set=root uuid\n'),
                     call('set prefix=($root)/boot/grub2\n'),
-                    call('configfile ($root)/boot/grub2/grub.cfg\n')
+                    call('source ($root)/boot/grub2/grub.cfg\n')
                 ]
                 mock_open.assert_called_once_with(
                     'root_dir/boot/efi/EFI/BOOT/grub.cfg', 'w'
                 )
-
                 assert mock_command.call_args_list == [
                     call(
                         [
@@ -1530,21 +1804,14 @@ class TestBootLoaderConfigGrub2:
                     ),
                     call(
                         [
-                            'rsync', '-a', '--exclude', '/*.module',
-                            'root_dir/usr/share/grub2/x86_64-efi/',
-                            'root_dir/boot/grub2/x86_64-efi'
+                            'cp', 'root_dir/usr/lib64/efi/grub.efi',
+                            'root_dir/boot/efi/EFI/BOOT/grub.efi'
                         ]
                     ),
                     call(
                         [
                             'cp', 'root_dir/usr/lib64/efi/shim.efi',
                             'root_dir/boot/efi/EFI/BOOT/bootx64.efi'
-                        ]
-                    ),
-                    call(
-                        [
-                            'cp', 'root_dir/usr/lib64/efi/grub.efi',
-                            'root_dir/boot/efi/EFI/BOOT/grub.efi'
                         ]
                     ),
                     call(
@@ -1563,18 +1830,20 @@ class TestBootLoaderConfigGrub2:
     @patch('glob.iglob')
     @patch('os.chmod')
     @patch('os.stat')
+    @patch('os.path.isfile')
     def test_setup_disk_boot_images_bios_plus_efi_secure_boot_no_shim_at_all(
-        self, mock_stat, mock_chmod, mock_glob,
+        self, mock_isfile, mock_stat, mock_chmod, mock_glob,
         mock_exists, mock_command, mock_which, mock_get_boot_path,
         mock_get_shim_loader
     ):
         # we expect the copy of grub.efi from the fallback
         # code if no shim was found at all
-        mock_get_shim_loader.return_value = None
+        mock_get_shim_loader.return_value = []
 
         Defaults.set_platform_name('x86_64')
         mock_get_boot_path.return_value = '/boot'
         mock_which.return_value = None
+        mock_isfile.return_value = False
         self.firmware.efi_mode = Mock(
             return_value='uefi'
         )
@@ -1586,7 +1855,7 @@ class TestBootLoaderConfigGrub2:
             return self.os_exists[arg]
 
         def side_effect_glob(arg):
-            return self.glob_iglob.pop()
+            return self.glob_iglob_noshim_fallback.pop()
 
         mock_glob.side_effect = side_effect_glob
         mock_exists.side_effect = side_effect
@@ -1604,7 +1873,7 @@ class TestBootLoaderConfigGrub2:
                     call('set root="cryptouuid/uuid"\n'),
                     call('search --fs-uuid --set=root uuid\n'),
                     call('set prefix=($root)/boot/grub2\n'),
-                    call('configfile ($root)/boot/grub2/grub.cfg\n')
+                    call('source ($root)/boot/grub2/grub.cfg\n')
                 ]
                 mock_open.assert_called_once_with(
                     'root_dir/boot/efi/EFI/BOOT/grub.cfg', 'w'
@@ -1625,13 +1894,6 @@ class TestBootLoaderConfigGrub2:
                     ),
                     call(
                         [
-                            'rsync', '-a', '--exclude', '/*.module',
-                            'root_dir/usr/share/grub2/x86_64-efi/',
-                            'root_dir/boot/grub2/x86_64-efi'
-                        ]
-                    ),
-                    call(
-                        [
                             'cp', 'root_dir/usr/lib64/efi/grub.efi',
                             'root_dir/boot/efi/EFI/BOOT/bootx64.efi'
                         ]
@@ -1640,20 +1902,23 @@ class TestBootLoaderConfigGrub2:
 
     @patch('kiwi.bootloader.config.base.BootLoaderConfigBase.get_boot_path')
     @patch('kiwi.bootloader.config.grub2.Defaults.get_unsigned_grub_loader')
-    @patch('kiwi.bootloader.config.grub2.Defaults.get_grub_bios_core_loader')
+    @patch('kiwi.bootloader.config.grub2.Defaults.get_grub_platform_core_loader')
+    @patch('kiwi.bootloader.config.grub2.Defaults.get_grub_chrp_loader')
     @patch('kiwi.bootloader.config.grub2.Command.run')
     @patch('kiwi.bootloader.config.grub2.Path.which')
     @patch('kiwi.bootloader.config.grub2.Path.create')
     @patch('kiwi.bootloader.config.grub2.DataSync')
     @patch('os.path.exists')
-    @patch('shutil.copy')
+    @patch('shutil.copy2')
     def test_setup_install_boot_images_ppc(
-        self, mock_shutil_copy, mock_exists, mock_sync,
+        self, mock_shutil_copy2, mock_exists, mock_sync,
         mock_Path_create, mock_Path_which, mock_command,
-        mock_get_grub_bios_core_loader, mock_get_unsigned_grub_loader,
-        mock_get_boot_path
+        mock_get_grub_chrp_loader, mock_get_grub_platform_core_loader,
+        mock_get_unsigned_grub_loader, mock_get_boot_path
     ):
         Defaults.set_platform_name('ppc64le')
+        mock_get_grub_chrp_loader.return_value = 'grub.elf'
+        mock_get_grub_platform_core_loader.return_value = None
         mock_Path_which.return_value = '/path/to/grub2-mkimage'
         mock_get_boot_path.return_value = '/boot'
         self.bootloader.arch = 'ppc64le'
@@ -1678,7 +1943,6 @@ class TestBootLoaderConfigGrub2:
 
         with open('../data/bootinfo.txt') as chrp:
             grub2_test_chrp_boot = chrp.read()
-
         with patch('builtins.open', create=True) as mock_open:
             mock_open.return_value = MagicMock(spec=io.IOBase)
             file_handle = mock_open.return_value.__enter__.return_value
@@ -1687,6 +1951,7 @@ class TestBootLoaderConfigGrub2:
             )
 
             assert mock_open.call_args_list == [
+                call('boot_dir/boot/grub2/earlyboot.cfg', 'w'),
                 call('boot_dir/boot/grub2/powerpc-ieee1275/grub.cfg', 'w'),
                 call('boot_dir/ppc/bootinfo.txt', 'w'),
                 call('boot_dir/boot/grub2/loopback.cfg', 'w')
@@ -1696,31 +1961,62 @@ class TestBootLoaderConfigGrub2:
                 call('set btrfs_relative_path="yes"\n'),
                 call('search --file --set=root /boot/0xffffffff\n'),
                 call('set prefix=($root)/boot/grub2\n'),
-                call('configfile ($root)/boot/grub2/grub.cfg\n'),
+                call('source ($root)/boot/grub2/grub.cfg\n'),
+                call('set btrfs_relative_path="yes"\n'),
+                call('search --file --set=root /boot/0xffffffff\n'),
+                call('set prefix=($root)/boot/grub2\n'),
+                call('source ($root)/boot/grub2/grub.cfg\n'),
                 call(grub2_test_chrp_boot),
                 call('source /boot/grub2/grub.cfg\n')
             ]
 
+        assert mock_command.call_args_list == [
+            call(
+                [
+                    'cp', 'lookup_dir/usr/share/grub2/unicode.pf2',
+                    'boot_dir/boot/grub2/fonts'
+                ]
+            ),
+            call(
+                [
+                    'chroot', 'root_dir', 'grub2-mkimage',
+                    '-O', 'powerpc-ieee1275',
+                    '-o', '/usr/share/grub2/powerpc-ieee1275/grub.elf',
+                    '-c', '/boot/grub2/earlyboot.cfg',
+                    '-p', '/boot/grub2',
+                    '-d', '/usr/share/grub2/powerpc-ieee1275',
+                    'ext2', 'iso9660', 'linux', 'echo', 'configfile',
+                    'search_label', 'search_fs_file', 'search',
+                    'search_fs_uuid', 'ls', 'normal', 'gzio', 'png', 'fat',
+                    'gettext', 'font', 'minicmd', 'gfxterm', 'gfxmenu',
+                    'all_video', 'xfs', 'btrfs', 'squash4', 'lvm', 'luks',
+                    'gcry_rijndael', 'gcry_sha256', 'gcry_sha512',
+                    'crypto', 'cryptodisk', 'test', 'true', 'loadenv',
+                    'part_gpt', 'part_msdos', 'boot'
+                ]
+            )
+        ]
+
     @patch('kiwi.bootloader.config.base.BootLoaderConfigBase.get_boot_path')
     @patch('kiwi.bootloader.config.grub2.Defaults.get_unsigned_grub_loader')
-    @patch('kiwi.bootloader.config.grub2.Defaults.get_grub_bios_core_loader')
+    @patch('kiwi.bootloader.config.grub2.Defaults.get_grub_platform_core_loader')
     @patch('kiwi.bootloader.config.grub2.Command.run')
     @patch('kiwi.bootloader.config.grub2.Path.which')
     @patch('kiwi.bootloader.config.grub2.Path.create')
     @patch('kiwi.bootloader.config.grub2.DataSync')
     @patch('os.path.exists')
-    @patch('shutil.copy')
+    @patch('shutil.copy2')
     def test_setup_install_boot_images_efi(
-        self, mock_shutil_copy, mock_exists, mock_sync,
+        self, mock_shutil_copy2, mock_exists, mock_sync,
         mock_Path_create, mock_Path_which, mock_command,
-        mock_get_grub_bios_core_loader, mock_get_unsigned_grub_loader,
+        mock_get_grub_platform_core_loader, mock_get_unsigned_grub_loader,
         mock_get_boot_path
     ):
         Defaults.set_platform_name('x86_64')
         mock_Path_which.return_value = '/path/to/grub2-mkimage'
         mock_get_boot_path.return_value = '/boot'
-        mock_get_unsigned_grub_loader.return_value = None
-        mock_get_grub_bios_core_loader.return_value = None
+        mock_get_unsigned_grub_loader.return_value = []
+        mock_get_grub_platform_core_loader.return_value = None
         data = Mock()
         mock_sync.return_value = data
         self.firmware.efi_mode = Mock(
@@ -1734,6 +2030,7 @@ class TestBootLoaderConfigGrub2:
         self.os_exists['boot_dir/usr/share/grub2/unicode.pf2'] = True
         self.os_exists['root_dir/usr/share/grub2/i386-pc'] = True
         self.os_exists['boot_dir/usr/share/grub2/i386-pc'] = True
+        self.os_exists['boot_dir/usr/share/grub2/i386-efi'] = True
         self.os_exists['/usr/share/grub2/i386-pc'] = True
         self.os_exists['root_dir/usr/share/grub2/x86_64-efi'] = True
         self.os_exists['root_dir/usr/share/grub2/x86_64-efi/linuxefi.mod'] = \
@@ -1742,6 +2039,7 @@ class TestBootLoaderConfigGrub2:
         self.os_exists['boot_dir/boot/efi/'] = False
 
         self.os_exists['lookup_dir/usr/share/grub2/x86_64-efi'] = True
+        self.os_exists['lookup_dir/usr/share/grub2/i386-efi'] = True
         self.os_exists['lookup_dir/usr/share/grub2/i386-pc'] = True
         self.os_exists['lookup_dir/usr/share/grub2/unicode.pf2'] = True
         self.os_exists['lookup_dir/boot/efi/'] = False
@@ -1769,11 +2067,11 @@ class TestBootLoaderConfigGrub2:
                 call('set btrfs_relative_path="yes"\n'),
                 call('search --file --set=root /boot/0xffffffff\n'),
                 call('set prefix=($root)/boot/grub2\n'),
-                call('configfile ($root)/boot/grub2/grub.cfg\n'),
+                call('source ($root)/boot/grub2/grub.cfg\n'),
                 call('set btrfs_relative_path="yes"\n'),
                 call('search --file --set=root /boot/0xffffffff\n'),
                 call('set prefix=($root)/boot/grub2\n'),
-                call('configfile ($root)/boot/grub2/grub.cfg\n'),
+                call('source ($root)/boot/grub2/grub.cfg\n'),
                 call('source /boot/grub2/grub.cfg\n')
             ]
         assert mock_Path_create.call_args_list == [
@@ -1804,7 +2102,7 @@ class TestBootLoaderConfigGrub2:
                     'search_label', 'search_fs_file', 'search',
                     'search_fs_uuid', 'ls', 'normal', 'gzio', 'png', 'fat',
                     'gettext', 'font', 'minicmd', 'gfxterm', 'gfxmenu',
-                    'all_video', 'xfs', 'btrfs', 'lvm', 'luks',
+                    'all_video', 'xfs', 'btrfs', 'squash4', 'lvm', 'luks',
                     'gcry_rijndael', 'gcry_sha256', 'gcry_sha512',
                     'crypto', 'cryptodisk', 'test', 'true', 'loadenv',
                     'part_gpt', 'part_msdos', 'biosdisk', 'vga', 'vbe',
@@ -1830,7 +2128,7 @@ class TestBootLoaderConfigGrub2:
                     'search_label', 'search_fs_file', 'search',
                     'search_fs_uuid', 'ls', 'normal', 'gzio', 'png', 'fat',
                     'gettext', 'font', 'minicmd', 'gfxterm', 'gfxmenu',
-                    'all_video', 'xfs', 'btrfs', 'lvm', 'luks',
+                    'all_video', 'xfs', 'btrfs', 'squash4', 'lvm', 'luks',
                     'gcry_rijndael', 'gcry_sha256', 'gcry_sha512',
                     'crypto', 'cryptodisk', 'test', 'true', 'loadenv',
                     'part_gpt', 'part_msdos', 'efi_gop', 'efi_uga', 'linuxefi'
@@ -1845,13 +2143,18 @@ class TestBootLoaderConfigGrub2:
             call(
                 'lookup_dir/usr/share/grub2/x86_64-efi/',
                 'boot_dir/boot/grub2/x86_64-efi'
+            ),
+            call(
+                'lookup_dir/usr/share/grub2/i386-efi/',
+                'boot_dir/boot/grub2/i386-efi'
             )
         ]
         assert data.sync_data.call_args_list == [
             call(exclude=['*.module'], options=['-a']),
+            call(exclude=['*.module'], options=['-a']),
             call(exclude=['*.module'], options=['-a'])
         ]
-        assert mock_shutil_copy.call_args_list == [
+        assert mock_shutil_copy2.call_args_list == [
             call(
                 'boot_dir/boot/grub2/earlyboot.cfg',
                 'root_dir/boot/grub2/earlyboot.cfg'
@@ -1869,8 +2172,13 @@ class TestBootLoaderConfigGrub2:
                 'boot_dir/EFI/BOOT/bootx64.efi'
             )
         ]
-        mock_get_unsigned_grub_loader.return_value = 'custom_grub_image'
-        mock_get_grub_bios_core_loader.return_value = 'custom_bios_grub_image'
+        mock_get_unsigned_grub_loader.return_value = [
+            grub_loader_type(
+                'custom_grub_image', 'some-binaryname', 'bootx64.efi'
+            )
+        ]
+        mock_get_grub_platform_core_loader.return_value = \
+            'custom_bios_grub_image'
         mock_command.reset_mock()
 
         with patch('builtins.open', create=True) as mock_open:
@@ -1882,7 +2190,7 @@ class TestBootLoaderConfigGrub2:
                 call('set btrfs_relative_path="yes"\n'),
                 call('search --file --set=root /boot/0xffffffff\n'),
                 call('set prefix=($root)/boot/grub2\n'),
-                call('configfile ($root)/boot/grub2/grub.cfg\n'),
+                call('source ($root)/boot/grub2/grub.cfg\n'),
                 call('source /boot/grub2/grub.cfg\n')
             ]
             assert mock_open.call_args_list == [
@@ -1911,18 +2219,49 @@ class TestBootLoaderConfigGrub2:
             )
         ]
 
-    @patch.object(BootLoaderConfigGrub2, '_supports_bios_modules')
+        with patch('builtins.open', create=True) as mock_open:
+            # Test fallback search for earlyboot if UUID and MBR ID are missing
+            mock_open.return_value = MagicMock(spec=io.IOBase)
+            file_handle = mock_open.return_value.__enter__.return_value
+            self.bootloader._setup_efi_image(uuid=None, mbrid=None)
+
+            assert file_handle.write.call_args_list == [
+                call('set btrfs_relative_path="yes"\n'),
+                call('search --file --set=root /boot/mbrid\n'),
+                call('set prefix=($root)/boot/grub2\n'),
+                call('source ($root)/boot/grub2/grub.cfg\n'),
+            ]
+
+        mock_get_unsigned_grub_loader.return_value = []
+        self.state.get_dracut_config = Mock(
+            return_value=DracutT(uefi=True, modules=[], drivers=[])
+        )
+        with patch('builtins.open', create=True) as mock_open:
+            # Test UKI chainloader for earlyboot
+            mock_open.return_value = MagicMock(spec=io.IOBase)
+            file_handle = mock_open.return_value.__enter__.return_value
+            self.bootloader._setup_efi_image(efi_uuid='0815')
+
+            assert file_handle.write.call_args_list == [
+                call('search --no-floppy --set=root --fs-uuid 0815\n'),
+                call('chainloader ($root)/EFI/Linux/kiwi.efi\n'),
+                call('boot\n')
+            ]
+
+    @patch.object(BootLoaderConfigGrub2, '_supports_platform_modules')
     @patch('kiwi.bootloader.config.grub2.Command.run')
     @patch('os.path.exists')
     @patch('glob.iglob')
     @patch('os.chmod')
     @patch('os.stat')
+    @patch('os.path.isfile')
     def test_setup_install_boot_images_efi_secure_boot(
-        self, mock_stat, mock_chmod, mock_glob,
-        mock_exists, mock_command, mock_supports_bios_modules
+        self, mock_isfile, mock_stat, mock_chmod, mock_glob,
+        mock_exists, mock_command, mock_supports_platform_modules
     ):
         Defaults.set_platform_name('x86_64')
-        mock_supports_bios_modules.return_value = False
+        mock_supports_platform_modules.return_value = False
+        mock_isfile.return_value = False
         self.os_exists['root_dir'] = True
         self.firmware.efi_mode = Mock(
             return_value='uefi'
@@ -1935,7 +2274,7 @@ class TestBootLoaderConfigGrub2:
             return self.os_exists[arg]
 
         def side_effect_glob(arg):
-            return self.glob_iglob.pop()
+            return self.glob_iglob_shim_iso.pop()
 
         mock_glob.side_effect = side_effect_glob
         mock_exists.side_effect = side_effect_exists
@@ -1950,7 +2289,7 @@ class TestBootLoaderConfigGrub2:
                     call('set btrfs_relative_path="yes"\n'),
                     call('search --file --set=root /boot/0xffffffff\n'),
                     call('set prefix=($root)/boot/grub2\n'),
-                    call('configfile ($root)/boot/grub2/grub.cfg\n'),
+                    call('source ($root)/boot/grub2/grub.cfg\n'),
                     call('source /boot/grub2/grub.cfg\n')
                 ]
                 assert mock_open.call_args_list == [
@@ -1971,14 +2310,14 @@ class TestBootLoaderConfigGrub2:
                     ),
                     call(
                         [
-                            'cp', 'root_dir/usr/lib64/efi/shim.efi',
-                            'root_dir/EFI/BOOT/bootx64.efi'
+                            'cp', 'root_dir/usr/lib64/efi/grub.efi',
+                            'root_dir/EFI/BOOT/grubx64.efi'
                         ]
                     ),
                     call(
                         [
-                            'cp', 'root_dir/usr/lib64/efi/grub.efi',
-                            'root_dir/EFI/BOOT/grub.efi'
+                            'cp', 'root_dir/usr/lib64/efi/shim.efi',
+                            'root_dir/EFI/BOOT/bootx64.efi'
                         ]
                     ),
                     call(
@@ -1990,19 +2329,19 @@ class TestBootLoaderConfigGrub2:
                 ]
 
     @patch('kiwi.defaults.Defaults.get_grub_efi_font_directory')
-    @patch.object(BootLoaderConfigGrub2, '_supports_bios_modules')
+    @patch.object(BootLoaderConfigGrub2, '_supports_platform_modules')
     @patch('kiwi.bootloader.config.grub2.Command.run')
     @patch('kiwi.bootloader.config.grub2.DataSync')
     @patch('os.path.exists')
     @patch('glob.iglob')
     def test_setup_install_boot_images_with_theme_from_usr_share(
         self, mock_glob, mock_exists,
-        mock_sync, mock_command, mock_supports_bios_modules,
+        mock_sync, mock_command, mock_supports_platform_modules,
         mock_get_grub_efi_font_directory
     ):
         Defaults.set_platform_name('x86_64')
         mock_get_grub_efi_font_directory.return_value = None
-        mock_supports_bios_modules.return_value = False
+        mock_supports_platform_modules.return_value = False
         mock_glob.return_value = [
             'root_dir/boot/grub2/themes/some-theme/background.png'
         ]
@@ -2106,9 +2445,9 @@ class TestBootLoaderConfigGrub2:
     @patch('kiwi.bootloader.config.grub2.DataSync')
     @patch('os.path.exists')
     @patch('kiwi.defaults.Defaults.get_grub_path')
-    @patch('shutil.copy')
+    @patch('shutil.copy2')
     def test_setup_install_boot_images_with_theme_not_existing(
-        self, mock_shutil_copy, mock_get_grub_path,
+        self, mock_shutil_copy2, mock_get_grub_path,
         mock_exists, mock_sync, mock_Path_which, mock_command
     ):
         Defaults.set_platform_name('x86_64')

@@ -15,51 +15,83 @@
 # You should have received a copy of the GNU General Public License
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
-import importlib
-from typing import Dict
-from abc import (
-    ABCMeta,
-    abstractmethod
-)
+import sys
+from typing import TYPE_CHECKING, Dict, Union, overload
+
+if sys.version_info >= (3, 8):
+    from typing import Literal  # pragma: no cover
+else:  # pragma: no cover
+    from typing_extensions import Literal  # pragma: no cover
 
 from kiwi.exceptions import (
     KiwiBootLoaderConfigSetupError
 )
 
+if TYPE_CHECKING:  # pragma: nocover
+    from kiwi.bootloader.config.grub2 import BootLoaderConfigGrub2
+    from kiwi.bootloader.config.systemd_boot import BootLoaderSystemdBoot
+    from kiwi.bootloader.config.custom import BootLoaderConfigCustom
+    from kiwi.bootloader.config.zipl import BootLoaderZipl
 
-class BootLoaderConfig(metaclass=ABCMeta):
-    """
-    **BootLoaderConfig factory**
 
-    :param string name: bootloader name
-    :param object xml_state: instance of :class:`XMLState`
-    :param string root_dir: root directory path name
-    :param dict custom_args: custom bootloader config arguments dictionary
-    """
-    @abstractmethod
-    def __init__(self) -> None:
-        return None  # pragma: no cover
+@overload
+def create_boot_loader_config(
+    *, name: Literal["grub2"], xml_state: object, root_dir: str,
+    boot_dir: str = None, custom_args: Dict = None
+) -> "BootLoaderConfigGrub2":
+    ...  # pragma: nocover
 
-    @staticmethod
-    def new(
-        name: str, xml_state: object, root_dir: str,
-        boot_dir: str = None, custom_args: Dict = None
-    ):
-        name_map = {
-            'grub2': {'grub2': 'BootLoaderConfigGrub2'},
-            'grub2_s390x_emu': {'grub2': 'BootLoaderConfigGrub2'},
-            'isolinux': {'isolinux': 'BootLoaderConfigIsoLinux'}
-        }
-        try:
-            (bootloader_namespace, bootloader_name) = \
-                list(name_map[name].items())[0]
-            booloader_config = importlib.import_module(
-                'kiwi.bootloader.config.{}'.format(bootloader_namespace)
-            )
-            return booloader_config.__dict__[bootloader_name](
-                xml_state, root_dir, boot_dir, custom_args
-            )
-        except Exception:
-            raise KiwiBootLoaderConfigSetupError(
-                f'Support for {name} bootloader config not implemented'
-            )
+
+@overload
+def create_boot_loader_config(
+    *, name: Literal["grub2_s390x_emu"], xml_state: object, root_dir: str,
+    boot_dir: str = None, custom_args: Dict = None
+) -> "BootLoaderConfigGrub2":
+    ...  # pragma: nocover
+
+
+@overload
+def create_boot_loader_config(
+    *, name: Literal["systemd_boot"], xml_state: object, root_dir: str,
+    boot_dir: str = None, custom_args: Dict = None
+) -> "BootLoaderSystemdBoot":
+    ...  # pragma: nocover
+
+
+@overload
+def create_boot_loader_config(
+    *, name: Literal["zipl"], xml_state: object, root_dir: str,
+    boot_dir: str = None, custom_args: Dict = None
+) -> "BootLoaderZipl":
+    ...  # pragma: nocover
+
+
+@overload
+def create_boot_loader_config(
+    *, name: str, xml_state: object, root_dir: str,
+    boot_dir: str = None, custom_args: Dict = None
+) -> "Union[BootLoaderConfigGrub2, BootLoaderSystemdBoot, BootLoaderZipl]":
+    ...  # pragma: nocover
+
+
+def create_boot_loader_config(
+    *, name: str, xml_state: object, root_dir: str,
+    boot_dir: str = None, custom_args: Dict = None
+) -> "Union[BootLoaderConfigGrub2, BootLoaderSystemdBoot, BootLoaderZipl, BootLoaderConfigCustom]":
+
+    if name in ("grub2", "grub2_s390x_emu"):
+        from kiwi.bootloader.config.grub2 import BootLoaderConfigGrub2
+        return BootLoaderConfigGrub2(xml_state, root_dir, boot_dir, custom_args)
+    if name == "systemd_boot":
+        from kiwi.bootloader.config.systemd_boot import BootLoaderSystemdBoot
+        return BootLoaderSystemdBoot(xml_state, root_dir, boot_dir, custom_args)
+    if name == "zipl":
+        from kiwi.bootloader.config.zipl import BootLoaderZipl
+        return BootLoaderZipl(xml_state, root_dir, boot_dir, custom_args)
+    if name == "custom":
+        from kiwi.bootloader.config.custom import BootLoaderConfigCustom
+        return BootLoaderConfigCustom(xml_state, root_dir, boot_dir, custom_args)
+
+    raise KiwiBootLoaderConfigSetupError(
+        f'Support for {name} bootloader config not implemented'
+    )

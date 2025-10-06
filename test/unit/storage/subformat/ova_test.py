@@ -1,4 +1,4 @@
-from mock import (
+from unittest.mock import (
     patch, call, Mock
 )
 from pytest import raises
@@ -109,6 +109,7 @@ class TestDiskFormatOva:
         mock_command.assert_called_once_with(
             [
                 'ovftool', '--shaAlgorithm=SHA1',
+                '--allowExtraConfig', '--exportFlags=extraconfig',
                 'target_dir/some-disk-image.x86_64-1.2.3.vmx',
                 'target_dir/some-disk-image.x86_64-1.2.3.ova'
             ]

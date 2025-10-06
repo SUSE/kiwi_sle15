@@ -88,7 +88,7 @@ class KisBuilder:
         self.image: str = ''
         self.append_file = ''.join([self.image_name, '.append'])
         self.archive_name = ''.join([self.image_name, '.tar'])
-        self.checksum_name = ''.join([self.image_name, '.md5'])
+        self.checksum_name = ''.join([self.image_name, '.sha256'])
         self.kernel_filename: str = ''
         self.hypervisor_filename: str = ''
         self.result = Result(xml_state)
@@ -124,12 +124,11 @@ class KisBuilder:
             if self.compressed:
                 log.info('xz compressing root filesystem image')
                 compress = Compress(self.image)
-                compress.xz(self.xz_options)
-                self.image = compress.compressed_filename
+                self.image = compress.xz(self.xz_options)
 
-            log.info('Creating root filesystem MD5 checksum')
+            log.info('Creating root filesystem SHA256 checksum')
             checksum = Checksum(self.image)
-            checksum.md5(self.checksum_name)
+            checksum.sha256(self.checksum_name)
 
         # prepare initrd
         if self.boot_image_task.has_initrd_support():

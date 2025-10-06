@@ -11,12 +11,13 @@
     </description>
     <profiles>
         <profile name="Live" description="Live image of Fedora Rawhide"/>
+        <profile name="LiveEroFS" description="Live Root via EroFS"/>
         <profile name="Virtual" description="Virtual image of Fedora Rawhide"/>
         <profile name="Disk" description="OEM image of Fedora Rawhide"/>
     </profiles>
     <preferences>
         <version>2.0.0</version>
-        <packagemanager>dnf</packagemanager>
+        <packagemanager>dnf5</packagemanager>
         <bootsplash-theme>charge</bootsplash-theme>
         <bootloader-theme>breeze</bootloader-theme>
         <locale>en_US</locale>
@@ -24,13 +25,18 @@
         <timezone>UTC</timezone>
         <rpm-check-signatures>false</rpm-check-signatures>
     </preferences>
+    <preferences profiles="LiveEroFS">
+        <type image="iso" flags="overlay" firmware="uefi" hybridpersistent_filesystem="ext4" hybridpersistent="true" kernelcmdline="console=ttyS0" filesystem="erofs" erofscompression="zstd,level=12" efifatimagesize="30">
+            <bootloader name="grub2" console="serial" timeout="10"/>
+        </type>
+    </preferences>
     <preferences profiles="Live">
-        <type image="iso" flags="overlay" firmware="uefi" hybridpersistent_filesystem="ext4" hybridpersistent="true" kernelcmdline="console=ttyS0">
+        <type image="iso" flags="overlay" firmware="uefi" hybridpersistent_filesystem="ext4" hybridpersistent="true" kernelcmdline="console=ttyS0" efifatimagesize="30">
             <bootloader name="grub2" console="serial" timeout="10"/>
         </type>
     </preferences>
     <preferences profiles="Virtual">
-        <type image="oem" filesystem="ext4" kernelcmdline="console=ttyS0" firmware="uefi" format="qcow2">
+        <type image="oem" filesystem="ext4" kernelcmdline="console=ttyS0" firmware="uefi" format="qcow2" efipartsize="100">
             <oemconfig>
                 <oem-resize>false</oem-resize>
             </oemconfig>
@@ -38,7 +44,7 @@
         </type>
     </preferences>
     <preferences profiles="Disk">
-        <type image="oem" filesystem="ext4" installiso="true" installboot="install" firmware="uefi" kernelcmdline="console=ttyS0">
+        <type image="oem" filesystem="ext4" installiso="true" installboot="install" firmware="uefi" kernelcmdline="console=ttyS0" efipartsize="100" efifatimagesize="30">
             <bootloader name="grub2" console="serial" timeout="10"/>
             <oemconfig>
                 <oem-systemsize>2048</oem-systemsize>
@@ -52,14 +58,11 @@
     <users>
         <user password="$1$wYJUgpM5$RXMMeASDc035eX.NbYWFl0" home="/root" name="root" groups="root"/>
     </users>
-    <repository type="rpm-md" alias="kiwi-next-generation" priority="1">
+    <repository type="rpm-md" alias="kiwi-next-generation" priority="1" arch="x86_64">
         <source path="obs://Virtualization:Appliances:Staging/Fedora_Rawhide"/>
     </repository>
     <repository type="rpm-md" alias="Fedora_Rawhide">
         <source path="obs://Fedora:Rawhide/standard"/>
-    </repository>
-    <repository type="rpm-md" alias="Fedora_EPEL">
-        <source path="obs://Fedora:EPEL:8/standard"/>
     </repository>
     <packages type="image">
         <package name="grub2"/>
@@ -73,11 +76,9 @@
         <package name="vim"/>
         <package name="tzdata"/>
         <package name="NetworkManager"/>
+        <package name="dracut-network"/>
     </packages>
-    <packages type="image" profiles="Live,Disk">
-        <package name="syslinux"/>
-    </packages>
-    <packages type="image" profiles="Live">
+    <packages type="image" profiles="Live,LiveEroFS">
         <package name="dracut-kiwi-live"/>
     </packages>
     <packages type="image" profiles="Disk">
@@ -86,10 +87,12 @@
     </packages>
     <packages type="bootstrap">
         <package name="filesystem"/>
-        <package name="basesystem"/>
-        <package name="grub2-efi-x64-modules"/>
-        <package name="grub2-efi-x64"/>
-        <package name="shim" arch="x86_64"/>
+        <package name="shadow-utils"/>
+        <package name="grub2-efi-x64-modules" arch="x86_64"/>
+        <package name="grub2-efi-x64" arch="x86_64"/>
+        <package name="grub2-efi-ia32-modules" arch="x86_64"/>
+        <package name="grub2-efi-ia32" arch="x86_64"/>
+        <package name="shim-x64" arch="x86_64"/>
         <package name="fedora-release"/>
     </packages>
 </image>

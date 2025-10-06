@@ -10,18 +10,15 @@
         <specification>Disk/Live build for Ubuntu</specification>
     </description>
     <profiles>
-        <profile name="Live" description="Live image of Ubuntu 22.04"/>
-        <profile name="Virtual" description="Virtual image of Ubuntu 22.04"/>
-        <profile name="Disk" description="OEM image of Ubuntu 22.04"/>
+        <profile name="Live" description="Live image of Ubuntu"/>
+        <profile name="Virtual" description="Virtual image of Ubuntu"/>
+        <profile name="Disk" description="OEM image of Ubuntu"/>
     </profiles>
     <preferences>
         <version>2.22.4</version>
         <packagemanager>apt</packagemanager>
         <bootsplash-theme>sabily</bootsplash-theme>
         <bootloader-theme>ubuntu-mate</bootloader-theme>
-        <locale>en_US</locale>
-        <keytable>us</keytable>
-        <timezone>UTC</timezone>
         <rpm-check-signatures>false</rpm-check-signatures>
     </preferences>
     <preferences profiles="Live">
@@ -51,26 +48,32 @@
     <users>
         <user password="$1$wYJUgpM5$RXMMeASDc035eX.NbYWFl0" home="/root" name="root" groups="root"/>
     </users>
-    <repository type="apt-deb" alias="kiwi-next-generation" priority="1" repository_gpgcheck="false">
-        <source path="obs://Virtualization:Appliances:Staging/xUbuntu_22.04"/>
+    <repository type="apt-deb" alias="kiwi-next-generation" priority="1" repository_gpgcheck="false" architectures="amd64">
+        <source path="obs://Virtualization:Appliances:Staging/xUbuntu_24.04_x86_64"/>
     </repository>
-    <repository type="apt-deb" alias="Ubuntu-Jammy-Universe" distribution="jammy" components="main multiverse restricted universe" repository_gpgcheck="false">
-        <source path="obs://Ubuntu:22.04/universe"/>
+    <repository type="apt-deb" alias="Ubuntu-Noble-Universe" distribution="noble" components="main multiverse restricted universe" repository_gpgcheck="false">
+        <source path="obs://Ubuntu:24.04/universe"/>
     </repository>
-    <repository type="apt-deb" alias="Ubuntu-Jammy" distribution="jammy" components="main multiverse restricted universe" repository_gpgcheck="false">
-        <source path="obs://Ubuntu:22.04/standard"/>
+    <repository type="apt-deb" alias="Ubuntu-Noble" distribution="noble" components="main multiverse restricted universe" repository_gpgcheck="false">
+        <source path="obs://Ubuntu:24.04/standard"/>
     </repository>
     <packages type="image">
+        <package name="libpam-runtime"/>
+        <package name="gawk"/>
+        <package name="apt-utils"/>
+        <package name="debconf"/>
+        <package name="mawk"/>
+        <package name="dialog"/>
+        <package name="util-linux"/>
         <package name="grub2-themes-ubuntu-mate"/>
         <package name="plymouth-theme-sabily"/>
         <package name="plymouth"/>
-        <package name="grub-pc-bin"/>
+        <package name="grub-efi-amd64" arch="x86_64"/>
+        <package name="grub-efi-arm64" arch="aarch64"/>
+        <package name="grub-common"/>
         <package name="grub2-common"/>
-        <package name="grub-efi-amd64-bin"/>
+        <package name="grub-pc-bin" arch="x86_64"/>
         <package name="linux-generic"/>
-        <package name="isolinux"/>
-        <package name="syslinux"/>
-        <package name="syslinux-common"/>
         <package name="systemd"/>
         <package name="dracut"/>
         <package name="init"/>
@@ -84,12 +87,7 @@
         <package name="dbus"/>
         <package name="btrfs-progs"/>
         <package name="xz-utils"/>
-        <package name="usrmerge"/>
-        <!--
-            mawk is included so OBS adds it as a build dependency,
-            however this is installed by debootstrap
-        -->
-        <package name="mawk"/>
+        <package name="language-pack-en"/>
     </packages>
     <packages type="image" profiles="Virtual">
         <package name="shim"/>
@@ -102,5 +100,7 @@
         <package name="dracut-kiwi-oem-repart"/>
         <package name="dracut-kiwi-oem-dump"/>
     </packages>
-    <packages type="bootstrap"/>
+    <packages type="bootstrap">
+        <package name="ca-certificates"/>
+    </packages>
 </image>

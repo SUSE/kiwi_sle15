@@ -16,6 +16,7 @@
 # along with kiwi.  If not, see <http://www.gnu.org/licenses/>
 #
 import os
+import logging
 from typing import (
     Dict, List, Optional, Union
 )
@@ -26,6 +27,8 @@ from kiwi.path import Path
 from kiwi.command import Command
 from kiwi.exceptions import KiwiIsoToolError
 from kiwi.defaults import Defaults
+
+log = logging.getLogger('kiwi')
 
 
 class IsoToolsXorrIso(IsoToolsBase):
@@ -71,13 +74,12 @@ class IsoToolsXorrIso(IsoToolsBase):
         :param list custom_args: custom ISO meta data
         """
         legacy_bios_mode = True
-        efi_mode = False
         if custom_args:
-            if custom_args.get('efi_mode'):
-                efi_mode = True
-            if 'mbr_id' in custom_args:
+            application_id = \
+                custom_args.get('application_id') or custom_args.get('mbr_id')
+            if application_id:
                 self.iso_parameters += [
-                    '-application_id', format(custom_args['mbr_id'])
+                    '-application_id', format(application_id)
                 ]
             if 'publisher' in custom_args:
                 self.iso_parameters += [
@@ -101,37 +103,37 @@ class IsoToolsXorrIso(IsoToolsBase):
             self.iso_parameters += [
                 '-compliance', 'untranslated_names'
             ]
+        else:
+            self.iso_parameters += [
+                # https://lists.gnu.org/archive/html/bug-xorriso/2024-11/msg00012.html
+                '-compliance', 'no_emul_toc'
+            ]
 
         if Defaults.is_x86_arch(self.arch) and legacy_bios_mode:
-            if efi_mode:
-                loader_file = os.sep.join(
-                    [
-                        self.boot_path, 'loader',
-                        Defaults.get_isolinux_bios_grub_loader()
-                    ]
-                )
-                mbr_file = os.sep.join(
-                    [self.source_dir, self.boot_path, '/loader/boot_hybrid.img']
-                )
+            mbr_file = os.sep.join(
+                [
+                    self.source_dir, self.boot_path, 'loader',
+                    Defaults.get_iso_grub_mbr()
+                ]
+            )
+            loader_file = os.sep.join(
+                [
+                    self.boot_path, 'loader',
+                    Defaults.get_iso_grub_loader()
+                ]
+            )
+            self.iso_loaders += [
+                '-boot_image', 'grub', 'bin_path={0}'.format(loader_file)
+            ]
+            if os.path.exists(mbr_file):
                 self.iso_loaders += [
-                    '-boot_image', 'grub', 'bin_path={0}'.format(loader_file),
-                    '-boot_image', 'grub', 'grub2_mbr={0}'.format(mbr_file),
-                    '-boot_image', 'grub', 'grub2_boot_info=on'
+                    '-boot_image', 'grub', 'grub2_mbr={0}'.format(mbr_file)
                 ]
             else:
-                loader_file = self.boot_path + '/loader/isolinux.bin'
-                mbr_file = Path.which(
-                    'isohdpfx.bin', Defaults.get_syslinux_search_paths()
-                )
-                self.iso_loaders += [
-                    '-boot_image', 'isolinux', 'bin_path={0}'.format(
-                        loader_file
-                    ),
-                    '-boot_image', 'isolinux', 'system_area={0}'.format(
-                        mbr_file
-                    ),
-                    '-boot_image', 'isolinux', 'partition_table=on',
-                ]
+                log.warning(f'No hybrid MBR file found: {mbr_file}: skipped')
+            self.iso_loaders += [
+                '-boot_image', 'grub', 'grub2_boot_info=on'
+            ]
 
         if Defaults.is_ppc64_arch(self.arch):
             self.iso_loaders += [
@@ -148,7 +150,9 @@ class IsoToolsXorrIso(IsoToolsBase):
                 '-boot_image', 'any', 'load_size=2048'
             ]
 
-    def add_efi_loader_parameters(self, loader_file: str) -> None:
+    def add_efi_loader_parameters(
+        self, loader_file: str, custom_args: Optional[Dict[str, Union[str, bool]]] = None
+    ) -> None:
         """
         Add ISO creation parameters to embed the EFI loader
 
@@ -159,6 +163,18 @@ class IsoToolsXorrIso(IsoToolsBase):
         file refer to _create_embedded_fat_efi_image() from
         bootloader/config/grub2.py
         """
+        if custom_args:
+            efi_partition_table = custom_args.get('efi_partition_table', '')
+            legacy_bios_mode = custom_args.get('legacy_bios_mode', False)
+            gpt_hybrid_mbr = custom_args.get('gpt_hybrid_mbr', False)
+            if efi_partition_table == 'gpt':
+                self.iso_loaders += [
+                    '-boot_image', 'any', 'appended_part_as=gpt',
+                ]
+                if gpt_hybrid_mbr and legacy_bios_mode:
+                    self.iso_loaders += [
+                        '-boot_image', 'any', 'mbr_force_bootable=on',
+                    ]
         self.iso_loaders += [
             '-append_partition', '2', '0xef', loader_file,
             '-boot_image', 'any', 'next',
@@ -192,3 +208,10 @@ class IsoToolsXorrIso(IsoToolsBase):
                 '-chmod', '0755', '/', '--'
             ] + self.iso_loaders + hidden_files_parameters
         )
+        report_call = Command.run(
+            [
+                self.get_tool_name(), '-indev', filename,
+                '-report_system_area', 'plain'
+            ]
+        )
+        log.debug(report_call.output)

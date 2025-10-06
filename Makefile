@@ -3,6 +3,7 @@ docdir = /usr/share/doc/packages
 python_version = 3
 python_lookup_name = python$(python_version)
 python = $(shell which $(python_lookup_name))
+sc_disable = SC1091,SC1090,SC2001,SC2174,SC1117,SC2048,SC2004
 
 LC = LC_MESSAGES
 
@@ -11,21 +12,13 @@ version := $(shell \
     'from kiwi.version import __version__; print(__version__)'\
 )
 
-.PHONY: tools
-tools:
-	# apart from python sources there are also some legacy
-	# C tools used in custom kiwi boot descriptions.
-	# Note: These information will be missing when installed from pip
-	${MAKE} -C tools all
-
 install_dracut:
-	install -d -m 755 ${buildroot}usr/lib/dracut/modules.d
-	cp -a dracut/modules.d/* ${buildroot}usr/lib/dracut/modules.d
+	for dracut in dracut/modules.d/*; do \
+		${MAKE} -C $$dracut install ;\
+	done
 
 install_package_docs:
 	install -d -m 755 ${buildroot}${docdir}/python-kiwi
-	install -m 644 doc/build/latex/kiwi.pdf \
-		${buildroot}${docdir}/python-kiwi/kiwi.pdf
 	install -m 644 LICENSE \
 		${buildroot}${docdir}/python-kiwi/LICENSE
 	install -m 644 README.rst \
@@ -33,15 +26,11 @@ install_package_docs:
 
 install:
 	# apart from python sources there are also
-	# the C tools, the manual pages and the completion
+	# the manual pages and the completion
 	# Note: These information will be missing when installed from pip
-	${MAKE} -C tools buildroot=${buildroot} install
 	# manual pages
 	install -d -m 755 ${buildroot}usr/share/man/man8
 	for man in doc/build/man/*.8; do \
-		test -e $$man && gzip -f $$man || true ;\
-	done
-	for man in doc/build/man/*.8.gz; do \
 		install -m 644 $$man ${buildroot}usr/share/man/man8 ;\
 	done
 	# completion
@@ -51,14 +40,16 @@ install:
 	# kiwi default configuration
 	install -d -m 755 ${buildroot}etc
 	install -m 644 kiwi.yml ${buildroot}etc/kiwi.yml
-
-tox:
-	tox
+	# kiwi old XSL stylesheets for upgrade
+	install -d -m 755 ${buildroot}usr/share/kiwi
+	cp -a helper/xsl_to_v74 ${buildroot}usr/share/kiwi/
 
 kiwi/schema/kiwi.rng: kiwi/schema/kiwi.rnc
 	# whenever the schema is changed this target will convert
 	# the short form of the RelaxNG schema to the format used
 	# in code and auto generates the python data structures
+	@type -p trang &>/dev/null || \
+		(echo "ERROR: trang not found in path: $(PATH)"; exit 1)
 	trang -I rnc -O rng kiwi/schema/kiwi.rnc kiwi/schema/kiwi.rng
 	# XML parser code is auto generated from schema using generateDS
 	# http://pythonhosted.org/generateDS
@@ -99,45 +90,80 @@ clean_git_attributes:
 	# for details on when this target is called see setup.py
 	git checkout kiwi/version.py
 
-build: clean tox
-	# create setup.py variant for rpm build.
-	# delete module versions from setup.py for building an rpm
-	# the dependencies to the python module rpm packages is
-	# managed in the spec file
-	sed -ie "s@>=[0-9.]*'@'@g" setup.py
+setup:
+	poetry install --all-extras
+
+docs: setup
+	poetry run make -C doc man html
+
+docs_suse: setup
+	poetry run make -C doc xml
+	rm -rf doc/build/restxml
+	mv doc/build/xml doc/build/restxml
+	poetry run pip install \
+		git+https://github.com/openSUSE/rstxml2docbook.git@feature/kiwi
+	poetry run bash -c 'pushd doc && rstxml2docbook \
+		-v --no-split -o build/xml/book.xml build/restxml/index.xml'
+	bash -c 'mkdir -p doc/build/images/src/png && \
+		cp -a doc/source/.images/* doc/build/images/src/png'
+	cp doc/DC-kiwi doc/build/
+	bash -c 'pushd doc/build && daps -d DC-kiwi html'
+
+test_scripts: setup
+	poetry run bash -c \
+		'pip install pytest-container && pushd test/scripts && pytest -s -vv'
+
+check: setup
+	# shell code checks
+	find build-tests -name config.sh | xargs shellcheck
+	bash -c 'shellcheck -e ${sc_disable} dracut/modules.d/*/*.sh -s bash'
+	bash -c 'shellcheck -e ${sc_disable} kiwi/config/functions.sh -s bash'
+	bash -c 'shellcheck build-tests.sh'
+	# python flake tests
+	poetry run flake8 --statistics -j auto --count kiwi
+	poetry run flake8 --statistics -j auto --count test/unit
+	poetry run flake8 --statistics -j auto --count test/scripts
+
+test: setup
+	# python static code checks
+	poetry run mypy kiwi
+	# unit tests
+	poetry run bash -c 'pushd test/unit && pytest -n 5 \
+		--doctest-modules --no-cov-on-fail --cov=kiwi \
+		--cov-report=term-missing --cov-fail-under=100 \
+		--cov-config .coveragerc'
+
+build: clean check test
 	# build the sdist source tarball
-	$(python) setup.py sdist
-	# restore original setup.py backed up from sed
-	mv setup.pye setup.py
+	poetry build --format=sdist
 	# provide rpm source tarball
 	mv dist/kiwi-${version}.tar.gz dist/python-kiwi.tar.gz
-	# append PDF documentation to tarball
-	gzip -d dist/python-kiwi.tar.gz
-	mkdir -p kiwi-${version}/doc/build/latex
-	mv doc/build/latex/kiwi.pdf kiwi-${version}/doc/build/latex
-	tar -uf dist/python-kiwi.tar kiwi-${version}/doc/build/latex/kiwi.pdf
-	gzip dist/python-kiwi.tar
-	rm -rf kiwi-${version}
-	# provide rpm changelog from git changelog
-	git log | helper/changelog_generator |\
-		helper/changelog_descending > dist/python-kiwi.changes
+	# update rpm changelog using reference file
+	helper/update_changelog.py --since package/python-kiwi.changes --fix > \
+		dist/python-kiwi.changes
+	helper/update_changelog.py --file package/python-kiwi.changes >> \
+		dist/python-kiwi.changes
 	# update package version in spec file
 	cat package/python-kiwi-spec-template | sed -e s'@%%VERSION@${version}@' \
 		> dist/python-kiwi.spec
 	# update package version in PKGBUILD file
 	md5sums=$$(md5sum dist/python-kiwi.tar.gz | cut -d" " -f1); \
-	cat package/python-kiwi-pkgbuild-template | sed -e s'@%%VERSION@${version}@' \
+	cat package/python-kiwi-pkgbuild-template | sed \
+		-e s'@%%VERSION@${version}@' \
 		-e s"@%%MD5SUM@$${md5sums}@" > dist/PKGBUILD
 	# provide rpm rpmlintrc
 	cp package/python-kiwi-rpmlintrc dist
 	# provide patches
 	cp package/*.patch dist
 
-pypi: clean tox
-	$(python) setup.py sdist upload
+prepare_for_pypi: clean setup
+	# documentation render and tests
+	poetry run make -C doc man
+	# sdist tarball, the actual publishing happens via the
+	# ci-publish-to-pypi.yml github action
+	poetry build --format=sdist
 
 clean: clean_git_attributes
-	$(python) setup.py clean
+	rm -rf dist
 	rm -rf doc/build
 	rm -rf doc/dist
-	${MAKE} -C tools clean

@@ -27,7 +27,7 @@
         <type image="iso" flags="overlay" firmware="uefi" kernelcmdline="console=ttyS0" hybridpersistent_filesystem="ext4" hybridpersistent="true"/>
     </preferences>
     <preferences profiles="Disk">
-        <type image="oem" firmware="uefi" kernelcmdline="console=ttyS0" installiso="true" installboot="install" filesystem="ext4">
+        <type image="oem" firmware="efi" kernelcmdline="console=ttyS0" installiso="true" installboot="install" filesystem="ext4">
             <bootloader name="grub2" console="serial" timeout="10"/>
             <oemconfig>
                 <oem-unattended>true</oem-unattended>
@@ -45,6 +45,7 @@
     <packages type="image">
         <package name="bind-utils"/>
         <package name="patterns-openSUSE-base"/>
+        <package name="procps"/>
         <package name="systemd"/>
         <package name="plymouth-theme-bgrt"/>
         <package name="grub2-branding-openSUSE"/>
@@ -66,9 +67,9 @@
         <package name="which"/>
         <package name="kernel-default"/>
         <package name="timezone"/>
-        <package name="shim"/>
     </packages>
     <packages type="image" profiles="Live">
+        <package name="shim"/>
         <package name="dracut-kiwi-live"/>
     </packages>
     <packages type="image" profiles="Disk">

@@ -1,10 +1,12 @@
-from mock import patch
-import mock
+import logging
+from unittest.mock import patch
+import unittest.mock as mock
 from builtins import bytes
 from lxml import etree
 from pytest import raises
 from collections import namedtuple
 from kiwi.utils.temporary import Temporary
+from pytest import fixture
 
 from kiwi.xml_description import XMLDescription
 
@@ -20,10 +22,14 @@ from kiwi.exceptions import (
 
 
 class TestSchema:
+    @fixture(autouse=True)
+    def inject_fixtures(self, caplog):
+        self._caplog = caplog
+
     def setup(self):
         test_xml = bytes(
             b"""<?xml version="1.0" encoding="utf-8"?>
-            <image schemaversion="1.4" name="bob">
+            <image schemaversion="7.4" name="bob">
                 <description type="system">
                     <author>John Doe</author>
                     <contact>john@example.com</contact>
@@ -43,7 +49,7 @@ class TestSchema:
         )
         test_xml_extension = bytes(
             b"""<?xml version="1.0" encoding="utf-8"?>
-            <image schemaversion="1.4" name="bob">
+            <image schemaversion="7.4" name="bob">
                 <description type="system">
                     <author>John Doe</author>
                     <contact>john@example.com</contact>
@@ -68,7 +74,7 @@ class TestSchema:
         )
         test_xml_extension_not_unique = bytes(
             b"""<?xml version="1.0" encoding="utf-8"?>
-            <image schemaversion="1.4" name="bob">
+            <image schemaversion="7.4" name="bob">
                 <description type="system">
                     <author>John Doe</author>
                     <contact>john@example.com</contact>
@@ -92,7 +98,7 @@ class TestSchema:
         )
         test_xml_extension_invalid = bytes(
             b"""<?xml version="1.0" encoding="utf-8"?>
-            <image schemaversion="1.4" name="bob">
+            <image schemaversion="7.4" name="bob">
                 <description type="system">
                     <author>John Doe</author>
                     <contact>john@example.com</contact>
@@ -165,6 +171,15 @@ class TestSchema:
         )
         with raises(KiwiSchemaImportError):
             self.description_from_file.load()
+
+    @patch('kiwi.xml_description.Defaults.get_schematron_module_name')
+    def test_load_schema_from_xml_content_skipping_isoschematron(
+        self, mock_get_schematron_module_name
+    ):
+        mock_get_schematron_module_name.return_value = 'bogus'
+        with self._caplog.at_level(logging.WARNING):
+            self.description_from_data.load()
+            assert 'schematron validation skipped:' in self._caplog.text
 
     @patch('lxml.isoschematron.Schematron')
     @patch('lxml.etree.RelaxNG')

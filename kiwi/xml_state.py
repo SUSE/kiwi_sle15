@@ -17,7 +17,7 @@
 #
 import os
 from typing import (
-    List, Optional, Any, Dict, NamedTuple
+    List, Optional, Any, Dict, NamedTuple, Callable, Union
 )
 import re
 import logging
@@ -32,6 +32,7 @@ from kiwi.storage.disk import ptable_entry_type
 from kiwi.system.uri import Uri
 from kiwi.defaults import Defaults
 from kiwi.utils.size import StringToSize
+from kiwi.command import Command
 
 from kiwi.exceptions import (
     KiwiProfileNotFound,
@@ -67,6 +68,7 @@ size_type = NamedTuple(
 volume_type = NamedTuple(
     'volume_type', [
         ('name', str),
+        ('parent', str),
         ('size', str),
         ('realpath', str),
         ('mountpoint', Optional[str]),
@@ -76,6 +78,27 @@ volume_type = NamedTuple(
         ('is_root_volume', bool)
     ]
 )
+
+
+class DracutT(NamedTuple):
+    uefi: bool
+    modules: List[str]
+    drivers: List[str]
+
+
+class FileT(NamedTuple):
+    target: str
+    owner: str
+    permissions: str
+
+
+class ContainerT(NamedTuple):
+    name: str
+    backend: str
+    container_file: str
+    fetch_only: bool
+    fetch_command: Callable
+    load_command: List[str]
 
 
 class XMLState:
@@ -140,9 +163,11 @@ class XMLState:
 
         :rtype: list
         """
-        return self._profiled(
-            self.xml_data.get_users()
-        )
+        users = []
+        for users_section in self._profiled(self.xml_data.get_users()):
+            if self.users_matches_host_architecture(users_section):
+                users.append(users_section)
+        return users
 
     def get_build_type_bundle_format(self) -> str:
         """
@@ -166,6 +191,18 @@ class XMLState:
         :rtype: str
         """
         return self.build_type.get_image()
+
+    def btrfs_default_volume_requested(self) -> bool:
+        """
+        Check if setting a default volume for btrfs is requested
+        """
+        if self.build_type.get_btrfs_set_default_volume() is False:
+            # Setting a default volume is explicitly switched off
+            return False
+        else:
+            # In any other case (True | None) a default volume
+            # is wanted and will be set
+            return True
 
     def get_image_version(self) -> str:
         """
@@ -346,6 +383,22 @@ class XMLState:
                 result.append(packages)
         return result
 
+    def volume_matches_host_architecture(self, volume: Any) -> bool:
+        """
+        Tests if the given volume section is applicable for the current host
+        architecture. If no architecture is specified within the section
+        it is considered as a match returning True.
+
+        Note: The XML section pointer must provide an arch attribute
+
+        :param section: XML section object
+
+        :return: True or False
+
+        :rtype: bool
+        """
+        return self._section_matches_host_architecture(volume)
+
     def package_matches_host_architecture(self, package: Any) -> bool:
         """
         Tests if the given package section is applicable for the current host
@@ -361,6 +414,38 @@ class XMLState:
         :rtype: bool
         """
         return self._section_matches_host_architecture(package)
+
+    def users_matches_host_architecture(self, users: Any) -> bool:
+        """
+        Tests if the given users section is applicable for the current host
+        architecture. If no architecture is specified within the section
+        it is considered as a match returning True.
+
+        Note: The XML section pointer must provide an arch attribute
+
+        :param section: XML section object
+
+        :return: True or False
+
+        :rtype: bool
+        """
+        return self._section_matches_host_architecture(users)
+
+    def collection_matches_host_architecture(self, collection: Any) -> bool:
+        """
+        Tests if the given namedcollection section is applicable for
+        the current host architecture. If no architecture is specified
+        within the section it is considered as a match returning True.
+
+        Note: The XML section pointer must provide an arch attribute
+
+        :param section: XML section object
+
+        :return: True or False
+
+        :rtype: bool
+        """
+        return self._section_matches_host_architecture(collection)
 
     def profile_matches_host_architecture(self, profile: Any) -> bool:
         """
@@ -393,6 +478,50 @@ class XMLState:
         :rtype: bool
         """
         return self._section_matches_host_architecture(preferences)
+
+    def repository_matches_host_architecture(self, repository: Any) -> bool:
+        """
+        Tests if the given repository section is applicable for the
+        current host architecture. If no architecture is specified within
+        the section it is considered as a match returning True.
+
+        Note: The XML section pointer must provide an arch attribute
+
+        :param section: XML section object
+
+        :return: True or False
+
+        :rtype: bool
+        """
+        return self._section_matches_host_architecture(repository)
+
+    def containers_matches_host_architecture(self, containers: Any) -> bool:
+        """
+        Tests if the given containers section is applicable for the
+        current host architecture. If no arch attribute is provided in
+        the section it is considered as a match and returns: True.
+
+        :param section: XML section object
+
+        :return: True or False
+
+        :rtype: bool
+        """
+        return self._section_matches_host_architecture(containers)
+
+    def container_matches_host_architecture(self, container: Any) -> bool:
+        """
+        Tests if the given container section is applicable for the
+        current host architecture. If no arch attribute is provided in
+        the section it is considered as a match and returns: True.
+
+        :param section: XML section object
+
+        :return: True or False
+
+        :rtype: bool
+        """
+        return self._section_matches_host_architecture(container)
 
     def get_package_sections(
         self, packages_sections: List
@@ -498,7 +627,14 @@ class XMLState:
             for package in package_list:
                 result.append(package.package_section.get_name().strip())
             if self.get_system_packages():
-                result.append(self.get_package_manager())
+                package_manager_name = self.get_package_manager()
+                if package_manager_name == 'dnf4':
+                    # The package name for dnf4 is just dnf. Thus
+                    # the name must be adapted in this case
+                    package_manager_name = 'dnf'
+                elif package_manager_name == 'apk':
+                    package_manager_name = 'apk-tools'
+                result.append(package_manager_name)
         if plus_packages:
             result += plus_packages
         return sorted(list(set(result)))
@@ -523,6 +659,49 @@ class XMLState:
             for package in package_list:
                 result.append(package.package_section.get_name().strip())
         return sorted(list(set(result)))
+
+    def get_bootstrap_files(self) -> Dict[str, FileT]:
+        """
+        List of file names from the type="bootstrap" packages section(s)
+
+        :return: file names
+
+        :rtype: dict
+        """
+        result = {}
+        bootstrap_packages_sections = self.get_bootstrap_packages_sections()
+        if bootstrap_packages_sections:
+            for bootstrap_packages_section in bootstrap_packages_sections:
+                file_list = bootstrap_packages_section.get_file() or []
+                for file in file_list:
+                    result[file.get_name()] = FileT(
+                        target=file.get_target() or '',
+                        owner=file.get_owner() or '',
+                        permissions=file.get_permissions() or ''
+                    )
+        return result
+
+    def get_system_files(self) -> Dict[str, FileT]:
+        """
+        List of file names from the packages sections matching
+        type="image" and type=build_type
+
+        :return: file names
+
+        :rtype: dict
+        """
+        result = {}
+        image_packages_sections = self.get_packages_sections(
+            ['image', self.get_build_type_name()]
+        )
+        for packages in image_packages_sections:
+            for file in packages.get_file():
+                result[file.get_name()] = FileT(
+                    target=file.get_target() or '',
+                    owner=file.get_owner() or '',
+                    permissions=file.get_permissions() or ''
+                )
+        return result
 
     def get_bootstrap_archives(self) -> List:
         """
@@ -560,6 +739,36 @@ class XMLState:
                 result.append(archive.get_name().strip())
         return sorted(result)
 
+    def get_ignore_packages(self, section_type: str) -> List:
+        """
+        List of ignore package names from the packages sections matching
+        section_type and type=build_type
+
+        :return: package names
+
+        :rtype: list
+        """
+        result = []
+        image_packages_sections = self.get_packages_sections(
+            [section_type, self.get_build_type_name()]
+        )
+        for packages in image_packages_sections:
+            for package in packages.get_ignore():
+                if self.package_matches_host_architecture(package):
+                    result.append(package.get_name().strip())
+        return sorted(result)
+
+    def get_system_files_ignore_packages(self) -> List[str]:
+        """
+        List of ignore package names from the type="systemfiles"
+        packages section(s)
+
+        :return: package names
+
+        :rtype: list
+        """
+        return self.get_ignore_packages('systemfiles')
+
     def get_system_ignore_packages(self) -> List:
         """
         List of ignore package names from the packages sections matching
@@ -569,15 +778,18 @@ class XMLState:
 
         :rtype: list
         """
-        result = []
-        image_packages_sections = self.get_packages_sections(
-            ['image', self.get_build_type_name()]
-        )
-        for packages in image_packages_sections:
-            for package in packages.get_ignore():
-                if self.package_matches_host_architecture(package):
-                    result.append(package.get_name().strip())
-        return sorted(result)
+        return self.get_ignore_packages('image')
+
+    def get_bootstrap_ignore_packages(self) -> List:
+        """
+        List of ignore package names from the packages sections matching
+        type="image" and type=build_type
+
+        :return: package names
+
+        :rtype: list
+        """
+        return self.get_ignore_packages('bootstrap')
 
     def get_bootstrap_package_name(self) -> str:
         """
@@ -694,8 +906,9 @@ class XMLState:
         )
         for packages in typed_packages_sections:
             for collection in packages.get_namedCollection():
-                result.append(collection.get_name())
-        return list(set(result))
+                if self.collection_matches_host_architecture(collection):
+                    result.append(collection.get_name())
+        return sorted(list(set(result)))
 
     def get_bootstrap_collections(self) -> List:
         """
@@ -958,6 +1171,19 @@ class XMLState:
         return bootloader.get_name() if bootloader else \
             Defaults.get_default_bootloader()
 
+    def get_build_type_bootloader_bls(self) -> bool:
+        """
+        Return bootloader bls setting for selected build type
+
+        :return: True or False
+
+        :rtype: bool
+        """
+        bootloader = self.get_build_type_bootloader_section()
+        if bootloader and bootloader.get_bls() is not None:
+            return bootloader.get_bls()
+        return True
+
     def get_build_type_bootloader_console(self) -> List[str]:
         """
         Return bootloader console setting for selected build type
@@ -1036,6 +1262,91 @@ class XMLState:
             return bootloader.get_targettype()
         return None
 
+    def get_build_type_bootloader_settings_section(self) -> Any:
+        """
+        First bootloadersettings section from the build
+        type bootloader section
+
+        :return: <bootloadersettings> section reference
+
+        :rtype: xml_parse::bootloadersettings
+        """
+        bootloader_section = self.get_build_type_bootloader_section()
+        bootloader_settings_section = None
+        if bootloader_section and bootloader_section.get_bootloadersettings():
+            bootloader_settings_section = \
+                bootloader_section.get_bootloadersettings()[0]
+        return bootloader_settings_section
+
+    def get_build_type_bootloader_securelinux_section(self) -> List[Any]:
+        """
+        First securelinux section from the build
+        type bootloader section
+
+        :return: <securelinux> section reference
+
+        :rtype: xml_parse::securelinux
+        """
+        bootloader_section = self.get_build_type_bootloader_section()
+        bootloader_securelinux_section = []
+        if bootloader_section and bootloader_section.get_securelinux():
+            bootloader_securelinux_section = \
+                bootloader_section.get_securelinux()
+        return bootloader_securelinux_section
+
+    def get_bootloader_options(self, option_type: str) -> List[str]:
+        """
+        List of custom options used in the process to
+        run bootloader setup workloads
+        """
+        result: List[str] = []
+        bootloader_settings = self.get_build_type_bootloader_settings_section()
+        if bootloader_settings:
+            options = []
+            if option_type == 'shim':
+                options = bootloader_settings.get_shimoption()
+            elif option_type == 'install':
+                options = bootloader_settings.get_installoption()
+            elif option_type == 'config':
+                options = bootloader_settings.get_configoption()
+            for option in options:
+                result.append(option.get_name())
+                if option.get_value():
+                    result.append(option.get_value())
+        return result
+
+    def get_bootloader_shim_options(self) -> List[str]:
+        """
+        List of custom options used in the process to setup secure boot
+        """
+        return self.get_bootloader_options('shim')
+
+    def get_bootloader_install_options(self) -> List[str]:
+        """
+        List of custom options used in the bootloader installation
+        """
+        return self.get_bootloader_options('install')
+
+    def get_bootloader_config_options(self) -> List[str]:
+        """
+        List of custom options used in the bootloader configuration
+        """
+        return self.get_bootloader_options('config')
+
+    def get_build_type_bootloader_use_disk_password(self) -> bool:
+        """
+        Indicate whether the bootloader configuration should use the
+        password protecting the encrypted root volume.
+
+        :return: True|False
+
+        :rtype: bool
+        """
+        bootloader = self.get_build_type_bootloader_section()
+        if bootloader:
+            return bootloader.get_use_disk_password()
+        return False
+
     def get_build_type_oemconfig_section(self) -> Any:
         """
         First oemconfig section from the build type section
@@ -1063,6 +1374,20 @@ class XMLState:
             return oemconfig.get_oem_resize()[0]
         else:
             return True
+
+    def get_oemconfig_oem_systemsize(self) -> int:
+        """
+        State value to retrieve root partition size
+
+        :return: Content of <oem-systemsize> section value
+
+        :rtype: int
+        """
+        oemconfig = self.get_build_type_oemconfig_section()
+        if oemconfig and oemconfig.get_oem_systemsize():
+            return int(oemconfig.get_oem_systemsize()[0])
+        else:
+            return 0
 
     def get_oemconfig_oem_multipath_scan(self) -> bool:
         """
@@ -1135,6 +1460,26 @@ class XMLState:
             return container_config_sections[0]
         return None
 
+    def get_dracut_config(self, action: str) -> DracutT:
+        """
+        Get dracut initrd config for the specified action
+        """
+        uefi = False
+        modules = []
+        drivers = []
+        initrd_sections = self.build_type.get_initrd()
+        for initrd_section in initrd_sections:
+            if initrd_section.get_action() == action:
+                for dracut in initrd_section.get_dracut():
+                    uefi = bool(dracut.get_uefi())
+                    if dracut.get_module():
+                        modules.append(dracut.get_module())
+                    if dracut.get_driver():
+                        drivers.append(dracut.get_driver())
+        return DracutT(
+            uefi=uefi, modules=modules, drivers=drivers
+        )
+
     def get_installmedia_initrd_modules(self, action: str) -> List[str]:
         """
         Gets the list of modules to append in installation initrds
@@ -1151,8 +1496,29 @@ class XMLState:
         for initrd_section in initrd_sections:
             if initrd_section.get_action() == action:
                 for module in initrd_section.get_dracut():
-                    modules.append(module.get_module())
+                    if module.get_module():
+                        modules.append(module.get_module())
         return modules
+
+    def get_installmedia_initrd_drivers(self, action: str) -> List[str]:
+        """
+        Gets the list of drivers to append in installation initrds
+
+        :return: a list of dracut driver names
+
+        :rtype: list
+        """
+        drivers: List[str] = []
+        installmedia = self.build_type.get_installmedia()
+        if not installmedia:
+            return drivers
+        initrd_sections = installmedia[0].get_initrd()
+        for initrd_section in initrd_sections:
+            if initrd_section.get_action() == action:
+                for driver in initrd_section.get_dracut():
+                    if driver.get_driver():
+                        drivers.append(driver.get_driver())
+        return drivers
 
     def get_build_type_size(
         self, include_unpartitioned: bool = False
@@ -1346,6 +1712,9 @@ class XMLState:
             self._match_docker_volumes()
         )
         container_config.update(
+            self._match_docker_stopsignal()
+        )
+        container_config.update(
             self._match_docker_environment()
         )
         container_config.update(
@@ -1451,7 +1820,8 @@ class XMLState:
                         partition_name=str,
                         partition_type=str,
                         mountpoint=str,
-                        filesystem=str
+                        filesystem=str,
+                        label=str
                     )
                 }
 
@@ -1470,9 +1840,130 @@ class XMLState:
                 partition_name=partition_name,
                 partition_type=partition.get_partition_type() or 't.linux',
                 mountpoint=partition.get_mountpoint(),
-                filesystem=partition.get_filesystem()
+                filesystem=partition.get_filesystem(),
+                label=partition.get_label() or ''
             )
         return partitions
+
+    def get_host_key_certificates(
+        self
+    ) -> Union[List[Dict[str, List[str]]], List[Dict[str, str]]]:
+        cc_result = []
+        cc_certificates: Dict[str, List[str]] = {}
+        securelinux_list = \
+            self.get_build_type_bootloader_securelinux_section()
+        for securelinux in securelinux_list:
+            cc_certificates = {
+                'hkd_cert': [],
+                'hkd_revocation_list': [],
+                'hkd_ca_cert': securelinux.get_hkd_ca_cert(),
+                'hkd_sign_cert': securelinux.get_hkd_sign_cert()
+            }
+            for hkd_cert in securelinux.get_hkd_cert():
+                cc_certificates['hkd_cert'].append(hkd_cert.get_name())
+            for hkd_revocation_list in securelinux.get_hkd_revocation_list():
+                cc_certificates['hkd_revocation_list'].append(
+                    hkd_revocation_list.get_name()
+                )
+            cc_result.append(cc_certificates)
+        return cc_result
+
+    def get_containers(self) -> List[ContainerT]:
+        containers = []
+
+        def build_fetch_command(
+            root_dir: str,
+            container_uri: str = '',
+            container_file_name: str = '',
+            container_endpoint: str = ''
+        ):
+            pass  # pragma: nocover
+        for containers_section in self.get_containers_sections():
+            for container in containers_section.get_container():
+                if self.container_matches_host_architecture(container):
+                    fetch_command = build_fetch_command
+                    load_command = []
+                    container_tag = container.get_tag() or 'latest'
+                    container_path = container.get_path() or ''
+                    container_endpoint = os.path.normpath(
+                        '{0}/{1}/{2}:{3}'.format(
+                            containers_section.get_source(), container_path,
+                            container.name, container_tag
+                        )
+                    )
+                    container_file_name = '{0}/{1}_{2}'.format(
+                        defaults.LOCAL_CONTAINERS, container.name, container_tag
+                    )
+                    container_backend = containers_section.get_backend() or ''
+                    if container_backend in ['podman', 'docker', 'container-snap']:
+                        if Defaults.is_buildservice_worker():
+                            container_uri = Uri(
+                                'obsrepositories:/{0}'.format(
+                                    container_endpoint
+                                ), 'container'
+                            ).translate()
+
+                            def build_fetch_command(
+                                root_dir: str,
+                                container_uri: str = container_uri,
+                                container_file_name: str = container_file_name,
+                                container_endpoint: str = container_endpoint
+                            ):
+                                def perform():
+                                    Command.run(
+                                        [
+                                            'cp', '{0}.ociarchive'.format(
+                                                container_uri
+                                            ), os.path.normpath(
+                                                '{0}/{1}'.format(
+                                                    root_dir,
+                                                    container_file_name
+                                                )
+                                            )
+                                        ]
+                                    )
+                                perform()
+                            fetch_command = build_fetch_command
+                        else:
+
+                            def build_fetch_command(
+                                root_dir: str,
+                                container_uri: str = '',
+                                container_file_name: str = container_file_name,
+                                container_endpoint: str = container_endpoint
+                            ):
+                                def perform():
+                                    Command.run(
+                                        [
+                                            'chroot', root_dir,
+                                            '/usr/bin/skopeo', 'copy',
+                                            'docker://{0}'.format(
+                                                container_endpoint
+                                            ),
+                                            'oci-archive:{0}:{1}'.format(
+                                                container_file_name,
+                                                container_endpoint
+                                            )
+                                        ]
+                                    )
+                                perform()
+                            fetch_command = build_fetch_command
+                        if not container.get_fetch_only():
+                            load_command = [
+                                f'/usr/bin/{container_backend}',
+                                'load', '-i', container_file_name
+                            ]
+                    containers.append(
+                        ContainerT(
+                            name=f'{container.name}_{container_tag}',
+                            backend=container_backend,
+                            container_file=container_file_name,
+                            fetch_only=bool(container.get_fetch_only()),
+                            fetch_command=fetch_command,
+                            load_command=load_command
+                        )
+                    )
+        return containers
 
     def get_volumes(self) -> List[volume_type]:
         """
@@ -1496,6 +1987,7 @@ class XMLState:
                 [
                     volume_type(
                         name=volume_name,
+                        parent=volume_parent,
                         size=volume_size,
                         realpath=path,
                         mountpoint=path,
@@ -1510,6 +2002,7 @@ class XMLState:
         """
         volume_type_list: List[volume_type] = []
         systemdisk_section = self.get_build_type_system_disk_section()
+        selected_filesystem = self.build_type.get_filesystem()
         swap_mbytes = self.get_oemconfig_swap_mbytes()
         swap_name = self.get_oemconfig_swap_name()
         if not systemdisk_section:
@@ -1519,9 +2012,12 @@ class XMLState:
         have_full_size_volume = False
         if volumes:
             for volume in volumes:
+                if not self.volume_matches_host_architecture(volume):
+                    continue
                 # volume setup for a full qualified volume with name and
                 # mountpoint information. See below for exceptions
                 name = volume.get_name()
+                parent = volume.get_parent() or ''
                 mountpoint = volume.get_mountpoint()
                 realpath = mountpoint
                 size = volume.get_size()
@@ -1530,6 +2026,9 @@ class XMLState:
                 label = volume.get_label()
                 attributes = []
                 is_root_volume = False
+
+                if volume.get_quota():
+                    attributes.append(f'quota={volume.get_quota()}')
 
                 if volume.get_copy_on_write() is False:
                     # by default copy-on-write is switched on for any
@@ -1578,7 +2077,7 @@ class XMLState:
                     )
                 else:
                     size = 'freespace:' + format(
-                        Defaults.get_min_volume_mbytes()
+                        Defaults.get_min_volume_mbytes(selected_filesystem)
                     )
 
                 if ':all' in size:
@@ -1589,6 +2088,7 @@ class XMLState:
                 volume_type_list.append(
                     volume_type(
                         name=name,
+                        parent=parent,
                         size=size,
                         fullsize=fullsize,
                         mountpoint=mountpoint,
@@ -1602,9 +2102,12 @@ class XMLState:
         if not have_root_volume_setup:
             # There must always be a root volume setup. It will be the
             # full size volume if no other volume has this setup
+            volume_management = self.get_volume_management()
+            root_volume_name = \
+                defaults.ROOT_VOLUME_NAME if volume_management == 'lvm' else ''
             if have_full_size_volume:
                 size = 'freespace:' + format(
-                    Defaults.get_min_volume_mbytes()
+                    Defaults.get_min_volume_mbytes(selected_filesystem)
                 )
                 fullsize = False
             else:
@@ -1612,7 +2115,8 @@ class XMLState:
                 fullsize = True
             volume_type_list.append(
                 volume_type(
-                    name=defaults.ROOT_VOLUME_NAME,
+                    name=root_volume_name,
+                    parent='',
                     size=size,
                     fullsize=fullsize,
                     mountpoint=None,
@@ -1627,6 +2131,7 @@ class XMLState:
             volume_type_list.append(
                 volume_type(
                     name=swap_name,
+                    parent='',
                     size='size:{0}'.format(swap_mbytes),
                     fullsize=False,
                     mountpoint=None,
@@ -1654,7 +2159,7 @@ class XMLState:
         if selected_system_disk and selected_system_disk.get_preferlvm():
             # LVM volume management is preferred, use it
             volume_management = 'lvm'
-        elif selected_filesystem in volume_filesystems:
+        elif selected_filesystem in volume_filesystems and selected_system_disk:
             # specified filesystem has its own volume management system
             volume_management = selected_filesystem
         elif selected_system_disk:
@@ -1750,15 +2255,33 @@ class XMLState:
 
     def get_repository_sections(self) -> List:
         """
-        List of all repository sections matching configured profiles
+        List of all repository sections for the selected profiles that
+        matches the host architecture
 
         :return: <repository> section reference(s)
 
         :rtype: list
         """
-        return self._profiled(
-            self.xml_data.get_repository()
-        )
+        repository_list = []
+        for repository in self._profiled(self.xml_data.get_repository()):
+            if self.repository_matches_host_architecture(repository):
+                repository_list.append(repository)
+        return repository_list
+
+    def get_containers_sections(self) -> List:
+        """
+        List of all containers sections for the selected profiles that
+        matches the host architecture
+
+        :return: <containers> section reference(s)
+
+        :rtype: list
+        """
+        containers_list = []
+        for containers in self._profiled(self.xml_data.get_containers()):
+            if self.containers_matches_host_architecture(containers):
+                containers_list.append(containers)
+        return containers_list
 
     def get_repository_sections_used_for_build(self) -> List:
         """
@@ -1813,9 +2336,22 @@ class XMLState:
         Get list of signing keys specified on the repositories
         """
         key_file_list: List[str] = []
+        release_version = self.get_release_version()
+        release_vars = [
+            '$releasever',
+            '${releasever}'
+        ]
         for repository in self.get_repository_sections() or []:
             for signing in repository.get_source().get_signing() or []:
-                key_file_list.append(Uri(signing.get_key()).translate())
+                normalized_key_url = Uri(signing.get_key()).translate()
+                if release_version:
+                    for release_var in release_vars:
+                        if release_var in normalized_key_url:
+                            normalized_key_url = normalized_key_url.replace(
+                                release_var, release_version
+                            )
+                if normalized_key_url not in key_file_list:
+                    key_file_list.append(normalized_key_url)
         return key_file_list
 
     def set_repository(
@@ -1823,7 +2359,8 @@ class XMLState:
         repo_prio: str, repo_imageinclude: bool = False,
         repo_package_gpgcheck: Optional[bool] = None,
         repo_signing_keys: List[str] = [], components: str = None,
-        distribution: str = None, repo_gpgcheck: Optional[bool] = None
+        distribution: str = None, repo_gpgcheck: Optional[bool] = None,
+        repo_sourcetype: str = None
     ) -> None:
         """
         Overwrite repository data of the first repository
@@ -1864,13 +2401,16 @@ class XMLState:
                 repository.set_distribution(distribution)
             if repo_gpgcheck is not None:
                 repository.set_repository_gpgcheck(repo_gpgcheck)
+            if repo_sourcetype:
+                repository.set_sourcetype(repo_sourcetype)
 
     def add_repository(
         self, repo_source: str, repo_type: str, repo_alias: str = None,
         repo_prio: str = '', repo_imageinclude: bool = False,
         repo_package_gpgcheck: Optional[bool] = None,
         repo_signing_keys: List[str] = [], components: str = None,
-        distribution: str = None, repo_gpgcheck: Optional[bool] = None
+        distribution: str = None, repo_gpgcheck: Optional[bool] = None,
+        repo_sourcetype: str = None
     ) -> None:
         """
         Add a new repository section at the end of the list
@@ -1907,7 +2447,8 @@ class XMLState:
                 package_gpgcheck=repo_package_gpgcheck,
                 repository_gpgcheck=repo_gpgcheck,
                 components=components,
-                distribution=distribution
+                distribution=distribution,
+                sourcetype=repo_sourcetype
             )
         )
 
@@ -2308,6 +2849,7 @@ class XMLState:
         result = []
         luksversion = self.build_type.get_luks_version()
         luksformat = self.build_type.get_luksformat()
+        luks_pbkdf = self.build_type.get_luks_pbkdf()
         if luksversion:
             result.append('--type')
             result.append(luksversion)
@@ -2316,24 +2858,34 @@ class XMLState:
                 result.append(option.get_name())
                 if option.get_value():
                     result.append(option.get_value())
+        if luks_pbkdf:
+            # Allow to override the pbkdf algorithm that cryptsetup
+            # uses by default. Cryptsetup may use argon2i by default,
+            # which is not supported by all bootloaders.
+            result.append('--pbkdf')
+            result.append(luks_pbkdf)
         return result
 
-    def get_derived_from_image_uri(self) -> Optional[Uri]:
+    def get_derived_from_image_uri(self) -> List[Uri]:
         """
-        Uri object of derived image if configured
+        Uri object(s) of derived image if configured
 
-        Specific image types can be based on a master image.
-        This method returns the location of this image when
-        configured in the XML description
+        Specific image types can be based on one ore more derived
+        images. This method returns the location of this image(s)
+        when configured in the XML description
 
-        :return: Instance of Uri
+        :return: List of Uri instances
 
-        :rtype: object
+        :rtype: list
         """
-        derived_image = self.build_type.get_derived_from()
-        if derived_image:
-            return Uri(derived_image, repo_type='container')
-        return None
+        image_uris = []
+        derived_images = self.build_type.get_derived_from()
+        if derived_images:
+            for derived_image in derived_images.split(','):
+                image_uris.append(
+                    Uri(derived_image, repo_type='container')
+                )
+        return image_uris
 
     def set_derived_from_image_uri(self, uri: str) -> None:
         """
@@ -2557,6 +3109,15 @@ class XMLState:
                     container_volumes['volumes'].append(volume.get_name())
         return container_volumes
 
+    def _match_docker_stopsignal(self) -> dict:
+        container_config_section = self.get_build_type_containerconfig_section()
+        container_stopsignal = {}
+        if container_config_section:
+            stopsignal_section = container_config_section.get_stopsignal()
+            if stopsignal_section:
+                container_stopsignal['stopsignal'] = stopsignal_section[0]
+        return container_stopsignal
+
     def _match_docker_environment(self):
         container_config_section = self.get_build_type_containerconfig_section()
         container_env = {}
@@ -2687,7 +3248,7 @@ class XMLState:
         return name
 
     def _to_mega_byte(self, size):
-        value = re.search('(\d+)([MG]*)', format(size))
+        value = re.search(r'(\d+)([MG]*)', format(size))
         if value:
             number = value.group(1)
             unit = value.group(2)

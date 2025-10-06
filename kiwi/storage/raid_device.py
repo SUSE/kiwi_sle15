@@ -38,9 +38,7 @@ class RaidDevice(DeviceProvider):
     :param object storage_provider: Instance of class based on DeviceProvider
     """
     def __init__(self, storage_provider: DeviceProvider):
-        # bind the underlaying block device providing class instance
-        # to this object (e.g loop) if present. This is done to guarantee
-        # the correct destructor order when the device should be released.
+        #: the underlaying device provider
         self.storage_provider = storage_provider
 
         self.raid_level_map = {
@@ -48,6 +46,9 @@ class RaidDevice(DeviceProvider):
             'striping': '0'
         }
         self.raid_device = None
+
+    def __enter__(self):
+        return self
 
     def get_device(self) -> Optional[MappedDevice]:
         """
@@ -105,6 +106,8 @@ class RaidDevice(DeviceProvider):
 
         :param string filename: config file name
         """
+        if not self.raid_device:
+            raise KiwiRaidSetupError("No raid device defined, cannot create raid config!")
         mdadm_call = Command.run(
             ['mdadm', '-Db', self.raid_device]
         )
@@ -123,15 +126,15 @@ class RaidDevice(DeviceProvider):
         """
         return self.storage_provider.is_loop()
 
-    def __del__(self):
+    def __exit__(self, exc_type, exc_value, traceback):
         if self.raid_device:
-            log.info('Cleaning up %s instance', type(self).__name__)
             try:
                 Command.run(
                     ['mdadm', '--stop', self.raid_device]
                 )
-            except Exception:
-                log.warning(
-                    'Shutdown of raid device failed, %s still busy',
-                    self.raid_device
+            except Exception as issue:
+                log.error(
+                    'Shutdown of raid device {0} failed with: {1}'.format(
+                        self.raid_device, issue
+                    )
                 )

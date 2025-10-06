@@ -1,36 +1,42 @@
-diff --git a/kiwi/bootloader/config/grub2.py b/kiwi/bootloader/config/grub2.py
-index 461b168c0..120088d6b 100644
---- a/kiwi/bootloader/config/grub2.py
-+++ b/kiwi/bootloader/config/grub2.py
-@@ -764,15 +764,6 @@ class BootLoaderConfigGrub2(BootLoaderConfigBase):
-         if self.custom_args.get('crypto_disk'):
-             grub_default_entries['GRUB_ENABLE_CRYPTODISK'] = 'y'
+restore backward compatibility for grub2 with bls.
+For the time being, SUSE distributions cannot handle KIWI's
+default (True) to use BLS with GRUB2. Until they catch up, the
+kiwi default is set to: False
+
+diff --git a/kiwi/xml_state.py b/kiwi/xml_state.py
+index 7653be284..1e72cca22 100644
+--- a/kiwi/xml_state.py
++++ b/kiwi/xml_state.py
+@@ -1176,7 +1176,7 @@ class XMLState:
+         bootloader = self.get_build_type_bootloader_section()
+         if bootloader and bootloader.get_bls() is not None:
+             return bootloader.get_bls()
+-        return True
++        return False
  
--        enable_blscfg_implemented = Command.run(
--            [
--                'grep', '-q', 'GRUB_ENABLE_BLSCFG',
--                self._get_grub2_mkconfig_tool()
--            ], raise_on_error=False
--        )
--        if enable_blscfg_implemented.returncode == 0:
--            grub_default_entries['GRUB_ENABLE_BLSCFG'] = 'true'
--
-         if grub_default_entries:
-             log.info('Writing grub2 defaults file')
-             grub_default_location = ''.join([self.root_dir, '/etc/default/'])
+     def get_build_type_bootloader_console(self) -> List[str]:
+         """
 diff --git a/test/unit/bootloader/config/grub2_test.py b/test/unit/bootloader/config/grub2_test.py
-index 19e0f4d98..daf8e5868 100644
+index b40362941..a2dd3106d 100644
 --- a/test/unit/bootloader/config/grub2_test.py
 +++ b/test/unit/bootloader/config/grub2_test.py
-@@ -579,7 +579,6 @@ class TestBootLoaderConfigGrub2:
-             ),
-             call('GRUB_CMDLINE_LINUX_DEFAULT', '"some-cmdline"'),
-             call('GRUB_DISTRIBUTOR', '"Bob"'),
--            call('GRUB_ENABLE_BLSCFG', 'true'),
-             call('GRUB_ENABLE_CRYPTODISK', 'y'),
-             call('GRUB_GFXMODE', '800x600'),
-             call(
-@@ -625,7 +624,6 @@ class TestBootLoaderConfigGrub2:
+@@ -629,7 +629,6 @@ class TestBootLoaderConfigGrub2:
+             'GRUB_BACKGROUND': '/boot/grub2/themes/openSUSE/background.png',
+             'GRUB_CMDLINE_LINUX_DEFAULT': '"some-cmdline"',
+             'GRUB_DISTRIBUTOR': '"Bob"',
+-            'GRUB_ENABLE_BLSCFG': 'true',
+             'GRUB_ENABLE_CRYPTODISK': 'y',
+             'GRUB_GFXMODE': '800x600',
+             'GRUB_SERIAL_COMMAND': '"serial --speed=38400"',
+@@ -677,7 +676,6 @@ class TestBootLoaderConfigGrub2:
+             'GRUB_BACKGROUND': '/boot/grub2/themes/openSUSE/background.png',
+             'GRUB_CMDLINE_LINUX_DEFAULT': '"some-cmdline"',
+             'GRUB_DISTRIBUTOR': '"Bob"',
+-            'GRUB_ENABLE_BLSCFG': 'true',
+             'GRUB_ENABLE_CRYPTODISK': 'y',
+             'GRUB_GFXMODE': '800x600',
+             'GRUB_SERIAL_COMMAND': '"serial --speed=38400"',
+@@ -720,7 +718,6 @@ class TestBootLoaderConfigGrub2:
              call('GRUB_CMDLINE_LINUX', '"root=LABEL=some-label"'),
              call('GRUB_DISABLE_LINUX_UUID', 'true'),
              call('GRUB_DISTRIBUTOR', '"Bob"'),
@@ -38,7 +44,7 @@ index 19e0f4d98..daf8e5868 100644
              call('GRUB_ENABLE_CRYPTODISK', 'y'),
              call('GRUB_ENABLE_LINUX_LABEL', 'true'),
              call('GRUB_GFXMODE', '800x600'),
-@@ -670,7 +668,6 @@ class TestBootLoaderConfigGrub2:
+@@ -765,7 +762,6 @@ class TestBootLoaderConfigGrub2:
              call('GRUB_DISABLE_LINUX_PARTUUID', 'false'),
              call('GRUB_DISABLE_LINUX_UUID', 'true'),
              call('GRUB_DISTRIBUTOR', '"Bob"'),
@@ -46,7 +52,7 @@ index 19e0f4d98..daf8e5868 100644
              call('GRUB_ENABLE_CRYPTODISK', 'y'),
              call('GRUB_GFXMODE', '800x600'),
              call(
-@@ -714,7 +711,6 @@ class TestBootLoaderConfigGrub2:
+@@ -809,7 +805,6 @@ class TestBootLoaderConfigGrub2:
              call('GRUB_CMDLINE_LINUX_DEFAULT', '"abcd console=tty0"'),
              call('GRUB_DISABLE_LINUX_UUID', 'true'),
              call('GRUB_DISTRIBUTOR', '"Bob"'),

@@ -20,7 +20,7 @@ from typing import (
 )
 
 from kiwi.api_helper import decommissioned
-from kiwi.command import command_call_type
+from kiwi.command import CommandCallT
 from kiwi.system.root_bind import RootBind
 from kiwi.repository.base import RepositoryBase
 
@@ -48,6 +48,9 @@ class PackageManagerBase:
         self.release_version = release_version or '0'
 
         self.post_init(custom_args or [])
+
+    def __enter__(self):
+        return self
 
     def post_init(self, custom_args: List = []) -> None:
         """
@@ -117,7 +120,7 @@ class PackageManagerBase:
 
     def process_install_requests_bootstrap(
         self, root_bind: RootBind = None, bootstrap_package: str = None
-    ) -> command_call_type:
+    ) -> CommandCallT:
         """
         Process package install requests for bootstrap phase (no chroot)
 
@@ -125,7 +128,7 @@ class PackageManagerBase:
         """
         raise NotImplementedError
 
-    def process_install_requests(self) -> command_call_type:
+    def process_install_requests(self) -> CommandCallT:
         """
         Process package install requests for image phase (chroot)
 
@@ -133,7 +136,7 @@ class PackageManagerBase:
         """
         raise NotImplementedError
 
-    def process_delete_requests(self, force: bool = False) -> command_call_type:
+    def process_delete_requests(self, force: bool = False) -> CommandCallT:
         """
         Process package delete requests (chroot)
 
@@ -143,7 +146,7 @@ class PackageManagerBase:
         """
         raise NotImplementedError
 
-    def update(self) -> command_call_type:
+    def update(self) -> CommandCallT:
         """
         Process package update requests (chroot)
 
@@ -210,7 +213,7 @@ class PackageManagerBase:
         pass  # pragma: no cover
 
     def post_process_install_requests_bootstrap(
-        self, root_bind: RootBind = None
+        self, root_bind: RootBind = None, delta_root: bool = False
     ) -> None:
         """
         Process extra code required after bootstrapping
@@ -243,7 +246,7 @@ class PackageManagerBase:
 
         :rtype: boolean
         """
-        return True if returncode != 0 else False
+        return returncode != 0
 
     def get_error_details(self) -> str:
         """
@@ -276,3 +279,7 @@ class PackageManagerBase:
         del self.collection_requests[:]
         del self.product_requests[:]
         del self.exclude_requests[:]
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.repository:
+            self.repository.cleanup()

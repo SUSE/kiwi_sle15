@@ -44,49 +44,19 @@ Create a local clone of the forked repository
 Install Required Operating System Packages
 ------------------------------------------
 
-{kiwi} requires the following additional packages which are not provided by
-:command:`pip`:
+{kiwi} requires additional packages at runtime which are not
+provided by :command:`pip`. Those will be pulled in by installing
+the following package:
 
-XML processing libraries
-  `libxml2` and `libxslt` (for :mod:`lxml`)
+* kiwi-systemdeps
 
-Python header files, GCC compiler and glibc-devel header files
-  Required for python modules that hooks into shared library context
-
-Spell Checking library
-  Provided by the `enchant` library
-
-ShellCheck
-  `ShellCheck <https://github.com/koalaman/shellcheck>`_ script linter.
-
-ISO creation program
-  One of ``xorriso`` (preferred) or ``genisoimage``.
-
-LaTeX documentation build environment
-  A full LaTeX installation is required to build the PDF documentation
-  [#f1]_.
-
-Host Requirements To Build Images
-  A full set of tools needed to build images and provided by
-  the `kiwi-systemdeps` package
-
-The above mentioned system packages will be installed by calling the
-`install_devel_packages.sh` helper script from the checked out Git
-repository as follows:
-
-.. code:: shell-session
-
-   $ sudo helper/install_devel_packages.sh
-
-.. note::
-
-   The helper script checks for the package managers `zypper` and
-   `dnf` and associates a distribution with it. If you use a
-   distribution that does not use one of those package managers
-   the script will not install any packages and exit with an
-   error message. In this case we recommend to take a look at
-   the package list encoded in the script and adapt to your
-   distribution and package manager as needed.
+The package is provided on the Open Build Service in the
+`Virtualization:Appliances:Builder
+<https://download.opensuse.org/repositories/Virtualization:/Appliances:/Builder>`__
+project. For manual inspection of the packages
+that are pulled in from the above kiwi-systemdeps package, please refer
+to the `package/python-kiwi-spec-template` spec file from the checked
+out Git repository.
 
 Create a Python Virtual Development Environment
 -----------------------------------------------
@@ -96,92 +66,27 @@ environment for Python 3:
 
 .. code:: shell-session
 
-   $ tox -e devel
-   $ source .tox/3/bin/activate
+   $ poetry install
 
-The commands above automatically creates the application script
+The command above automatically creates the application script
 called :command:`kiwi-ng`, which allows you to run {kiwi} from the
-Python sources inside the virtual environment:
+Python sources inside the virtual environment using Poetry:
 
 .. code:: shell-session
 
-    $ kiwi-ng --help
-
-.. warning::
-
-   The virtualenv's `$PATH` will not be taken into account when calling
-   {kiwi} via :command:`sudo`! Use the absolute path to the {kiwi} executable
-   to run an actual build using your local changes:
-
-   .. code:: shell-session
-
-      $ sudo $PWD/.tox/3/bin/kiwi-ng system build ...
-
-To leave the development mode, run:
-
-.. code:: shell-session
-
-    $ deactivate
-
-To resume your work, :command:`cd` into your local Git repository and call:
-
-.. code:: shell-session
-
-    $ source .tox/3/bin/activate
-
-
-Alternatively, you can launch single commands inside the virtualenv without
-sourcing it directly:
-
-.. code:: shell-session
-
-   $ tox -e devel -- kiwi-ng --version
+    $ poetry run kiwi-ng --help
 
 
 Running the Unit Tests
 ----------------------
-
-We use :command:`tox` to run the unit tests. Tox sets up its own
-virtualenvs inside the :file:`.tox` directory for multiple Python versions
-and should thus **not** be invoked from inside your development virtualenv.
 
 Before submitting your changes via a pull request, ensure that all tests
 pass and that the code has the required test coverage via the command:
 
 .. code:: shell-session
 
-    $ tox
-
-We also include `pytest-xdist` in the development virtualenv which allows
-to run the unit tests in parallel. It is turned off by default but can be
-enabled via:
-
-.. code:: shell-session
-
-    $ tox "-n NUMBER_OF_PROCESSES"
-
-where you can insert an arbitrary number as `NUMBER_OF_PROCESSES` (or a
-shell command like `$(nproc)`). Note that the double quotes around `-n
-NUMBER_OF_PROCESSES` are required (otherwise :command:`tox` will consume
-this command line flag instead of forwarding it to :command:`pytest`).
-
-The previous call would run the unit tests for different Python versions,
-check the source code for errors and build the documentation.
-
-If you want to see the available targets, use the option `-l` to let
-:command:`tox` print a list of them:
-
-.. code:: shell-session
-
-    $ tox -l
-
-To only run a special target, use the `-e` option. The following
-example runs the test cases for the Python 3.6 interpreter only:
-
-.. code:: shell-session
-
-    $ tox -e unit_py3_6
-
+    $ make check
+    $ make test
 
 Create a Branch for each Feature or Bugfix
 ------------------------------------------
@@ -213,13 +118,6 @@ Make and commit your changes.
 
     $ git commit -S -a
 
-Run the tests and code style checks. All of these are also performed by
-`GitLab CI <https://gitlab.com/kiwi3>`_ when a pull request is created.
-
-.. code:: shell-session
-
-    $ tox
-
 Once everything is done, push your local branch to your forked repository and
 create a pull request into the upstream repository.
 
@@ -245,26 +143,15 @@ Coding Style
 
 - The names of constants are not written in all capital letters.
 
-
 Documentation
 ~~~~~~~~~~~~~
 
-{kiwi} uses `Sphinx <https://www.sphinx-doc.org/en/master/>`_ for the API and
-user documentation.
-
-In order to build the HTML documentation call:
+{kiwi} uses `Sphinx <https://www.sphinx-doc.org/en/master/>`_ for the API,
+user documentation and manual pages
 
 .. code:: shell-session
 
-    tox -e doc
-
-or to build the full documentation (including a PDF generated by LaTeX
-[#f3]_):
-
-.. code:: shell-session
-
-    tox -e packagedoc
-
+    $ make docs
 
 Document all your classes, methods, their parameters and their types using
 the standard `reStructuredText
@@ -316,7 +203,7 @@ found in `doc/source`. General documentation should be put into the
 specialized topics would belong into the `building/` subfolder.
 
 Adhere to a line limit of 75 characters when writing the user facing
-documentation [#f2]_.
+documentation [#f1]_.
 
 
 Additional Information
@@ -422,13 +309,7 @@ directly build it with :command:`rpmbuild`, :command:`fedpkg`, or submitted
 to the Open Build Service using :command:`osc`.
 
 
-.. [#f1] Sphinx requires a plethora of additional LaTeX
-         packages. Unfortunately there is currently no comprehensive list
-         available. On Ubuntu/Debian installing `texlive-latex-extra`
-         should be sufficient. For Fedora, consult the package list
-         from :file:`.gitlab-ci.yml`.
-
-.. [#f2] Configure your editor to automatically break lines and/or reformat
+.. [#f1] Configure your editor to automatically break lines and/or reformat
          paragraphs. For Emacs you can use `M-x set-fill-column RET 75` and
          `M-x auto-fill-mode RET` for automatic filling of paragraphs in
          conjunction with `M-x fill-paragraph` (usually bound to `M-q`) to
@@ -437,5 +318,3 @@ to the Open Build Service using :command:`osc`.
          Emacs since version `23.1`).
          Vim users can set the text width via `:tw 75` and then use the
          commands `gwip` or `gq`.
-
-.. [#f3] Requires a full LaTeX installation.

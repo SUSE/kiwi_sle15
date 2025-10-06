@@ -134,6 +134,8 @@ class Profile:
                 self._text(oemconfig.get_oem_resize_once())
             self.dot_profile['kiwi_oempartition_install'] = \
                 self._text(oemconfig.get_oem_partition_install())
+            self.dot_profile['kiwi_oemramdisksize'] = \
+                self._text(oemconfig.get_oem_ramdisk_size())
             self.dot_profile['kiwi_oemdevicefilter'] = \
                 self._text(oemconfig.get_oem_device_filter())
             self.dot_profile['kiwi_oemtitle'] = \
@@ -184,10 +186,14 @@ class Profile:
         # kiwi_install_volid
         if self.xml_state.is_xen_server():
             self.dot_profile['kiwi_xendomain'] = 'dom0'
-        if 'oem' in self.xml_state.get_build_type_name():
+        if self.xml_state.get_build_type_name() == 'oem':
             install_volid = self.xml_state.build_type.get_volid() or \
                 Defaults.get_install_volume_id()
             self.dot_profile['kiwi_install_volid'] = install_volid
+        if self.xml_state.get_build_type_name() == 'iso':
+            live_iso_volid = self.xml_state.build_type.get_volid() or \
+                Defaults.get_volume_id()
+            self.dot_profile['kiwi_live_volid'] = live_iso_volid
 
     def _strip_to_profile(self):
         # kiwi_strip_delete
@@ -240,26 +246,26 @@ class Profile:
         # kiwi_language
         # kiwi_splash_theme
         # kiwi_loader_theme
-        for preferences in self.xml_state.get_preferences_sections():
-            if 'kiwi_iversion' not in self.dot_profile:
+        for preferences in reversed(self.xml_state.get_preferences_sections()):
+            if 'kiwi_iversion' not in self.dot_profile and preferences.get_version():
                 self.dot_profile['kiwi_iversion'] = \
                     self._text(preferences.get_version())
             if 'kiwi_showlicense' not in self.dot_profile:
                 self.dot_profile['kiwi_showlicense'] = \
                     self._text(preferences.get_showlicense())
-            if 'kiwi_keytable' not in self.dot_profile:
+            if 'kiwi_keytable' not in self.dot_profile and preferences.get_keytable():
                 self.dot_profile['kiwi_keytable'] = \
                     self._text(preferences.get_keytable())
-            if 'kiwi_timezone' not in self.dot_profile:
+            if 'kiwi_timezone' not in self.dot_profile and preferences.get_timezone():
                 self.dot_profile['kiwi_timezone'] = \
                     self._text(preferences.get_timezone())
-            if 'kiwi_language' not in self.dot_profile:
+            if 'kiwi_language' not in self.dot_profile and preferences.get_locale():
                 self.dot_profile['kiwi_language'] = \
                     self._text(preferences.get_locale())
-            if 'kiwi_splash_theme' not in self.dot_profile:
+            if 'kiwi_splash_theme' not in self.dot_profile and preferences.get_bootsplash_theme():
                 self.dot_profile['kiwi_splash_theme'] = \
                     self._text(preferences.get_bootsplash_theme())
-            if 'kiwi_loader_theme' not in self.dot_profile:
+            if 'kiwi_loader_theme' not in self.dot_profile and preferences.get_bootloader_theme():
                 self.dot_profile['kiwi_loader_theme'] = \
                     self._text(preferences.get_bootloader_theme())
 
@@ -285,7 +291,7 @@ class Profile:
         # kiwi_fsmountoptions
         # kiwi_bootprofile
         # kiwi_vga
-        # kiwi_btrfs_root_is_snapshot
+        # kiwi_btrfs_root_is_snapper_snapshot
         # kiwi_startsector
         type_section = self.xml_state.build_type
         self.dot_profile['kiwi_type'] = \
@@ -319,7 +325,9 @@ class Profile:
             self.xml_state.get_build_type_bootloader_console()[1] or 'default'
         )
         self.dot_profile['kiwi_btrfs_root_is_snapshot'] = \
-            type_section.get_btrfs_root_is_snapshot()
+            type_section.get_btrfs_root_is_snapper_snapshot()
+        self.dot_profile['kiwi_btrfs_root_is_snapper_snapshot'] = \
+            type_section.get_btrfs_root_is_snapper_snapshot()
         self.dot_profile['kiwi_gpt_hybrid_mbr'] = \
             type_section.get_gpt_hybrid_mbr()
         self.dot_profile['kiwi_devicepersistency'] = \

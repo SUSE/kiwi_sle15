@@ -98,6 +98,17 @@ class PartitionerBase:
         """
         raise NotImplementedError
 
+    def set_uuid(self, partition_id: int, uuid: str):
+        """
+        Set partition UUID
+
+        Implementation in specialized partitioner class
+
+        :param int partition_id: unused
+        :param string uuid: unused
+        """
+        raise NotImplementedError
+
     def set_hybrid_mbr(self):
         """
         Turn partition table into hybrid table if supported
@@ -113,6 +124,16 @@ class PartitionerBase:
         Implementation in specialized partitioner class
         """
         raise NotImplementedError
+
+    def set_start_sector(self, start_sector: int):
+        """
+        Set start sector of first partition as configured
+
+        :param int start_sector: unused
+
+        Does nothing by default
+        """
+        pass
 
     def resize_table(self, entries: int = 0):
         """

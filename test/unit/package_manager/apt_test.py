@@ -1,6 +1,7 @@
 import logging
-from mock import (
-    patch, call, Mock
+import io
+from unittest.mock import (
+    patch, call, Mock, MagicMock
 )
 from pytest import (
     raises, fixture
@@ -11,7 +12,7 @@ from kiwi.package_manager.apt import PackageManagerApt
 import kiwi.defaults as defaults
 
 from kiwi.exceptions import (
-    KiwiDebootstrapError,
+    KiwiDebianBootstrapError,
     KiwiRequestError,
     KiwiFileNotFound
 )
@@ -29,11 +30,12 @@ class TestPackageManagerApt:
         repository.keyring = 'trusted.gpg'
         repository.unauthenticated = 'false'
         repository.components = ['main', 'restricted']
+        self.env = {'key': 'val'}
 
         repository.runtime_config = Mock(
             return_value={
                 'apt_get_args': ['-c', 'apt.conf', '-y'],
-                'command_env': ['env'],
+                'command_env': self.env,
                 'distribution': 'xenial',
                 'distribution_path': 'xenial_path'
             }
@@ -65,24 +67,25 @@ class TestPackageManagerApt:
     def test_setup_repository_modules(self):
         self.manager.setup_repository_modules({})
 
+    @patch('pathlib.Path')
     @patch('kiwi.command.Command.run')
     @patch.object(PackageManagerApt, 'process_install_requests')
     @patch('os.path.isfile')
     def test_process_install_requests_bootstrap_prebuild_root(
         self, mock_os_path_isfile, mock_process_install_requests,
-        mock_Command_run
+        mock_Command_run, mock_pathlib_Path
     ):
         mock_os_path_isfile.return_value = True
         self.manager.process_install_requests_bootstrap(
             bootstrap_package='bootstrap-package'
         )
         assert mock_Command_run.call_args_list == [
-            call(['apt-get', '-c', 'apt.conf', '-y', 'update'], ['env']),
+            call(['apt-get', '-c', 'apt.conf', '-y', 'update'], self.env),
             call(
                 [
                     'apt-get', '-c', 'apt.conf', '-y',
                     'install', 'bootstrap-package'
-                ], ['env']
+                ], self.env
             ),
             call(
                 [
@@ -100,129 +103,169 @@ class TestPackageManagerApt:
                 bootstrap_package='bootstrap-package'
             )
 
-    def test_process_install_requests_bootstrap_debootstrap_no_dist(self):
-        self.manager.distribution = None
-        with raises(KiwiDebootstrapError):
-            self.manager.process_install_requests_bootstrap()
+    @patch('pathlib.Path')
+    @patch('kiwi.command.Command.call')
+    @patch('kiwi.command.Command.run')
+    def test_process_install_requests_bootstrap_failed(
+        self, mock_Command_run, mock_Command_call, mock_pathlib_Path
+    ):
+        self.manager.request_package('apt')
+        mock_Command_call.side_effect = Exception
+        with patch('builtins.open', create=True):
+            with raises(KiwiDebianBootstrapError):
+                self.manager.process_install_requests_bootstrap()
 
+    @patch('pathlib.Path')
+    @patch('kiwi.command.Command.run')
+    @patch('kiwi.command.Command.call')
+    @patch('kiwi.package_manager.apt.Temporary.new_file')
+    @patch('kiwi.package_manager.apt.Temporary.new_dir')
     @patch('os.path.exists')
-    def test_process_install_requests_bootstrap_debootstrap_no_script(
-        self, mock_exists
+    def test_process_install_requests_bootstrap(
+        self, mock_os_path_exists, mock_Temporary_new_dir,
+        mock_Temporary_new_file, mock_Command_call, mock_Command_run,
+        mock_pathlib_Path
     ):
-        mock_exists.return_value = False
-        with raises(KiwiDebootstrapError):
+        mock_os_path_exists.return_value = True
+        mock_Temporary_new_dir.return_value.name = 'tempdir'
+        mock_Temporary_new_file.return_value.name = 'temporary'
+        self.manager.request_package('vim')
+        call_result = Mock()
+        call_result.process.communicate.return_value = ('stdout', 'stderr')
+        mock_Command_call.return_value = call_result
+        with patch('builtins.open', create=True) as mock_open:
+            mock_open.return_value = MagicMock(spec=io.IOBase)
+            file_handle = mock_open.return_value.__enter__.return_value
+            file_handle.__iter__.return_value = ['base-passwd\n', 'usrmerge', 'vim\n']
             self.manager.process_install_requests_bootstrap()
-
-    @patch('kiwi.command.Command.call')
-    @patch('kiwi.package_manager.apt.os.path.exists')
-    @patch('kiwi.package_manager.apt.Path.wipe')
-    def test_process_install_requests_bootstrap_debootstrap_failed(
-        self, mock_wipe, mock_exists, mock_call
-    ):
-        self.manager.request_package('apt')
-        mock_call.side_effect = Exception
-        mock_exists.return_value = True
-        mock_root_bind = Mock()
-        with raises(KiwiDebootstrapError):
-            self.manager.process_install_requests_bootstrap(mock_root_bind)
-
-    @patch('kiwi.package_manager.apt.os.path.exists')
-    def test_get_error_details(self, mock_exists):
-        mock_exists.return_value = True
-        with patch('builtins.open', create=True) as mock_open:
-            file_handle = mock_open.return_value.__enter__.return_value
-            file_handle.read.return_value = 'log-data'
-            assert self.manager.get_error_details() == \
-                file_handle.read.return_value
-        mock_open.assert_called_once_with(
-            'root-dir/debootstrap/debootstrap.log'
-        )
-
-    @patch('kiwi.package_manager.apt.os.path.exists')
-    def test_get_error_details_no_log_file(self, mock_exists):
-        mock_exists.return_value = False
-        assert self.manager.get_error_details() == \
-            "logfile 'root-dir/debootstrap/debootstrap.log' does not exist"
-
-    @patch('kiwi.package_manager.apt.os.path.exists')
-    def test_get_error_details_logfile_is_empty(self, mock_exists):
-        mock_exists.return_value = True
-        with patch('builtins.open', create=True) as mock_open:
-            file_handle = mock_open.return_value.__enter__.return_value
-            file_handle.read.return_value = ''
-            assert self.manager.get_error_details() == \
-                'logfile is empty'
-
-    @patch('kiwi.command.Command.call')
-    @patch('kiwi.package_manager.apt.Path.wipe')
-    @patch('kiwi.package_manager.apt.os.path.exists')
-    def test_process_install_requests_bootstrap_debootstrap(
-        self, mock_exists, mock_wipe, mock_call
-    ):
-        self.manager.request_package('apt')
-        self.manager.request_package('vim')
-        call_result = Mock()
-        call_result.process.communicate.return_value = ('stdout', 'stderr')
-        mock_call.return_value = call_result
-        mock_root_bind = Mock()
-        mock_exists.return_value = True
-        self.manager.process_install_requests_bootstrap(mock_root_bind)
-        mock_call.assert_called_once_with(
-            [
-                'debootstrap', '--keyring=trusted.gpg',
-                '--variant=minbase', '--include=vim',
-                '--components=main,restricted', 'xenial',
-                'root-dir', 'xenial_path'
-            ], ['env']
-        )
-        assert mock_wipe.call_args_list == [
-            call('root-dir/dev/fd'),
-            call('root-dir/dev/pts')
+        new_env = self.env | {
+            'PATH': '$PATH:/usr/bin:/bin:/usr/sbin:/sbin',
+            'DPKG_MAINTSCRIPT_NAME': 'true',
+            'DPKG_MAINTSCRIPT_PACKAGE': 'libc6'
+        }
+        assert mock_Command_run.call_args_list == [
+            call(
+                ['apt-get', '-c', 'apt.conf', '-y', 'update'], self.env
+            ),
+            call(
+                [
+                    'apt-get', '-c', 'apt.conf', '-y', 'install',
+                    '-oDebug::pkgDPkgPm=1',
+                    '-oDPkg::Pre-Install-Pkgs::=cat >temporary',
+                    '?essential',
+                    'vim',
+                    'apt'
+                ], self.env
+            ),
+            call(
+                [
+                    'bash', '-c',
+                    'dpkg-deb --fsys-tarfile base-passwd | tar -C root-dir -x'
+                ], self.env
+            ),
+            call(
+                [
+                    'bash', '-c',
+                    'dpkg-deb --fsys-tarfile usrmerge | tar -C root-dir -x'
+                ], self.env
+            ),
+            call(
+                [
+                    'bash', '-c',
+                    'dpkg-deb --fsys-tarfile vim | tar -C root-dir -x'
+                ], self.env
+            ),
+            call(
+                [
+                    'dpkg', '-e', 'base-passwd', 'tempdir/base-passwd'
+                ]
+            ),
+            call(
+                [
+                    'chmod', '755', 'tempdir/base-passwd/preinst'
+                ]
+            ),
+            call(
+                [
+                    'chroot', 'root-dir',
+                    'tempdir/base-passwd/preinst', 'install'
+                ], new_env
+            ),
+            call(
+                [
+                    'chmod', '755', 'tempdir/base-passwd/postinst'
+                ]
+            ),
+            call(
+                [
+                    'chroot', 'root-dir',
+                    'tempdir/base-passwd/postinst', 'configure'
+                ], new_env
+            ),
+            call(
+                ['dpkg', '-e', 'base-passwd', 'tempdir/base-passwd']
+            ),
+            call(
+                [
+                    'chmod', '755', 'tempdir/base-passwd/preinst'
+                ]
+            ),
+            call(
+                [
+                    'chroot', 'root-dir',
+                    'tempdir/base-passwd/preinst', 'install'
+                ], new_env
+            ),
+            call(
+                [
+                    'chmod', '755', 'tempdir/base-passwd/postinst'
+                ]
+            ),
+            call(
+                [
+                    'chroot', 'root-dir',
+                    'tempdir/base-passwd/postinst', 'configure'
+                ], new_env
+            ),
+            call(
+                ['dpkg', '-e', 'vim', 'tempdir/vim']
+            ),
+            call(
+                [
+                    'chmod', '755', 'tempdir/vim/preinst'
+                ]
+            ),
+            call(
+                [
+                    'chroot', 'root-dir',
+                    'tempdir/vim/preinst', 'install'
+                ], new_env
+            ),
+            call(
+                [
+                    'chmod', '755', 'tempdir/vim/postinst'
+                ]
+            ),
+            call(
+                [
+                    'chroot', 'root-dir',
+                    'tempdir/vim/postinst', 'configure'
+                ], new_env
+            )
         ]
-        mock_root_bind.umount_kernel_file_systems.assert_called_once_with()
-
-    def test_post_process_install_requests_bootstrap(self):
-        mock_root_bind = Mock()
-        self.manager.post_process_install_requests_bootstrap(mock_root_bind)
-        mock_root_bind.mount_kernel_file_systems.assert_called_once_with()
-
-    @patch('kiwi.command.Command.call')
-    @patch('kiwi.package_manager.apt.Path.wipe')
-    @patch('kiwi.package_manager.apt.os.path.exists')
-    def test_process_install_requests_bootstrap_debootstrap_no_gpg_check(
-        self, mock_exists, mock_wipe, mock_call
-    ):
-        self.manager.request_package('apt')
-        self.manager.request_package('vim')
-        call_result = Mock()
-        call_result.process.communicate.return_value = ('stdout', 'stderr')
-        mock_root_bind = Mock()
-        mock_call.return_value = call_result
-        mock_exists.side_effect = lambda x: True if 'xenial' in x else False
-        self.manager.process_install_requests_bootstrap(mock_root_bind)
-        mock_call.assert_called_once_with(
-            [
-                'debootstrap', '--no-check-gpg',
-                '--variant=minbase', '--include=vim',
-                '--components=main,restricted', 'xenial',
-                'root-dir', 'xenial_path'
-            ], ['env']
-        )
-        assert mock_wipe.call_args_list == [
-            call('root-dir/dev/fd'),
-            call('root-dir/dev/pts')
-        ]
-        mock_root_bind.umount_kernel_file_systems.assert_called_once_with()
 
     @patch('kiwi.command.Command.call')
     @patch('kiwi.command.Command.run')
     def test_process_install_requests(self, mock_run, mock_call):
         self.manager.request_package('vim')
+        self.manager.bootstrap_packages = ['?essential', 'some']
         self.manager.process_install_requests()
-        mock_call.assert_called_once_with([
-            'chroot', 'root-dir', 'apt-get',
-            '-c', 'apt.conf', '-y', 'install', 'vim'],
-            ['env']
+        mock_call.assert_called_once_with(
+            [
+                'chroot', 'root-dir', 'apt-get',
+                '-c', 'apt.conf', '-y', 'install',
+                '?essential', 'some', 'vim'
+            ], self.env
         )
 
     @patch('kiwi.command.Command.call')
@@ -234,7 +277,7 @@ class TestPackageManagerApt:
             [
                 'chroot', 'root-dir', 'apt-get', '-c', 'apt.conf', '-y',
                 '--auto-remove', 'remove', 'vim'
-            ], ['env']
+            ], self.env
         )
 
     @patch('kiwi.command.Command.call')
@@ -272,7 +315,7 @@ class TestPackageManagerApt:
                 '--remove', '--force-remove-reinstreq',
                 '--force-remove-essential', '--force-depends', 'vim'
             ],
-            ['env']
+            self.env
         )
         mock_iglob.call_args_list == [
             call('root-dir/var/lib/dpkg/info/vim*.pre*'),
@@ -307,7 +350,7 @@ class TestPackageManagerApt:
         mock_call.assert_called_once_with([
             'chroot', 'root-dir', 'apt-get',
             '-c', 'apt.conf', '-y', 'upgrade'],
-            ['env']
+            self.env
         )
 
     def test_process_only_required(self):

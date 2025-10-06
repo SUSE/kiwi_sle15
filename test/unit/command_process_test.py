@@ -1,13 +1,16 @@
-import mock
 import logging
-from mock import patch
+from unittest.mock import (
+    patch, Mock
+)
 from pytest import (
     raises, fixture
 )
 from builtins import bytes
 
-from kiwi.command_process import CommandProcess
-from kiwi.command_process import CommandIterator
+from kiwi.command_process import (
+    CommandProcess,
+    CommandIterator
+)
 
 from kiwi.exceptions import KiwiCommandError
 
@@ -41,13 +44,13 @@ class TestCommandProcess:
         return create_method
 
     def setup(self):
-        self.data_flow = [True, None, None, None, None, None, None]
+        self.data_flow = [True, None, None, None, None, None, None, None]
         self.data_out = [
-            bytes(b''), bytes(b'\n'), bytes(b'a'),
+            bytes(b''), bytes(b''), bytes(b'\n'), bytes(b'a'),
             bytes(b't'), bytes(b'a'), bytes(b'd')
         ]
         self.data_err = [
-            bytes(b''), bytes(b'r'), bytes(b'o'),
+            bytes(b''), bytes(b'\n'), bytes(b'r'), bytes(b'o'),
             bytes(b'r'), bytes(b'r'), bytes(b'e')
         ]
         self.flow = self.create_flow_method(self.poll)
@@ -61,7 +64,7 @@ class TestCommandProcess:
 
     @patch('kiwi.command.Command')
     def test_returncode(self, mock_command):
-        command = mock.Mock()
+        command = Mock()
         mock_command.return_value = command
         process = CommandProcess(command)
         assert process.returncode() == command.process.returncode
@@ -79,7 +82,7 @@ class TestCommandProcess:
         process.command.command.error.read = self.flow_err
         process.command.command.process.returncode = 0
         with self._caplog.at_level(logging.DEBUG):
-            process.poll_show_progress(['a', 'b'], match_method)
+            process.poll_show_progress(['a', 'b'], match_method, True)
             assert 'system: data' in self._caplog.text
 
     @patch('kiwi.command.Command')
@@ -137,7 +140,7 @@ class TestCommandProcess:
             assert '--------------out start-------------' in self._caplog.text
             assert 'data' in self._caplog.text
             assert '--------------out stop--------------' in self._caplog.text
-            assert result.stderr == 'error'
+            assert result.stderr == 'error\n'
 
     @patch('kiwi.command.Command')
     def test_create_match_method(self, mock_command):
@@ -146,15 +149,15 @@ class TestCommandProcess:
         )
         assert match_method('a', 'b') is True
 
-    @patch('kiwi.command.Command')
-    def test_destructor(self, mock_command):
-        process = CommandProcess(mock_command)
-        process.command.command.process.returncode = None
-        process.command.command.process.pid = 42
-        process.command.command.process.kill = mock.Mock()
-        process.__del__()
-        process.command.command.process.kill.assert_called_once_with()
-
     def test_command_iterator(self):
-        iterator = CommandIterator(mock.Mock())
+        iterator = CommandIterator(Mock())
         assert iterator.__iter__() == iterator
+
+    def test_kill(self):
+        iterator = CommandIterator(Mock())
+        iterator.kill()
+        iterator.command.process.kill.assert_called_once_with()
+
+    def test_get_pid(self):
+        iterator = CommandIterator(Mock())
+        assert iterator.get_pid() == iterator.command.process.pid

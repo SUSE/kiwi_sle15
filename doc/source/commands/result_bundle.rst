@@ -12,8 +12,10 @@ SYNOPSIS
 
    kiwi-ng result bundle -h | --help
    kiwi-ng result bundle --target-dir=<directory> --id=<bundle_id> --bundle-dir=<directory>
+       [--bundle-format=<format>]
        [--zsync_source=<download_location>]
        [--package-as-rpm]
+       [--no-compress]
    kiwi-ng result bundle help
 
 .. _db_kiwi_result_bundle_desc:
@@ -21,10 +23,10 @@ SYNOPSIS
 DESCRIPTION
 -----------
 
-Create result bundle from the image build results in the specified target
-directory. Each result image will contain the specified bundle identifier
-as part of its filename. Uncompressed image files will also become xz
-compressed and a sha sum will be created from every result image.
+Create a result bundle from the image build in the specified target directory.
+Each resulting image contains the specified bundle identifier as part of its
+filename. Uncompressed image files are also compressed as an XZ archive. An SHA
+checksum is generated for each resulting image.
 
 .. _db_kiwi_result_bundle_opts:
 
@@ -33,31 +35,49 @@ OPTIONS
 
 --bundle-dir=<directory>
 
-  directory containing the bundle results, compressed versions of
-  image results and their sha sums
+  Directory containing the bundle results, compressed versions of
+  image results, and SHA checksum files.
+
+--bundle-format=<format>
+
+  Specify the bundle format to create the bundle. If provided,
+  this setting will overwrite an eventually provided `bundle_format`
+  attribute from the main image description. The format string
+  can contain placeholders for the following elements:
+
+  * %N : Image name
+  * %P : Concatenated profile name (_)
+  * %A : Architecture name
+  * %I : Bundle ID
+  * %T : Image build type name
+  * %M : Image Major version number
+  * %m : Image Minor version number
+  * %p : Image Patch version number
+  * %v : Image Version string
 
 --id=<bundle_id>
 
-  bundle id, could be a free form text and is appended to the image
-  version information if present as part of the result image filename
+  Bundle ID. It is a free-form text appended to the image
+  version information as part of the result image filename.
 
 --target-dir=<directory>
 
-  directory containing the kiwi build results
+  Directory containing the {kiwi} build results.
 
 --zsync_source=<download_location>
 
-  Specify the download location from which the bundle file(s)
-  can be fetched from. The information is effective if `zsync` is
+  Download location of the bundle file or files. Only relevant if `zsync` is
   used to sync the bundle.
 
-  * The zsync control file is only created for those bundle files
-    which are marked for compression because in a {kiwi} build only those
-    are meaningful for a partial binary file download.
+  * The zsync control file is created for the bundle files marked for compression.
 
-  * It is expected that all files from a bundle are placed to the same
-    download location
+  * All files in a bundle must be stored in the same download location.
 
 --package-as-rpm
 
-  Take all result files and create an rpm package out of it
+  Create an RPM package containing the result files.
+
+--no-compress
+
+  Do not compress the result image file(s). Note: Image files that
+  were already produced as compressed variants stays compressed.

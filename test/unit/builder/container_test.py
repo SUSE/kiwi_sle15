@@ -1,8 +1,8 @@
-from mock import (
+from unittest.mock import (
     patch, call, mock_open
 )
 from pytest import raises
-import mock
+import unittest.mock as mock
 import kiwi
 
 from kiwi.defaults import Defaults
@@ -19,7 +19,7 @@ class TestContainerBuilder:
             return_value=None
         )
         self.runtime_config.get_container_compression = mock.Mock(
-            return_value=True
+            return_value=False
         )
         kiwi.builder.container.RuntimeConfig = mock.Mock(
             return_value=self.runtime_config
@@ -41,6 +41,9 @@ class TestContainerBuilder:
         )
         self.xml_state.xml_data.get_name = mock.Mock(
             return_value='image_name'
+        )
+        self.xml_state.build_type.get_delta_root = mock.Mock(
+            return_value=False
         )
         self.setup = mock.Mock()
         kiwi.builder.container.SystemSetup = mock.Mock(
@@ -78,7 +81,7 @@ class TestContainerBuilder:
             )
 
     @patch('os.path.exists')
-    def test_init_derived_base_image_md5_not_existing(self, mock_exists):
+    def test_init_derived_base_image_sha256_not_existing(self, mock_exists):
         exists_results = [False, False, True]
 
         def side_effect(self):
@@ -142,14 +145,14 @@ class TestContainerBuilder:
             'docker', 'root_dir', self.container_config
         )
         container_image.create.assert_called_once_with(
-            'target_dir/image_name.x86_64-1.2.3.docker.tar', None, True
+            'target_dir/image_name.x86_64-1.2.3.docker.tar', '', True, False
         )
         assert self.container.result.add.call_args_list == [
             call(
                 key='container',
                 filename='target_dir/image_name.x86_64-1.2.3.docker.tar',
                 use_for_bundle=True,
-                compress=True,
+                compress=False,
                 shasum=True
             ),
             call(
@@ -207,7 +210,7 @@ class TestContainerBuilder:
         container.result = mock.Mock()
 
         checksum = mock.Mock()
-        checksum.md5 = mock.Mock(
+        checksum.sha256 = mock.Mock(
             return_value='checksumvalue'
         )
         mock_checksum.return_value = checksum
@@ -220,7 +223,7 @@ class TestContainerBuilder:
 
         mock_checksum.assert_called_once_with('root_dir/image/imported_root')
         checksum.matches.assert_called_once_with(
-            'checksumvalue', 'root_dir/image/imported_root.md5'
+            'checksumvalue', 'root_dir/image/imported_root.sha256'
         )
 
         mock_image.new.assert_called_once_with(
@@ -229,14 +232,14 @@ class TestContainerBuilder:
         container_image.create.assert_called_once_with(
             'target_dir/image_name.x86_64-1.2.3.docker.tar',
             'root_dir/image/imported_root',
-            True
+            True, False
         )
         assert container.result.add.call_args_list == [
             call(
                 key='container',
                 filename='target_dir/image_name.x86_64-1.2.3.docker.tar',
                 use_for_bundle=True,
-                compress=True,
+                compress=False,
                 shasum=True
             ),
             call(
@@ -269,10 +272,10 @@ class TestContainerBuilder:
         )
 
     @patch('kiwi.builder.container.Checksum')
-    def test_create_derived_with_different_md5(self, mock_md5):
-        md5 = mock.Mock()
-        md5.md5.return_value = 'diffchecksumvalue'
-        mock_md5.return_value = md5
+    def test_create_derived_with_different_sha256(self, mock_sha256):
+        sha256 = mock.Mock()
+        sha256.sha256.return_value = 'diffchecksumvalue'
+        mock_sha256.return_value = sha256
 
         m_open = mock_open(read_data='checksum data\n')
         with patch('builtins.open', m_open, create=True):
@@ -283,7 +286,7 @@ class TestContainerBuilder:
                 container.create()
 
     @patch('kiwi.builder.container.Checksum')
-    def test_create_derived_fail_open(self, mock_md5):
+    def test_create_derived_fail_open(self, mock_sha256):
         with patch('builtins.open') as m_open:
             m_open = mock_open()
             m_open.return_value.__enter__.side_effect = Exception(
@@ -330,5 +333,5 @@ class TestContainerBuilder:
         container_image.create.assert_called_once_with(
             'target_dir/image_name.x86_64-1.2.3.docker.tar',
             'root_dir/image/imported_root',
-            False
+            False, False
         )
