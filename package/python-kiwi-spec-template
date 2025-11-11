@@ -23,8 +23,8 @@ Version:        %%VERSION
 Provides:       kiwi-schema = 7.5
 Obsoletes:      python2-kiwi
 Conflicts:      python2-kiwi
-Obsoletes:      python3-kiwi
-Conflicts:      python3-kiwi
+Provides:       python3-kiwi = %{version}-%{release}
+Obsoletes:      python3-kiwi < %{version}-%{release}
 Conflicts:      kiwi-man-pages < %{version}
 Release:        0
 Url:            https://github.com/OSInside/kiwi
