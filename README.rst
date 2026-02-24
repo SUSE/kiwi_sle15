@@ -8,8 +8,6 @@ KIWI - Next Generation
 .. |Doc| replace:: `Documentation <https://osinside.github.io/kiwi/>`__
 .. |Installation| replace:: `Installation <https://osinside.github.io/kiwi/installation.html>`__
 .. |Contributing| replace:: `Contributing <https://osinside.github.io/kiwi/contributing.html>`__
-.. |Donate| image:: https://www.paypalobjects.com/en_US/i/btn/btn_donateCC_LG.gif
-   :target: https://www.paypal.me/SchaeferMarcus
 
 |GitLab CI Pipeline| |Health|
 
@@ -20,7 +18,3 @@ KIWI - Next Generation
 * |Contributing|
 
 * |Doc|
-
-We'll donate it for good luck so's you're sure to come back :)
-
-|Donate|
